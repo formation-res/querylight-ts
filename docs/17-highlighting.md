@@ -2,9 +2,9 @@
 id: highlighting
 section: Operations
 title: Highlighting with Querylight TS
-summary: Generate exact and phrase highlight fragments after retrieval using stored source offsets.
+summary: Generate exact, phrase, prefix, and fuzzy highlight fragments after retrieval using stored source offsets.
 tags: [highlighting, offsets, snippets, search]
-apis: [DocumentIndex, MatchQuery, MatchPhrase]
+apis: [DocumentIndex, MatchQuery, MatchPhrase, PrefixQuery]
 level: foundation
 order: "17"
 ---
@@ -63,7 +63,7 @@ This is useful for:
 
 - result-title highlighting
 - short “why it matched” excerpts
-- exact and phrase evidence on prose fields
+- exact, phrase, prefix, and fuzzy evidence on prose fields
 
 ## Current support
 
@@ -71,6 +71,8 @@ The current implementation is intentionally conservative:
 
 - exact term highlighting
 - phrase highlighting
+- prefix highlighting
+- fuzzy highlighting for approximate analyzers such as ngrams
 - source offsets from stored field text
 
 That makes it reliable for fields such as `title`, `summary`-style fields, and `body`.
@@ -81,9 +83,8 @@ This is not yet a full clone of all Elasticsearch/OpenSearch highlighter modes.
 
 In particular:
 
-- prefix and fuzzy matches are not yet rendered as first-class highlight evidence
-- analyzers that depend on token filters such as ngrams are not offset-aware for highlighting
 - fragment selection is simple and works best on prose
+- approximate matches highlight the containing token span rather than reconstructing token-filter output
 - code-heavy fields are usually poor candidates for result-card snippets
 
 For best results in the UI, highlight prose fields and keep code/example fields out of default result snippets.

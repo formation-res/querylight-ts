@@ -25,9 +25,9 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 - In-memory reverse index for structured documents
 - TF-IDF and BM25 ranking
 - Reciprocal rank fusion for combining lexical, geo, filter, and vector results
-- Boolean, term, range, phrase, prefix, and match-all queries
+- Boolean, term, terms, exists, range, phrase, prefix, multi-match, and match-all queries
 - Beginner-friendly plain JSON indexing with `simpleTextSearch`
-- Offset-based exact and phrase highlighting
+- Offset-based exact, phrase, prefix, and fuzzy highlighting
 - Analyzer/tokenizer/token-filter pipeline
 - Trie-backed prefix expansion
 - Aggregations and significant terms
@@ -102,4 +102,4 @@ npm run dev
 
 ## Positioning
 
-This is intended as a broader client-side search toolkit than fuzzy-match-only libraries such as `fuse.js`: it combines ranking, boolean logic, phrase search, prefixes, aggregations, vector search, and geo support behind one small pure TypeScript API.
+This is intended as a broader client-side search toolkit than fuzzy-match-only libraries such as `fuse.js`: it combines ranking, boolean logic, multi-field search, phrase search, prefixes, aggregations, vector search, and geo support behind one small pure TypeScript API.
