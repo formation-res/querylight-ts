@@ -1,8 +1,19 @@
 # Querylight TS
 
+[![npm version](https://img.shields.io/npm/v/%40tryformation%2Fquerylight-ts)](https://www.npmjs.com/package/@tryformation/querylight-ts)
+[![build status](https://github.com/formation-res/querylight-ts/workflows/Test%20and%20Deploy%20Demo/badge.svg)](https://github.com/formation-res/querylight-ts/actions/workflows/ci-demo-deploy.yml)
+
 Pure TypeScript port of the Kotlin `querylight` library, packaged for browsers and Node.js.
 
 Querylight TS is a lightweight in-process search toolkit for static sites, browser apps, and Node.js projects that need more than fuzzy matching but less than a full search server. It combines structured indexing, lexical ranking, boolean queries, aggregations, vector search, and geo search behind one small API. Read the full introduction in [`docs/00-introducing-querylight-ts.md`](docs/00-introducing-querylight-ts.md).
+
+## Try The Demo
+
+Play with the live search demo on Cloudflare Pages:
+
+- [https://querylight-ts-demo.pages.dev](https://querylight-ts-demo.pages.dev)
+
+Use it to try the search experience, inspect the indexed documentation, and get a feel for lexical, vector, and structured search behavior in the browser.
 
 ## Workspace Layout
 

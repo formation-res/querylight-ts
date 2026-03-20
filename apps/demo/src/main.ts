@@ -684,6 +684,13 @@ function renderHome(context: RuntimeContext, centerNode: HTMLDivElement): void {
       <header>
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Start Page</p>
         <h1 class="mt-2 font-serif text-[clamp(2.5rem,5vw,4.2rem)] leading-none text-stone-950">Querylight TS documentation</h1>
+        <p class="mt-4 max-w-3xl text-base leading-7 text-stone-600">
+          Explore the docs, try the in-browser search experience, and jump out to the package or source when you want to wire it into your own project.
+        </p>
+        <div class="mt-5 flex flex-wrap gap-3">
+          <a class="chip-button" href="https://github.com/formation-res/querylight-ts" target="_blank" rel="noreferrer">GitHub repository</a>
+          <a class="chip-button" href="https://www.npmjs.com/package/@tryformation/querylight-ts" target="_blank" rel="noreferrer">npm package</a>
+        </div>
       </header>
       <section class="mt-8 grid gap-4 md:grid-cols-2">
         ${featured
