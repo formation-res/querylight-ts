@@ -1000,7 +1000,7 @@ export class BoolQuery implements Query {
 
     context.withFilterMode((filterContext) => {
       const excludedHits = this.mustNot.map((query) => query.hits(documentIndex, filterContext));
-      context.exclude(excludedHits.length > 0 ? ids(excludedHits.reduce(andHits)) : []);
+      context.exclude(excludedHits.length > 0 ? ids(excludedHits.reduce(orHits)) : []);
 
       const filtered = this.filter.map((query) => query.hits(documentIndex, filterContext));
       if (filtered.length > 0) {

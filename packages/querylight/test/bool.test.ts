@@ -64,4 +64,21 @@ describe("bool queries", () => {
     expect(shouldHits).toEqual(expect.arrayContaining(["1", "2", "4", "5", "7"]));
     expect(shouldHits).not.toEqual(expect.arrayContaining(["6"]));
   });
+
+  it("should exclude documents matching any mustNot clause", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex() });
+    [
+      ["1", "foo"],
+      ["2", "bar"],
+      ["3", "baz"],
+      ["4", "foo bar"]
+    ].forEach(([id, title]) => index.index({ id, fields: { title: [title] } }));
+
+    const results = ids(index.search(new BoolQuery([], [], [], [
+      new MatchQuery("title", "foo"),
+      new MatchQuery("title", "bar")
+    ]))).sort();
+
+    expect(results).toEqual(["3"]);
+  });
 });
