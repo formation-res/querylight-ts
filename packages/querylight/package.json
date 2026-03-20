@@ -3,6 +3,23 @@
   "version": "0.1.0",
   "description": "Pure TypeScript in-memory search library for browsers and Node.js.",
   "license": "MIT",
+  "homepage": "https://querylight-ts-demo.pages.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/formation-res/querylight-ts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/formation-res/querylight-ts/issues"
+  },
+  "keywords": [
+    "search",
+    "full-text-search",
+    "typescript",
+    "bm25",
+    "tfidf",
+    "vector-search",
+    "geo"
+  ],
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

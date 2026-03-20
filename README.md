@@ -27,6 +27,20 @@ Querylight TS is a lightweight in-process search toolkit for static sites, brows
 - [Introducing Querylight TS](docs/00-introducing-querylight-ts.md)
 - [Documentation overview](docs/01-overview.md)
 
+## Install
+
+Install the published package in another project with:
+
+```bash
+npm install @tryformation/querylight-ts
+```
+
+For local development in this repository:
+
+```bash
+npm install
+```
+
 ## Commands
 
 ```bash
