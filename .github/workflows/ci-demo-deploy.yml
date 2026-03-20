@@ -53,7 +53,7 @@ jobs:
         run: npm ci
 
       - name: Build core package
-        run: npm run build --workspace @querylight/core
+        run: npm run build --workspace @tryformation/querylight-ts
 
       - name: Build demo
         run: npm run build --workspace @querylight/demo
