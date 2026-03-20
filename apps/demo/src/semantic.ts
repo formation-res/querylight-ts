@@ -62,6 +62,8 @@ type HeadingBlock = {
 };
 
 export function stripMarkdown(value: string): string {
+  // Keep semantic text stable by removing markup that would add noise without
+  // helping the model understand the actual content.
   return value
     .replace(/```[\w-]*\n[\s\S]*?```/g, " ")
     .replace(/`([^`]+)`/g, "$1")
@@ -76,10 +78,14 @@ export function stripMarkdown(value: string): string {
 }
 
 export function createArticleSemanticText(doc: SemanticDocSource): string {
+  // Whole-article embeddings support related-article suggestions, so include the
+  // title, summary, and body to capture the page's overall topic.
   return [doc.title, doc.summary, doc.body].filter(Boolean).join("\n\n");
 }
 
 export function createChunkSourceRecords(doc: SemanticDocSource): ChunkSourceRecord[] {
+  // Ask-the-docs works better on smaller topical chunks than on whole pages, so
+  // split by headings first and then pack paragraphs into overlapping groups.
   const blocks = splitMarkdownIntoHeadingBlocks(doc.markdown);
   const chunks: ChunkSourceRecord[] = [];
 
@@ -120,6 +126,8 @@ export function createChunkSourceRecords(doc: SemanticDocSource): ChunkSourceRec
 }
 
 export function createChunkSemanticText(chunk: ChunkSourceRecord): string {
+  // Preserve document context in every chunk embedding by repeating the title
+  // and heading path alongside the chunk text.
   return [chunk.title, ...chunk.headingPath, chunk.text].filter(Boolean).join("\n\n");
 }
 
@@ -128,6 +136,8 @@ export function formatHeadingPath(headingPath: string[]): string {
 }
 
 function splitMarkdownIntoHeadingBlocks(markdown: string): HeadingBlock[] {
+  // Keep chunk boundaries aligned with visible sections so semantic matches map
+  // back to the rendered documentation structure.
   const lines = markdown.split("\n");
   const blocks: HeadingBlock[] = [];
   let currentH2: string | null = null;
@@ -213,6 +223,8 @@ function splitParagraphsIntoGroups(paragraphs: string[]): string[] {
       break;
     }
 
+    // Small overlaps reduce the chance that a useful answer disappears exactly
+    // at a chunk boundary.
     start = Math.max(end - CHUNK_OVERLAP_PARAGRAPHS, start + 1);
   }
 
@@ -223,7 +235,7 @@ function estimateTokenCount(value: string): number {
   return value.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function serializeHeadingPath(headingPath: string[]): string {
+export function serializeHeadingPath(headingPath: string[]): string {
   if (headingPath.length === 0) {
     return "intro";
   }

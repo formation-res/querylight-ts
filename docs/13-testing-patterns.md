@@ -7,9 +7,6 @@ tags: [testing, vitest, examples, semantics, confidence]
 apis: [BoolQuery, RangeQuery, VectorFieldIndex, GeoFieldIndex]
 level: advanced
 order: "13"
-city: Dublin
-lat: 53.3498
-lon: -6.2603
 ---
 
 # Testing Patterns from the Repository

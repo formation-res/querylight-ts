@@ -7,9 +7,6 @@ tags: [ranking, rrf, fusion, vector, geo, filters]
 apis: [reciprocalRankFusion, MatchQuery, GeoPointQuery, VectorFieldIndex, bigramVector]
 level: advanced
 order: "14"
-city: Berlin
-lat: 52.52
-lon: 13.405
 ---
 
 # Reciprocal Rank Fusion

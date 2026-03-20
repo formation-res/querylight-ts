@@ -8,6 +8,8 @@ function demoDataPlugin(): Plugin {
   const generatedDataPath = path.resolve(__dirname, "src/generated/demo-data.json");
   const docsDir = path.resolve(workspaceRoot, "docs") + path.sep;
   const refresh = async () => {
+    // Rebuild the generated demo payload from markdown so dev, production
+    // builds, and CI all use the same indexing and embedding pipeline.
     await writeDemoDataFile(workspaceRoot, generatedDataPath);
   };
 

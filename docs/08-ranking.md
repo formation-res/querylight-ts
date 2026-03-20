@@ -7,9 +7,6 @@ tags: [ranking, bm25, tfidf, scoring, relevance]
 apis: [RankingAlgorithm, TextFieldIndex, defaultBm25Config]
 level: foundation
 order: "08"
-city: Stockholm
-lat: 59.3293
-lon: 18.0686
 ---
 
 # TF-IDF and BM25 Ranking

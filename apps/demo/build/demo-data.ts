@@ -124,6 +124,8 @@ function toDocEntry(filePath: string, raw: string): DocEntry {
 }
 
 function toDocument(entry: DocEntry): Document {
+  // Keep metadata in dedicated fields so the demo can mix free-text search,
+  // facets, suggestions, and API/tag navigation from one index payload.
   return {
     id: entry.id,
     fields: {
@@ -159,6 +161,9 @@ function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
 }
 
 function createSerializedIndexes(docs: DocEntry[], ranking: RankingAlgorithm): SerializedRuntimeIndexes {
+  // Build two lexical views of the same corpus:
+  // - a fielded index for the main search UI
+  // - an ngram index for typo recovery and reciprocal-rank fusion
   const source = createDocIndex(ranking);
   const fuzzy = new DocumentIndex({
     combined: new TextFieldIndex(fuzzyAnalyzer, fuzzyAnalyzer, ranking)
@@ -185,12 +190,16 @@ async function getEmbeddingExtractor(): Promise<FeatureExtractionPipeline> {
 }
 
 async function embedText(value: string): Promise<number[]> {
+  // Use normalized mean-pooled embeddings so cosine similarity is directly
+  // usable both for offline relatedness and runtime question matching.
   const extractor = await getEmbeddingExtractor();
   const output = await extractor(value, { pooling: "mean", normalize: true });
   return output.tolist()[0] as number[];
 }
 
 async function createSemanticPayload(docs: DocEntry[]): Promise<SemanticPayload> {
+  // Precompute the full semantic corpus at build time so the deployed demo only
+  // needs to embed the user's query in the browser.
   const articleEmbeddings: ArticleEmbeddingRecord[] = [];
   const chunkEmbeddings: ChunkEmbeddingRecord[] = [];
   let dimensions = 0;
@@ -205,6 +214,8 @@ async function createSemanticPayload(docs: DocEntry[]): Promise<SemanticPayload>
 
     const chunks = createChunkSourceRecords(doc);
     for (const chunk of chunks) {
+      // Chunk-level embeddings power Ask-the-docs because paragraph-sized
+      // matches are more precise than whole-page matches.
       const embedding = await embedText(createChunkSemanticText(chunk));
       dimensions ||= embedding.length;
       chunkEmbeddings.push({
@@ -231,6 +242,8 @@ async function createSemanticPayload(docs: DocEntry[]): Promise<SemanticPayload>
 }
 
 function createRelatedArticleRecords(articleEmbeddings: ArticleEmbeddingRecord[]): RelatedArticleRecord[] {
+  // Related article cards are computed offline from whole-page embeddings to
+  // keep the browser runtime simple and deterministic.
   return articleEmbeddings.map((source) => ({
     docId: source.docId,
     neighbors: articleEmbeddings
@@ -285,6 +298,8 @@ export async function buildDemoDataPayload(rootDir: string): Promise<DemoDataPay
 }
 
 export async function writeDemoDataFile(rootDir: string, outputPath: string): Promise<void> {
+  // Vite calls this in dev and production builds so markdown edits refresh both
+  // lexical indexes and semantic embeddings together.
   const payload = await buildDemoDataPayload(rootDir);
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, JSON.stringify(payload), "utf8");

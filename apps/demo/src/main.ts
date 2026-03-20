@@ -34,6 +34,7 @@ import {
   SEMANTIC_INDEX_HASH_TABLES,
   SEMANTIC_INDEX_RANDOM_SEED,
   formatHeadingPath,
+  serializeHeadingPath,
   type ChunkEmbeddingRecord,
   type RelatedArticleRecord,
   type SemanticModelInfo,
@@ -164,6 +165,35 @@ const markdown = new MarkdownIt({
   }
 });
 
+markdown.core.ruler.push("querylight_heading_anchors", (state) => {
+  let currentH2: string | null = null;
+  let currentH3: string | null = null;
+
+  state.tokens.forEach((token, index) => {
+    if (token.type !== "heading_open") {
+      return;
+    }
+
+    const inlineToken = state.tokens[index + 1];
+    const headingText = inlineToken?.type === "inline" ? inlineToken.content.trim() : "";
+    if (!headingText) {
+      return;
+    }
+
+    if (token.tag === "h2") {
+      currentH2 = headingText;
+      currentH3 = null;
+      token.attrSet("id", chunkAnchorDomId(serializeHeadingPath([headingText])));
+      return;
+    }
+
+    if (token.tag === "h3") {
+      currentH3 = headingText;
+      token.attrSet("id", chunkAnchorDomId(serializeHeadingPath([currentH2, currentH3].filter((value): value is string => Boolean(value)))));
+    }
+  });
+});
+
 const tagAnalyzer = new Analyzer([], new KeywordTokenizer());
 const fuzzyAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3)]);
 const edgeAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilter(2, 6)]);
@@ -194,6 +224,7 @@ const initialState: SearchState = {
 
 let state: SearchState = { ...initialState };
 let activeDocId = "";
+let activeChunkId: string | null = null;
 let currentView: "home" | "results" | "detail" | "ask" = "home";
 let activeExperience: QueryExperience = "search";
 let submittedResult: SearchResult | null = null;
@@ -224,6 +255,61 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll("\"", "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function chunkAnchorDomId(anchor: string): string {
+  return `chunk-anchor-${anchor}`;
+}
+
+function chunkTargetDomId(chunkId: string): string {
+  return `chunk-target-${encodeURIComponent(chunkId)}`;
+}
+
+function getChunkAnchor(chunk: ChunkEmbeddingRecord): string {
+  return serializeHeadingPath(chunk.headingPath);
+}
+
+function buildDetailHash(docId: string, chunkId?: string | null): string {
+  const params = new URLSearchParams({ doc: docId });
+  if (chunkId) {
+    params.set("chunk", chunkId);
+  }
+  return `#${params.toString()}`;
+}
+
+function updateDetailHash(docId: string, chunkId?: string | null): void {
+  const url = new URL(window.location.href);
+  const nextHash = buildDetailHash(docId, chunkId);
+  if (url.hash === nextHash) {
+    return;
+  }
+  url.hash = nextHash;
+  window.history.replaceState(null, "", url);
+}
+
+function clearDetailHash(): void {
+  const url = new URL(window.location.href);
+  if (!url.hash) {
+    return;
+  }
+  url.hash = "";
+  window.history.replaceState(null, "", url);
+}
+
+function parseDetailHash(): { docId: string; chunkId: string | null } | null {
+  const rawHash = window.location.hash.replace(/^#/, "");
+  if (!rawHash) {
+    return null;
+  }
+  const params = new URLSearchParams(rawHash);
+  const docId = params.get("doc");
+  if (!docId) {
+    return null;
+  }
+  return {
+    docId,
+    chunkId: params.get("chunk")
+  };
 }
 
 function formatRelativeBuildTime(timestamp: string): string {
@@ -325,6 +411,8 @@ function createVectorIndex(dimensions: number): VectorFieldIndex {
 }
 
 function createSemanticRuntime(semanticPayload: SemanticPayload): SemanticRuntime {
+  // Load the precomputed chunk embeddings into an ANN index once at startup so
+  // Ask-the-docs queries only need to embed the user's question.
   const chunkIndex = createVectorIndex(semanticPayload.model.dimensions);
 
   semanticPayload.chunkEmbeddings.forEach((record) => {
@@ -372,6 +460,8 @@ function createNavSections(context: RuntimeContext): NavSection[] {
 let browserEmbeddingExtractorPromise: Promise<(value: string) => Promise<number[]>> | null = null;
 
 async function embedSemanticQuery(value: string, modelId: string): Promise<number[]> {
+  // Lazy-load the browser model so the normal lexical search experience does not
+  // pay the transformer startup cost unless the user opens Ask the Docs.
   browserEmbeddingExtractorPromise ??= (async () => {
     const { pipeline } = await import("@huggingface/transformers");
     const extractor = await pipeline("feature-extraction", modelId);
@@ -405,6 +495,8 @@ function getRelatedArticles(context: RuntimeContext, doc: DocEntry): RelatedArti
 }
 
 function getSemanticQuestionResults(context: RuntimeContext, queryVector: number[], limit = 4): ChunkHitViewModel[] {
+  // Retrieve more than the final limit and then collapse to one hit per
+  // document so the answer list is diverse instead of dominated by one page.
   const byDocId = new Map<string, ChunkHitViewModel>();
 
   context.semantic.chunkIndex
@@ -483,6 +575,8 @@ type QueryFilters = {
 };
 
 function searchForState(context: RuntimeContext, current: SearchState): SearchResult {
+  // One search pass produces both the visible result list and the derived facet
+  // data so the sidebar always reflects the currently selected result set.
   const active = context.indexes[current.ranking];
   const index = active.hydrated;
   const bodyIndex = index.getFieldIndex("body") as TextFieldIndex;
@@ -901,6 +995,8 @@ function renderFacets(context: RuntimeContext, activeFiltersNode: HTMLDivElement
           .join("")
       : `<p class="text-sm text-stone-500">No active facets.</p>`;
 
+  // When there is no active search, fall back to corpus-wide facet counts so the
+  // sidebar still acts as an exploratory navigation surface.
   const source = current ?? searchForState(context, { ...initialState, query: "", tag: null, section: null });
   const sectionFacets = Object.entries(source.sectionFacets);
   const tagFacets = Object.entries(source.tagFacets);
@@ -1049,6 +1145,11 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
   const renderedMarkdown = context.renderedMarkdown.get(doc.id) ?? markdown.render(doc.markdown);
   context.renderedMarkdown.set(doc.id, renderedMarkdown);
   const relatedArticlesPanel = renderRelatedArticles(context, doc);
+  const activeChunk =
+    activeChunkId && context.semantic.chunkEmbeddingsById.get(activeChunkId)?.docId === doc.id
+      ? context.semantic.chunkEmbeddingsById.get(activeChunkId) ?? null
+      : null;
+  const activeChunkAnchor = activeChunk ? getChunkAnchor(activeChunk) : null;
 
   centerNode.innerHTML = `
     <article class="reader-page grid gap-4">
@@ -1100,8 +1201,24 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
           <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${escapeHtml(doc.title)}</h1>
           <p class="mt-3 text-sm text-stone-600">${escapeHtml(`${doc.section} · ${doc.level} · order ${doc.order}`)}</p>
         </header>
-        <div class="px-6 py-8 sm:px-8 sm:py-10">
+        <div id="${chunkAnchorDomId("intro")}" class="px-6 py-8 sm:px-8 sm:py-10">
           <p class="text-lg text-stone-600">${escapeHtml(doc.summary)}</p>
+          ${
+            activeChunk
+              ? `
+                <section id="${chunkTargetDomId(activeChunk.chunkId)}" class="mt-6 rounded-3xl border border-orange-900/10 bg-orange-50/80 px-5 py-4">
+                  <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Matched Chunk</p>
+                      <h2 class="mt-2 font-serif text-2xl text-stone-950">${escapeHtml(formatHeadingPath(activeChunk.headingPath))}</h2>
+                    </div>
+                    <a class="chip-button" href="#${escapeHtml(chunkAnchorDomId(activeChunkAnchor ?? "intro"))}">Jump to section</a>
+                  </div>
+                  <p class="mt-4 text-sm leading-7 text-stone-700">${escapeHtml(activeChunk.text)}</p>
+                </section>
+              `
+              : ""
+          }
           <div class="mt-5">
             <h2 class="font-serif text-xl text-stone-950">Relevant APIs</h2>
             <div class="mt-3 flex flex-wrap gap-2">
@@ -1125,6 +1242,15 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
       ${relatedArticlesPanel}
     </article>
   `;
+
+  if (activeChunkId) {
+    const chunkTarget = centerNode.querySelector<HTMLElement>(`#${CSS.escape(chunkTargetDomId(activeChunkId))}`);
+    if (chunkTarget) {
+      window.requestAnimationFrame(() => {
+        chunkTarget.scrollIntoView({ block: "start", behavior: "smooth" });
+      });
+    }
+  }
 }
 
 function renderAskResultsPage(centerNode: HTMLDivElement): void {
@@ -1152,7 +1278,7 @@ function renderAskResultsPage(centerNode: HTMLDivElement): void {
             ? `<div class="rounded-3xl border border-dashed border-stone-900/10 bg-stone-50/80 px-5 py-4 text-sm text-stone-600">No semantic matches found. Try a broader question.</div>`
             : semanticQuestionState.results
                 .map(({ chunk, doc, score }, index) => `
-                  <button class="nav-result" data-doc="${escapeHtml(doc.id)}" data-open-doc="true">
+                  <button class="nav-result" data-doc="${escapeHtml(doc.id)}" data-chunk-id="${escapeHtml(chunk.chunkId)}" data-open-doc="true">
                     <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
                       <span>${index + 1}. ${escapeHtml(doc.section)} · ${escapeHtml(formatHeadingPath(chunk.headingPath))}</span>
                       <span>${score.toFixed(2)}</span>
@@ -1300,6 +1426,20 @@ function wireApp(context: RuntimeContext): void {
     renderSuggestionsOnly();
   };
 
+  const applyLocationHash = () => {
+    const detailHash = parseDetailHash();
+    if (!detailHash || !context.byId.has(detailHash.docId)) {
+      return;
+    }
+
+    activeDocId = detailHash.docId;
+    activeChunkId =
+      detailHash.chunkId && context.semantic.chunkEmbeddingsById.get(detailHash.chunkId)?.docId === detailHash.docId
+        ? detailHash.chunkId
+        : null;
+    currentView = "detail";
+  };
+
   const runSemanticSearch = async () => {
     const trimmed = semanticQuestionState.query.trim();
     if (!trimmed) {
@@ -1386,6 +1526,8 @@ function wireApp(context: RuntimeContext): void {
       suggestionResult = null;
       currentView = "home";
       activeDocId = "";
+      activeChunkId = null;
+      clearDetailHash();
     }
     if (!semanticQuestionState.query.trim()) {
       semanticQuestionState = { query: "", status: "idle", results: [], error: null };
@@ -1502,7 +1644,9 @@ function wireApp(context: RuntimeContext): void {
       if (submittedResult) {
         currentView = "results";
       }
+      activeChunkId = null;
       activeExperience = "search";
+      clearDetailHash();
       renderShell();
       return;
     }
@@ -1521,6 +1665,7 @@ function wireApp(context: RuntimeContext): void {
     const docId = docTarget?.dataset.doc;
     if (docId) {
       activeDocId = docId;
+      activeChunkId = docTarget?.dataset.chunkId ?? null;
       closeMobilePanel();
       if (docTarget?.dataset.openDoc === "true" || docTarget?.dataset.suggestion === "true") {
         if (!submittedResult && state.query.trim()) {
@@ -1531,6 +1676,7 @@ function wireApp(context: RuntimeContext): void {
       } else if (!submittedResult) {
         currentView = "detail";
       }
+      updateDetailHash(activeDocId, activeChunkId);
       suggestionResult = null;
       renderApp();
       return;
@@ -1571,8 +1717,13 @@ function wireApp(context: RuntimeContext): void {
     runSubmittedSearch("results");
   });
 
+  window.addEventListener("hashchange", () => {
+    applyLocationHash();
+    renderApp();
+  });
   window.addEventListener("resize", syncViewportState);
 
+  applyLocationHash();
   syncControls();
   syncViewportState();
   renderApp();

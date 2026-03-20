@@ -7,9 +7,6 @@ tags: [serialization, state, json, hydration, portability]
 apis: [indexState, loadState, DocumentIndexState, TextFieldIndexState]
 level: indexing
 order: "12"
-city: Helsinki
-lat: 60.1699
-lon: 24.9384
 ---
 
 # Portable JSON Index State

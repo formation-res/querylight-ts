@@ -7,9 +7,6 @@ tags: [geo, geohash, polygon, point, geometry]
 apis: [GeoFieldIndex, GeoPointQuery, GeoPolygonQuery, rectangleToPolygon]
 level: advanced
 order: "11"
-city: Warsaw
-lat: 52.2297
-lon: 21.0122
 ---
 
 # Geo Indexing with Points and Polygons

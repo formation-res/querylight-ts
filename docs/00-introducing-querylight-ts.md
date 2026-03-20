@@ -7,9 +7,6 @@ tags: [overview, browser, static-sites, search, vector, geo]
 apis: [DocumentIndex, TextFieldIndex, VectorFieldIndex, GeoFieldIndex]
 level: foundation
 order: "00"
-city: Amsterdam
-lat: 52.3676
-lon: 4.9041
 ---
 
 # Introducing Querylight TS

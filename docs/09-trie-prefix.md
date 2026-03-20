@@ -7,9 +7,6 @@ tags: [indexing, trie, prefix, autocomplete, edge-ngrams]
 apis: [SimpleStringTrie, MatchQuery, EdgeNgramsTokenFilter]
 level: indexing
 order: "09"
-city: Vienna
-lat: 48.2082
-lon: 16.3738
 ---
 
 # Trie-Backed Prefix Expansion

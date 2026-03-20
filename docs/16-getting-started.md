@@ -7,9 +7,6 @@ tags: [getting-started, browser, simple, search, serialization]
 apis: [createSimpleTextSearchIndex, simpleTextSearch, DocumentIndex, TextFieldIndex, MatchPhrase, MatchQuery, reciprocalRankFusion]
 level: foundation
 order: "16"
-city: Utrecht
-lat: 52.0907
-lon: 5.1214
 ---
 
 # Getting Started with Browser Search

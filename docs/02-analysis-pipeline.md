@@ -7,9 +7,6 @@ tags: [analysis, analyzer, tokenizer, ngrams, normalization]
 apis: [Analyzer, KeywordTokenizer, NgramTokenFilter, EdgeNgramsTokenFilter]
 level: foundation
 order: "02"
-city: Amsterdam
-lat: 52.3676
-lon: 4.9041
 ---
 
 # Analyzers, Tokenizers, and Filters

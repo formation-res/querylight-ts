@@ -7,9 +7,6 @@ tags: [query, range, filters, ordering, facets]
 apis: [RangeQuery, TextFieldIndex, DocumentIndex]
 level: querying
 order: "06"
-city: Lisbon
-lat: 38.7223
-lon: -9.1393
 ---
 
 # RangeQuery Over Lexical Fields

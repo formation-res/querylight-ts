@@ -7,9 +7,6 @@ tags: [query, term, match, prefix, trie]
 apis: [TermQuery, TermsQuery, PrefixQuery, ExistsQuery, MatchQuery, MultiMatchQuery, OP, SimpleStringTrie]
 level: querying
 order: "03"
-city: Copenhagen
-lat: 55.6761
-lon: 12.5683
 ---
 
 # Term, Terms, Prefix, Exists, and Match Queries

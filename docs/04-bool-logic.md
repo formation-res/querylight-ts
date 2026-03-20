@@ -7,9 +7,6 @@ tags: [query, bool, filtering, must, must-not]
 apis: [BoolQuery, MatchQuery, TermQuery, QueryContext]
 level: querying
 order: "04"
-city: London
-lat: 51.5072
-lon: -0.1276
 ---
 
 # BoolQuery for Must, Should, Filter, MustNot, and MinimumShouldMatch

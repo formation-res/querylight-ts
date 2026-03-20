@@ -40,6 +40,8 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 - [Introducing Querylight TS](docs/00-introducing-querylight-ts.md)
 - [Getting started with browser search](docs/16-getting-started.md)
 - [Documentation overview](docs/01-overview.md)
+- [Ask the Docs end to end](docs/18-ask-the-docs.md)
+- [How the tag aggregations sidebar works](docs/19-tag-aggregations-sidebar.md)
 - [Highlighting with Querylight TS](docs/17-highlighting.md)
 
 ## Install

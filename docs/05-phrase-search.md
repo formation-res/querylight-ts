@@ -7,9 +7,6 @@ tags: [query, phrase, slop, ranking, exactness]
 apis: [MatchPhrase, Analyzer, TextFieldIndex]
 level: querying
 order: "05"
-city: Paris
-lat: 48.8566
-lon: 2.3522
 ---
 
 # Phrase Search and Slop
