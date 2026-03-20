@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tryformation/querylight-ts": "0.1.1",
+    "@tryformation/querylight-ts": "0.2.0",
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.2.2",
     "highlight.js": "^11.11.1",

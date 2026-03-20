@@ -289,7 +289,7 @@ export class MultiMatchQuery implements Query {
 
   highlightClauses(documentIndex: DocumentIndex) {
     return this.fields.flatMap((field) => (
-      new MatchQuery(field, this.text, this.operation, this.prefixMatch, this.fieldBoosts[field] ?? 1.0).highlightClauses(documentIndex)
+      new MatchQuery(field, this.text, this.operation, this.prefixMatch, this.fieldBoosts[field] ?? 1.0).highlightClauses()
     ));
   }
 }
