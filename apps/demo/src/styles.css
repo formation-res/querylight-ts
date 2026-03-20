@@ -36,11 +36,147 @@
     @apply inline-flex items-center gap-2 rounded-full border border-stone-900/10 bg-white/80 px-3 py-2 text-sm text-stone-700 transition hover:border-orange-700/40 hover:text-stone-900;
   }
 
+  .control-button {
+    @apply inline-flex shrink-0 items-center justify-center rounded-2xl border border-stone-900/10 bg-stone-950 px-4 py-3 text-sm font-semibold text-stone-50 transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:border-stone-900/5 disabled:bg-stone-200 disabled:text-stone-400;
+  }
+
+  .control-button-muted {
+    @apply bg-white/85 text-stone-800 hover:bg-stone-100;
+  }
+
   .control-input {
     @apply w-full rounded-2xl border border-stone-900/10 bg-white/85 px-4 py-3 text-stone-900 outline-none transition focus:border-orange-700/50 focus:ring-2 focus:ring-orange-700/15;
   }
 
   .prose-docs {
     @apply prose prose-stone max-w-none prose-headings:font-serif prose-headings:text-stone-950 prose-p:text-stone-700 prose-li:text-stone-700 prose-strong:text-stone-950 prose-code:text-stone-900 prose-code:before:content-none prose-code:after:content-none prose-pre:rounded-3xl prose-pre:border prose-pre:border-stone-900/10 prose-pre:bg-stone-950 prose-pre:shadow-none;
+  }
+
+  .reader-layout {
+    @apply grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)_320px] xl:items-start;
+  }
+
+  .reader-layout-below {
+    @apply relative z-0;
+  }
+
+  .reader-sidebar {
+    @apply min-w-0;
+  }
+
+  .reader-facets {
+    @apply min-w-0;
+  }
+
+  .reader-facets-inner {
+    @apply grid gap-5 xl:sticky xl:top-6;
+  }
+
+  .reader-main {
+    @apply min-w-0;
+  }
+
+  .reader-page-wrap {
+    @apply flex justify-center;
+  }
+
+  .reader-page {
+    @apply min-h-[70vh] w-full max-w-4xl overflow-hidden;
+  }
+
+  .search-form {
+    @apply relative z-30;
+  }
+
+  .search-shell {
+    @apply relative z-40;
+  }
+
+  .search-input-wrap {
+    @apply relative z-30 flex flex-col gap-3 md:flex-row md:items-center;
+  }
+
+  .suggestions-panel {
+    @apply absolute left-0 right-0 top-[calc(100%+10px)] z-50 grid gap-2 rounded-[24px] border border-stone-900/10 bg-white/95 p-3 shadow-[0_24px_70px_rgba(31,30,27,0.12)] backdrop-blur-xl;
+  }
+
+  .suggestion-item {
+    @apply min-w-0 w-full overflow-hidden rounded-2xl border border-transparent bg-white/70 px-4 py-3 text-left transition hover:border-orange-700/30 hover:bg-orange-50/50;
+  }
+
+  .nav-result {
+    @apply min-w-0 w-full overflow-hidden rounded-2xl border border-stone-900/10 bg-white/80 px-4 py-3 text-left transition hover:border-orange-700/40 hover:bg-white;
+  }
+
+  .nav-result-active {
+    @apply border-orange-700/45 bg-orange-50/60 ring-1 ring-orange-700/15;
+  }
+
+  .toc-link {
+    @apply flex min-w-0 w-full items-start gap-3 overflow-hidden rounded-2xl border border-transparent px-3 py-3 text-left text-stone-700 transition hover:border-orange-700/30 hover:bg-white/70 hover:text-stone-950;
+  }
+
+  .toc-link-active {
+    @apply border-orange-700/30 bg-orange-50/70 text-stone-950 ring-1 ring-orange-700/10;
+  }
+
+  .toc-link-disabled {
+    @apply cursor-not-allowed opacity-45 hover:border-transparent hover:bg-transparent hover:text-stone-700;
+  }
+
+  .toc-link-order {
+    @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-stone-900/10 bg-white/80 font-mono text-xs text-stone-500;
+  }
+
+  .doc-card {
+    @apply min-w-0 w-full overflow-hidden rounded-[26px] border border-stone-900/10 bg-stone-50/70 px-5 py-5 text-left transition hover:border-orange-700/35 hover:bg-white;
+  }
+
+  .toc-link-body {
+    @apply block min-w-0 overflow-hidden;
+  }
+
+  .toc-link-title {
+    @apply block overflow-hidden text-ellipsis text-balance font-medium text-stone-900;
+  }
+
+  .toc-link-meta {
+    @apply mt-1 block truncate text-xs text-stone-500;
+  }
+
+  .suggestion-title {
+    @apply mt-1 block overflow-hidden text-ellipsis font-medium text-stone-900;
+  }
+
+  .suggestion-summary {
+    @apply mt-1 block overflow-hidden text-sm leading-6 text-stone-600;
+  }
+
+  .card-title {
+    @apply mt-3 overflow-hidden text-balance font-serif text-2xl leading-tight text-stone-950;
+    overflow-wrap: anywhere;
+  }
+
+  .card-summary {
+    @apply mt-2 overflow-hidden text-sm leading-6 text-stone-600;
+    overflow-wrap: anywhere;
+  }
+
+  .result-title {
+    @apply mt-2 overflow-hidden font-serif text-2xl leading-tight text-stone-950;
+    overflow-wrap: anywhere;
+  }
+
+  .result-title-sm {
+    @apply text-xl;
+  }
+
+  .result-summary {
+    @apply mt-2 overflow-hidden text-sm leading-6 text-stone-600;
+    overflow-wrap: anywhere;
+  }
+
+  .result-summary-sm {
+    @apply mt-1;
   }
 }

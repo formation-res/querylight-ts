@@ -91,6 +91,11 @@ type RuntimeContext = {
   indexes: Record<RankingAlgorithm, RuntimeIndexes>;
 };
 
+type NavSection = {
+  name: string;
+  docs: DocEntry[];
+};
+
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
   throw new Error("App root not found");
@@ -119,13 +124,14 @@ const fuzzyAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3
 const edgeAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilter(2, 6)]);
 const vectorAnalyzer = new Analyzer();
 const SEARCH_INPUT_DEBOUNCE_MS = 150;
+const DOC_SECTION_ORDER = ["Overview", "Analysis", "Queries", "Discovery", "Ranking", "Indexing", "Advanced", "Operations"];
 const docModules = import.meta.glob("../../../docs/*.md", {
   query: "?raw",
   import: "default"
 });
 
 const initialState: SearchState = {
-  query: "phrase search",
+  query: "",
   mode: "hybrid",
   operation: OP.AND,
   prefix: false,
@@ -137,6 +143,9 @@ const initialState: SearchState = {
 
 let state: SearchState = { ...initialState };
 let activeDocId = "";
+let currentView: "home" | "results" | "detail" = "home";
+let submittedResult: SearchResult | null = null;
+let suggestionResult: SearchResult | null = null;
 
 function renderLoading(message: string): void {
   app.innerHTML = `
@@ -315,10 +324,15 @@ function createIndexes(docs: DocEntry[], ranking: RankingAlgorithm): RuntimeInde
 }
 
 function createRuntimeContext(docs: DocEntry[]): RuntimeContext {
+  const sectionSet = new Set(docs.map((doc) => doc.section));
+  const sections = DOC_SECTION_ORDER.filter((section) => sectionSet.has(section)).concat(
+    [...sectionSet].filter((section) => !DOC_SECTION_ORDER.includes(section))
+  );
+
   return {
     docs,
     byId: new Map(docs.map((doc) => [doc.id, doc])),
-    sections: [...new Set(docs.map((doc) => doc.section))],
+    sections,
     allTags: [...new Set(docs.flatMap((doc) => doc.tags))].sort(),
     allCities: [...new Set(docs.map((doc) => doc.city))],
     indexes: {
@@ -326,6 +340,15 @@ function createRuntimeContext(docs: DocEntry[]): RuntimeContext {
       [RankingAlgorithm.TFIDF]: createIndexes(docs, RankingAlgorithm.TFIDF)
     }
   };
+}
+
+function createNavSections(context: RuntimeContext): NavSection[] {
+  return context.sections
+    .map((section) => ({
+      name: section,
+      docs: context.docs.filter((doc) => doc.section === section)
+    }))
+    .filter((section) => section.docs.length > 0);
 }
 
 function mergeHits(...groups: Hits[]): Hits {
@@ -337,6 +360,39 @@ function mergeHits(...groups: Hits[]): Hits {
     });
   });
   return [...scores.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function rerankWithTitleBoost(context: RuntimeContext, rawQuery: string, hits: Hits): Hits {
+  const normalizedQuery = rawQuery.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return hits;
+  }
+
+  const queryTerms = normalizedQuery.split(/\s+/).filter(Boolean);
+  return hits
+    .map(([id, score]) => {
+      const title = context.byId.get(id)?.title.toLowerCase() ?? "";
+      let boost = 0;
+
+      if (title === normalizedQuery) {
+        boost += 12;
+      }
+      if (title.startsWith(normalizedQuery)) {
+        boost += 8;
+      }
+      if (title.includes(normalizedQuery)) {
+        boost += 6;
+      }
+      if (queryTerms.every((term) => title.includes(term))) {
+        boost += 4;
+      }
+      if (queryTerms.some((term) => title.startsWith(term))) {
+        boost += 2;
+      }
+
+      return [id, score + boost] as const;
+    })
+    .sort((a, b) => b[1] - a[1]);
 }
 
 function parseQueryInput(rawQuery: string): { queryText: string; quotedPhrase: string | null } {
@@ -377,13 +433,14 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   const { queryText, quotedPhrase } = parseQueryInput(current.query);
   const trimmed = queryText.trim();
   const { filters, mustNot } = buildFacetFilterQueries(current);
+  const filterOnlyQuery = filters.length > 0 || mustNot.length > 0 ? new BoolQuery([], [], filters, mustNot) : new MatchAll();
 
   const baseTextQuery =
     trimmed.length === 0
       ? new MatchAll()
       : new BoolQuery(
           [
-            new MatchQuery("title", trimmed, current.operation, current.prefix, 4),
+            new MatchQuery("title", trimmed, current.operation, current.prefix, 7),
             new MatchQuery("tagline", trimmed, current.operation, current.prefix, 2.5),
             new MatchQuery("body", trimmed, current.operation, current.prefix, 2),
             new MatchQuery("api", trimmed, OP.OR, current.prefix, 2.75),
@@ -398,10 +455,10 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
 
   const phraseQuery =
     trimmed.length === 0
-      ? new BoolQuery([], [], filters, mustNot)
+      ? filterOnlyQuery
       : new BoolQuery(
           [
-            new MatchPhrase("title", quotedPhrase ?? trimmed, 0, 4),
+            new MatchPhrase("title", quotedPhrase ?? trimmed, 0, 8),
             new MatchPhrase("body", quotedPhrase ?? trimmed, 1, 3),
             new MatchPhrase("examples", quotedPhrase ?? trimmed, 1, 2)
           ],
@@ -420,7 +477,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
 
   const allowedIds =
     filters.length > 0 || mustNot.length > 0
-      ? index.searchRequest({ query: new BoolQuery([], [], filters, mustNot) }).map(([id]) => id)
+      ? index.searchRequest({ query: filterOnlyQuery }).map(([id]) => id)
       : undefined;
 
   const vectorHits =
@@ -441,7 +498,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
 
   switch (current.mode) {
     case "all":
-      lexicalHits = index.searchRequest({ query: new BoolQuery([], [], filters, mustNot) });
+      lexicalHits = index.searchRequest({ query: filterOnlyQuery });
       finalHits = lexicalHits;
       break;
     case "phrase":
@@ -468,12 +525,15 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
       break;
     case "match":
       lexicalHits = index.searchRequest({ query: baseTextQuery, limit: 20 });
-      finalHits = lexicalHits;
+      finalHits = rerankWithTitleBoost(context, trimmed, lexicalHits);
       break;
     case "hybrid":
     default:
       lexicalHits = index.searchRequest({ query: baseTextQuery, limit: 20 });
-      finalHits = mergeHits(index.searchRequest({ query: phraseQuery, limit: 10 }), lexicalHits, fuzzyHits, vectorHits);
+      finalHits =
+        trimmed.length === 0
+          ? lexicalHits
+          : rerankWithTitleBoost(context, trimmed, mergeHits(index.searchRequest({ query: phraseQuery, limit: 10 }), lexicalHits, fuzzyHits, vectorHits));
       break;
   }
 
@@ -501,260 +561,404 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
 }
 
 function createShell(context: RuntimeContext): void {
+  const navSections = createNavSections(context);
+
   app.innerHTML = `
-    <main class="mx-auto grid w-[min(1200px,calc(100vw-32px))] gap-5 py-8">
-      <section class="surface p-7 md:p-8">
-        <div class="max-w-4xl">
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Documentation Browser Demo</p>
-          <h1 class="mt-2 font-serif text-[clamp(2.8rem,8vw,5.1rem)] leading-none text-stone-950">Querylight TS in depth</h1>
-          <p class="mt-4 max-w-3xl text-lg text-stone-600">This app loads markdown from the repository <code>docs/</code> folder at runtime, renders it as documentation, and indexes it in the browser with Querylight. It exercises BM25, TF-IDF, phrase search, prefix expansion, bool filtering, aggregations, significant terms, fuzzy ngrams, vectors, geo queries, and hydrated JSON state.</p>
-        </div>
-        <div class="mt-6 grid gap-3 md:grid-cols-6">
-          <label class="md:col-span-2">
-            <span class="mb-2 block text-sm font-semibold text-stone-700">Search the docs</span>
-            <input id="query" class="control-input" placeholder="Try: phrase search, vectro serch, portable json index state, geo polygon" />
-          </label>
-          <label>
-            <span class="mb-2 block text-sm font-semibold text-stone-700">Mode</span>
-            <select id="mode" class="control-input">
-              <option value="hybrid">Hybrid</option>
-              <option value="match">Match</option>
-              <option value="phrase">Phrase</option>
-              <option value="fuzzy">Fuzzy (ngrams)</option>
-              <option value="vector">Vector</option>
-              <option value="geo-point">Geo point</option>
-              <option value="geo-polygon">Geo polygon</option>
-              <option value="all">Match all</option>
-            </select>
-          </label>
-          <label>
-            <span class="mb-2 block text-sm font-semibold text-stone-700">Ranking</span>
-            <select id="ranking" class="control-input">
-              <option value="BM25">BM25</option>
-              <option value="TFIDF">TF-IDF</option>
-            </select>
-          </label>
-          <label>
-            <span class="mb-2 block text-sm font-semibold text-stone-700">Boolean mode</span>
-            <select id="operation" class="control-input">
-              <option value="AND">AND</option>
-              <option value="OR">OR</option>
-            </select>
-          </label>
-          <div class="grid gap-3">
-            <label class="flex min-h-[54px] items-center gap-3 rounded-2xl border border-stone-900/10 bg-white/80 px-4">
-              <input id="prefix" type="checkbox" class="size-4 accent-orange-700" />
-              <span class="text-sm font-medium text-stone-700">Enable prefix expansion</span>
-            </label>
-            <label class="flex min-h-[54px] items-center gap-3 rounded-2xl border border-stone-900/10 bg-white/80 px-4">
-              <input id="exclude-advanced" type="checkbox" class="size-4 accent-orange-700" />
-              <span class="text-sm font-medium text-stone-700">Hide advanced topics</span>
-            </label>
+    <main class="mx-auto w-[min(1560px,calc(100vw-24px))] py-6 lg:py-8">
+      <section class="surface search-shell p-5 sm:p-6">
+        <form id="query-form" class="search-form" autocomplete="off">
+          <div class="search-input-wrap">
+            <input id="query" class="control-input min-w-0 flex-1" placeholder="Search Querylight TS documentation" />
+            <button id="clear-query" type="button" class="control-button control-button-muted">Clear</button>
+            <button id="submit-query" type="submit" class="control-button">Search</button>
+            <div id="suggestions" class="suggestions-panel hidden"></div>
           </div>
-        </div>
-        <div id="examples" class="mt-5 flex flex-wrap gap-2"></div>
+        </form>
       </section>
 
-      <section class="surface p-6">
-        <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Live Results</p>
-            <h2 id="summary-title" class="font-serif text-3xl text-stone-950">Documentation Results</h2>
-          </div>
-          <p id="summary" class="text-sm text-stone-600"></p>
-        </div>
-        <div class="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.95fr)]">
-          <div id="results" class="grid gap-3"></div>
-          <aside class="grid gap-4">
-            <div class="rounded-3xl border border-stone-900/10 bg-white/60 p-4">
-              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Facets</p>
-              <div class="mt-4">
-                <h3 class="font-serif text-lg text-stone-950">Sections</h3>
-                <div id="section-facets" class="mt-3 flex flex-wrap gap-2"></div>
+      <section class="reader-layout reader-layout-below mt-5">
+        <aside class="reader-sidebar">
+          <section class="surface p-5">
+            <div class="flex items-end justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Table of Contents</p>
+                <h2 class="mt-2 font-serif text-2xl text-stone-950">All Documentation</h2>
               </div>
-              <div class="mt-5">
-                <h3 class="font-serif text-lg text-stone-950">Tags</h3>
-                <div id="tag-facets" class="mt-3 flex flex-wrap gap-2"></div>
-              </div>
-              <div class="mt-5">
-                <h3 class="font-serif text-lg text-stone-950">APIs</h3>
-                <div id="api-facets" class="mt-3 flex flex-wrap gap-2"></div>
-              </div>
+              <p id="toc-status" class="text-right text-xs text-stone-500"></p>
             </div>
-            <div class="rounded-3xl border border-stone-900/10 bg-white/60 p-4">
-              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Significant Terms</p>
-              <div id="significant-terms" class="mt-4 flex flex-wrap gap-2"></div>
+            <div id="toc" class="mt-5 grid gap-5">
+              ${navSections
+                .map(
+                  (section) => `
+                    <section>
+                      <h3 class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">${escapeHtml(section.name)}</h3>
+                      <div class="mt-3 grid gap-2" data-section="${escapeHtml(section.name)}"></div>
+                    </section>
+                  `
+                )
+                .join("")}
             </div>
-          </aside>
-        </div>
-      </section>
+          </section>
+        </aside>
 
-      <section class="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.95fr)]">
-        <section class="surface p-6">
-          <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Reference Entry</p>
-              <h2 id="detail-title" class="font-serif text-3xl text-stone-950">Select a result</h2>
-            </div>
-            <p id="detail-meta" class="text-sm text-stone-600"></p>
-          </div>
-          <div id="detail" class="mt-6"></div>
+        <section class="reader-main">
+          <div id="center-view" class="reader-page-wrap"></div>
         </section>
-        <section class="surface p-6">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Feature Coverage</p>
-            <h2 class="font-serif text-3xl text-stone-950">What this browser is exercising</h2>
+
+        <aside class="reader-facets">
+          <div class="reader-facets-inner">
+            <section class="surface p-5">
+              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Search Options</p>
+              <div class="mt-4 grid gap-3">
+                <label>
+                  <span class="mb-2 block text-sm font-semibold text-stone-700">Mode</span>
+                  <select id="mode" class="control-input">
+                    <option value="hybrid">Hybrid</option>
+                    <option value="match">Match</option>
+                    <option value="phrase">Phrase</option>
+                    <option value="fuzzy">Fuzzy (ngrams)</option>
+                    <option value="vector">Vector</option>
+                    <option value="geo-point">Geo point</option>
+                    <option value="geo-polygon">Geo polygon</option>
+                    <option value="all">Match all</option>
+                  </select>
+                </label>
+                <label>
+                  <span class="mb-2 block text-sm font-semibold text-stone-700">Ranking</span>
+                  <select id="ranking" class="control-input">
+                    <option value="BM25">BM25</option>
+                    <option value="TFIDF">TF-IDF</option>
+                  </select>
+                </label>
+                <label>
+                  <span class="mb-2 block text-sm font-semibold text-stone-700">Boolean mode</span>
+                  <select id="operation" class="control-input">
+                    <option value="AND">AND</option>
+                    <option value="OR">OR</option>
+                  </select>
+                </label>
+                <label class="flex min-h-[54px] items-center gap-3 rounded-2xl border border-stone-900/10 bg-white/80 px-4">
+                  <input id="prefix" type="checkbox" class="size-4 accent-orange-700" />
+                  <span class="text-sm font-medium text-stone-700">Enable prefix expansion</span>
+                </label>
+                <label class="flex min-h-[54px] items-center gap-3 rounded-2xl border border-stone-900/10 bg-white/80 px-4">
+                  <input id="exclude-advanced" type="checkbox" class="size-4 accent-orange-700" />
+                  <span class="text-sm font-medium text-stone-700">Hide advanced topics</span>
+                </label>
+              </div>
+            </section>
+
+            <section class="surface p-5">
+              <div class="flex items-end justify-between gap-3">
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Facets</p>
+                  <h2 class="mt-2 font-serif text-2xl text-stone-950">Refine Results</h2>
+                </div>
+                <p id="summary" class="text-right text-xs text-stone-500"></p>
+              </div>
+              <div id="active-filters" class="mt-4 flex flex-wrap gap-2"></div>
+              <div id="facet-sections" class="mt-5"></div>
+            </section>
           </div>
-          <div id="coverage" class="mt-5 grid gap-3 md:grid-cols-2"></div>
-        </section>
+        </aside>
       </section>
     </main>
   `;
 
-  const examplesNode = document.querySelector<HTMLDivElement>("#examples");
-  if (!examplesNode) {
-    throw new Error("examples node not found");
-  }
-  const exampleQueries = [
-    "phrase search",
-    "\"portable json index state\"",
-    "vectro serch",
-    "bool query filtering",
-    "agg",
-    "geo polygon",
-    "BM25 ranking"
-  ];
-  examplesNode.innerHTML = exampleQueries
-    .map((query) => `<button class="chip-button" data-example="${escapeHtml(query)}">${escapeHtml(query)}</button>`)
-    .join("");
-
   wireApp(context);
 }
 
-function renderFacetList(node: HTMLDivElement, facetMap: Record<string, number>, activeValue: string | null, handlerName: "section" | "tag" | "api"): void {
-  node.innerHTML = Object.entries(facetMap)
-    .slice(0, 10)
-    .map(
-      ([term, count]) => `
-        <button class="chip-button ${activeValue === term ? "border-orange-700/50 text-stone-950" : ""}" data-facet="${handlerName}" data-value="${escapeHtml(term)}">
-          <span>${escapeHtml(term)}</span>
-          <strong class="font-mono text-orange-800">${count}</strong>
-        </button>
-      `
-    )
-    .join("");
+function updateSummary(summaryNode: HTMLParagraphElement, current: SearchResult | null): void {
+  if (!current) {
+    summaryNode.textContent = "No active search";
+    return;
+  }
+  const filters = [state.section ? `section:${state.section}` : "", state.tag ? `tag:${state.tag}` : "", state.excludeAdvanced ? "without advanced" : ""]
+    .filter(Boolean)
+    .join(" · ");
+  summaryNode.textContent = `${current.finalHits.length} results · ${state.mode} · ${state.ranking}${filters ? ` · ${filters}` : ""}`;
 }
 
-function renderDetail(context: RuntimeContext, detailNode: HTMLDivElement, detailTitleNode: HTMLHeadingElement, detailMetaNode: HTMLParagraphElement, doc: DocEntry | undefined, current: SearchResult): void {
-  if (!doc) {
-    detailTitleNode.textContent = "Select a result";
-    detailMetaNode.textContent = "";
-    detailNode.innerHTML = "";
+function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNode: HTMLParagraphElement, current: SearchResult | null): void {
+  const hasMatches = Boolean(current?.finalHits.length);
+  const enabledIds = current?.finalHits.length ? current.selectedIds : new Set(context.docs.map((doc) => doc.id));
+
+  tocStatusNode.textContent = hasMatches
+    ? `${enabledIds.size} of ${context.docs.length} pages active`
+    : `${context.docs.length} pages available`;
+
+  createNavSections(context).forEach((section) => {
+    const sectionNode = tocNode.querySelector<HTMLDivElement>(`[data-section="${CSS.escape(section.name)}"]`);
+    if (!sectionNode) {
+      return;
+    }
+
+    sectionNode.innerHTML = section.docs
+      .map((doc) => {
+        const isActive = doc.id === activeDocId;
+        const isEnabled = enabledIds.has(doc.id) || isActive;
+        return `
+          <button
+            class="toc-link ${isActive ? "toc-link-active" : ""} ${!isEnabled ? "toc-link-disabled" : ""}"
+            data-doc="${escapeHtml(doc.id)}"
+            ${isEnabled ? "" : "disabled"}
+          >
+            <span class="toc-link-order">${escapeHtml(doc.order)}</span>
+            <span class="min-w-0 toc-link-body">
+              <span class="toc-link-title">${escapeHtml(doc.title)}</span>
+              <span class="toc-link-meta">${escapeHtml(doc.level)}</span>
+            </span>
+          </button>
+        `;
+      })
+      .join("");
+  });
+}
+
+function renderSuggestions(context: RuntimeContext, suggestionsNode: HTMLDivElement, current: SearchResult | null): void {
+  if (!state.query.trim() || !current || current.finalHits.length === 0) {
+    suggestionsNode.classList.add("hidden");
+    suggestionsNode.innerHTML = "";
     return;
   }
 
-  const locationLabel = `${doc.city} (${doc.point[0].toFixed(2)}, ${doc.point[1].toFixed(2)})`;
-  const vectorRank = current.vectorHits.findIndex(([id]) => id === doc.id);
-  const fuzzyRank = current.fuzzyHits.findIndex(([id]) => id === doc.id);
-  const lexicalRank = current.lexicalHits.findIndex(([id]) => id === doc.id);
-
-  detailTitleNode.textContent = doc.title;
-  detailMetaNode.textContent = `${doc.section} · ${doc.level} · order ${doc.order}`;
-  detailNode.innerHTML = `
-    <p class="text-lg text-stone-600">${escapeHtml(doc.summary)}</p>
-    <div class="mt-5 rounded-3xl border border-stone-900/10 bg-stone-50/80 p-4">
-      <h3 class="font-serif text-xl text-stone-950">Live Coverage</h3>
-      <ul class="mt-3 grid list-disc gap-2 pl-5 text-sm text-stone-700">
-        <li>Lexical rank: ${lexicalRank >= 0 ? lexicalRank + 1 : "not matched"}</li>
-        <li>Fuzzy rank: ${fuzzyRank >= 0 ? fuzzyRank + 1 : "not matched"}</li>
-        <li>Vector rank: ${vectorRank >= 0 ? vectorRank + 1 : "not matched"}</li>
-        <li>Geo demo point: ${escapeHtml(locationLabel)}</li>
-        <li>Markdown source: <code>${escapeHtml(doc.path.replace("../../../", ""))}</code></li>
-      </ul>
-    </div>
-    <div class="mt-5">
-      <h3 class="font-serif text-xl text-stone-950">Relevant APIs</h3>
-      <div class="mt-3 flex flex-wrap gap-2">
-        ${doc.apis.map((api) => `<button class="chip-button" data-facet="api" data-value="${escapeHtml(api)}">${escapeHtml(api)}</button>`).join("")}
-      </div>
-    </div>
-    <div class="mt-5">
-      <h3 class="font-serif text-xl text-stone-950">Tags</h3>
-      <div class="mt-3 flex flex-wrap gap-2">
-        ${doc.tags.map((tag) => `<button class="chip-button" data-facet="tag" data-value="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join("")}
-      </div>
-    </div>
-    <article class="prose-docs mt-8">${markdown.render(doc.markdown)}</article>
-  `;
-}
-
-function renderCoverage(context: RuntimeContext, coverageNode: HTMLDivElement, current: SearchResult): void {
-  const active = context.indexes[state.ranking];
-  const serializedDocCount = Object.keys(active.serialized.documents).length;
-  const fieldKinds = Object.values(active.serialized.fieldState).map((entry) => entry.kind).join(", ");
-  coverageNode.innerHTML = [
-    `Hydrated ${state.ranking} index drives the main lexical search. Hybrid mode merges MatchPhrase, MatchQuery, ngram fuzzy lookup, and vector hits.`,
-    `Tags, sections, and APIs are computed with termsAggregation. Significant terms come from the body field over the current result subset.`,
-    `Geo mode runs point or polygon queries over doc metadata. Vector mode uses bigramVector and VectorFieldIndex for typo-tolerant retrieval.`,
-    `${serializedDocCount} documents loaded from JSON state. Field state kinds: ${escapeHtml(fieldKinds)}.`,
-    `${current.finalHits.length} results, ${current.fuzzyHits.length} fuzzy hits, ${current.vectorHits.length} vector hits, ${current.geoHits.length} geo hits.`,
-    `${context.docs.length} markdown docs across ${context.sections.length} sections, ${context.allTags.length} tags, and ${context.allCities.length} geo points.`
-  ]
-    .map(
-      (text) => `
-        <article class="rounded-3xl border border-stone-900/10 bg-white/60 p-4 text-sm leading-6 text-stone-700">
-          ${text}
-        </article>
-      `
-    )
-    .join("");
-}
-
-function renderResults(context: RuntimeContext, resultsNode: HTMLDivElement, current: SearchResult): void {
-  if (current.finalHits.length === 0) {
-    resultsNode.innerHTML = `
-      <article class="rounded-3xl border border-stone-900/10 bg-white/70 p-5">
-        <h3 class="font-serif text-2xl text-stone-950">No matches</h3>
-        <p class="mt-2 text-stone-600">Try a broader query, switch to fuzzy or vector mode, or clear one of the active facets.</p>
-      </article>
-    `;
-    return;
-  }
-
-  resultsNode.innerHTML = current.finalHits
-    .slice(0, 20)
+  suggestionsNode.classList.remove("hidden");
+  suggestionsNode.innerHTML = current.finalHits
+    .slice(0, 5)
     .map(([id, score], index) => {
       const doc = context.byId.get(id);
       if (!doc) {
         return "";
       }
       return `
-        <button class="w-full rounded-3xl border ${activeDocId === id ? "border-orange-700/45 ring-1 ring-orange-700/15" : "border-stone-900/10"} bg-white/75 p-5 text-left transition hover:border-orange-700/40" data-doc="${escapeHtml(id)}">
-          <div class="flex items-center justify-between gap-3 text-sm text-stone-500">
-            <span>${index + 1}. ${escapeHtml(doc.section)}</span>
-            <span>${escapeHtml(doc.level)}</span>
-          </div>
-          <h3 class="mt-3 font-serif text-2xl text-stone-950">${escapeHtml(doc.title)}</h3>
-          <p class="mt-2 text-stone-600">${escapeHtml(doc.summary)}</p>
-          <div class="mt-4 flex flex-wrap gap-2">
-            ${doc.tags.slice(0, 4).map((tag) => `<span class="rounded-full border border-stone-900/10 bg-white/80 px-3 py-1 text-xs text-stone-600">${escapeHtml(tag)}</span>`).join("")}
-          </div>
-          <div class="mt-4 flex items-center justify-between gap-3 text-sm text-stone-500">
-            <span>score ${score.toFixed(4)}</span>
-            <span>order ${escapeHtml(doc.order)}</span>
-          </div>
+        <button type="button" class="suggestion-item" data-doc="${escapeHtml(id)}" data-suggestion="true">
+          <span class="text-xs uppercase tracking-[0.12em] text-stone-500">${index + 1}. ${escapeHtml(doc.section)} · ${score.toFixed(2)}</span>
+          <span class="suggestion-title">${escapeHtml(doc.title)}</span>
+          <span class="suggestion-summary">${escapeHtml(doc.summary)}</span>
         </button>
       `;
     })
     .join("");
 }
 
-function updateSummary(summaryTitleNode: HTMLHeadingElement, summaryNode: HTMLParagraphElement, current: SearchResult): void {
-  const filters = [state.section ? `section:${state.section}` : "", state.tag ? `tag:${state.tag}` : "", state.excludeAdvanced ? "without advanced" : ""]
-    .filter(Boolean)
-    .join(" · ");
-  summaryTitleNode.textContent = state.mode === "all" ? "All Documentation Entries" : "Documentation Results";
-  summaryNode.textContent = `${current.finalHits.length} results · ${state.mode} mode · ${state.ranking}${filters ? ` · ${filters}` : ""}`;
+function renderFacets(context: RuntimeContext, activeFiltersNode: HTMLDivElement, facetSectionsNode: HTMLDivElement, current: SearchResult | null): void {
+  const activeFilters = [
+    state.section ? { label: `Section: ${state.section}`, facet: "section", value: state.section } : null,
+    state.tag ? { label: `Tag: ${state.tag}`, facet: "tag", value: state.tag } : null
+  ].filter(Boolean) as Array<{ label: string; facet: string; value: string }>;
+
+  activeFiltersNode.innerHTML =
+    activeFilters.length > 0
+      ? activeFilters
+          .map((filter) => `<button class="chip-button" data-facet="${filter.facet}" data-value="${escapeHtml(filter.value)}">${escapeHtml(filter.label)} ×</button>`)
+          .join("")
+      : `<p class="text-sm text-stone-500">No active facets.</p>`;
+
+  const source = current ?? searchForState(context, { ...initialState, query: "", tag: null, section: null });
+  const sectionFacets = Object.entries(source.sectionFacets);
+  const tagFacets = Object.entries(source.tagFacets);
+  const apiFacets = Object.entries(source.apiFacets);
+  const significantTerms = Object.entries(source.significantTerms).slice(0, 6);
+
+  facetSectionsNode.innerHTML = `
+    <div class="grid gap-5">
+      <section>
+        <h3 class="text-sm font-semibold text-stone-900">Sections</h3>
+        <div class="mt-3 flex flex-wrap gap-2">
+          ${sectionFacets.map(([value, count]) => `<button class="chip-button" data-facet="section" data-value="${escapeHtml(value)}">${escapeHtml(value)} <span class="text-stone-400">${count}</span></button>`).join("") || `<p class="text-sm text-stone-500">No section facets.</p>`}
+        </div>
+      </section>
+      <section>
+        <h3 class="text-sm font-semibold text-stone-900">Tags</h3>
+        <div class="mt-3 flex flex-wrap gap-2">
+          ${tagFacets.map(([value, count]) => `<button class="chip-button" data-facet="tag" data-value="${escapeHtml(value)}">${escapeHtml(value)} <span class="text-stone-400">${count}</span></button>`).join("") || `<p class="text-sm text-stone-500">No tag facets.</p>`}
+        </div>
+      </section>
+      <section>
+        <h3 class="text-sm font-semibold text-stone-900">APIs</h3>
+        <div class="mt-3 flex flex-wrap gap-2">
+          ${apiFacets.map(([value, count]) => `<button class="chip-button" data-facet="api" data-value="${escapeHtml(value)}">${escapeHtml(value)} <span class="text-stone-400">${count}</span></button>`).join("") || `<p class="text-sm text-stone-500">No API facets.</p>`}
+        </div>
+      </section>
+      <section>
+        <h3 class="text-sm font-semibold text-stone-900">Significant Terms</h3>
+        <div class="mt-3 flex flex-wrap gap-2">
+          ${significantTerms
+            .map(([term, values]) => `<button class="chip-button" data-example="${escapeHtml(term)}">${escapeHtml(term)} <span class="text-stone-400">${values[0].toFixed(2)}</span></button>`)
+            .join("") || `<p class="text-sm text-stone-500">No term suggestions.</p>`}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderHome(context: RuntimeContext, centerNode: HTMLDivElement): void {
+  const featured = context.docs.slice(0, 6);
+  centerNode.innerHTML = `
+    <article class="surface reader-page px-6 py-8 sm:px-8 sm:py-10">
+      <header>
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Start Page</p>
+        <h1 class="mt-2 font-serif text-[clamp(2.5rem,5vw,4.2rem)] leading-none text-stone-950">Querylight TS documentation</h1>
+      </header>
+      <section class="mt-8 grid gap-4 md:grid-cols-2">
+        ${featured
+          .map(
+            (doc) => `
+              <button class="doc-card" data-doc="${escapeHtml(doc.id)}" data-open-doc="true">
+                <span class="text-xs uppercase tracking-[0.12em] text-stone-500">${escapeHtml(doc.section)} · ${escapeHtml(doc.order)}</span>
+                <h2 class="card-title">${escapeHtml(doc.title)}</h2>
+                <p class="card-summary">${escapeHtml(doc.summary)}</p>
+              </button>
+            `
+          )
+          .join("")}
+      </section>
+    </article>
+  `;
+}
+
+function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, current: SearchResult): void {
+  centerNode.innerHTML = `
+    <article class="surface reader-page px-6 py-8 sm:px-8 sm:py-10">
+      <header>
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Search Results</p>
+        <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${state.query.trim() || "All documentation"}</h1>
+        <p class="mt-3 text-sm text-stone-600">${current.finalHits.length} matches</p>
+      </header>
+      <div class="mt-8 grid gap-3">
+        ${
+          current.finalHits.length === 0
+            ? `<div class="rounded-3xl border border-dashed border-stone-900/10 bg-stone-50/80 px-5 py-4 text-sm text-stone-600">No matches found. Try a broader query or remove some facets.</div>`
+            : current.finalHits
+                .map(([id, score], index) => {
+                  const doc = context.byId.get(id);
+                  if (!doc) {
+                    return "";
+                  }
+                  return `
+                    <button class="nav-result" data-doc="${escapeHtml(id)}" data-open-doc="true">
+                      <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
+                        <span>${index + 1}. ${escapeHtml(doc.section)}</span>
+                        <span>${score.toFixed(2)}</span>
+                      </div>
+                      <h2 class="result-title">${escapeHtml(doc.title)}</h2>
+                      <p class="result-summary">${escapeHtml(doc.summary)}</p>
+                    </button>
+                  `;
+                })
+                .join("")
+        }
+      </div>
+    </article>
+  `;
+}
+
+function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, doc: DocEntry, current: SearchResult | null): void {
+  const locationLabel = `${doc.city} (${doc.point[0].toFixed(2)}, ${doc.point[1].toFixed(2)})`;
+  const vectorRank = current?.vectorHits.findIndex(([id]) => id === doc.id) ?? -1;
+  const fuzzyRank = current?.fuzzyHits.findIndex(([id]) => id === doc.id) ?? -1;
+  const lexicalRank = current?.lexicalHits.findIndex(([id]) => id === doc.id) ?? -1;
+  const topResults = current?.finalHits.slice(0, 3) ?? [];
+
+  centerNode.innerHTML = `
+    <article class="reader-page grid gap-4">
+      ${
+        topResults.length > 0
+          ? `
+            <section class="surface px-6 py-5 sm:px-8">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Top Matches</p>
+                  <h2 class="mt-2 font-serif text-2xl text-stone-950">Current search</h2>
+                </div>
+                <button class="text-sm font-semibold text-orange-800 transition hover:text-orange-900" data-action="back-to-results" type="button">More results</button>
+              </div>
+              <div class="mt-4 grid gap-3 md:grid-cols-3">
+                ${topResults
+                  .map(([id, score], index) => {
+                    const resultDoc = context.byId.get(id);
+                    if (!resultDoc) {
+                      return "";
+                    }
+                    return `
+                      <button class="nav-result ${resultDoc.id === doc.id ? "nav-result-active" : ""}" data-doc="${escapeHtml(id)}" data-open-doc="true">
+                        <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
+                          <span>${index + 1}. ${escapeHtml(resultDoc.section)}</span>
+                          <span>${score.toFixed(2)}</span>
+                        </div>
+                        <h3 class="result-title result-title-sm">${escapeHtml(resultDoc.title)}</h3>
+                        <p class="result-summary result-summary-sm">${escapeHtml(resultDoc.summary)}</p>
+                      </button>
+                    `;
+                  })
+                  .join("")}
+              </div>
+            </section>
+          `
+          : ""
+      }
+      <article class="surface overflow-hidden">
+        <header class="border-b border-stone-900/8 px-6 py-6 sm:px-8">
+          ${
+            current
+              ? `<button class="text-sm font-semibold text-orange-800 transition hover:text-orange-900" data-action="back-to-results" type="button">Back to search results</button>`
+              : ""
+          }
+          <p class="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Reference Entry</p>
+          <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${escapeHtml(doc.title)}</h1>
+          <p class="mt-3 text-sm text-stone-600">${escapeHtml(`${doc.section} · ${doc.level} · order ${doc.order}`)}</p>
+        </header>
+        <div class="px-6 py-8 sm:px-8 sm:py-10">
+          <p class="text-lg text-stone-600">${escapeHtml(doc.summary)}</p>
+          <div class="mt-5 rounded-3xl border border-stone-900/10 bg-stone-50/80 p-4">
+            <h2 class="font-serif text-xl text-stone-950">Search Coverage</h2>
+            <ul class="mt-3 grid list-disc gap-2 pl-5 text-sm text-stone-700">
+              <li>Lexical rank: ${lexicalRank >= 0 ? lexicalRank + 1 : "not matched"}</li>
+              <li>Fuzzy rank: ${fuzzyRank >= 0 ? fuzzyRank + 1 : "not matched"}</li>
+              <li>Vector rank: ${vectorRank >= 0 ? vectorRank + 1 : "not matched"}</li>
+              <li>Geo demo point: ${escapeHtml(locationLabel)}</li>
+              <li>Markdown source: <code>${escapeHtml(doc.path.replace("../../../", ""))}</code></li>
+            </ul>
+          </div>
+          <div class="mt-5">
+            <h2 class="font-serif text-xl text-stone-950">Relevant APIs</h2>
+            <div class="mt-3 flex flex-wrap gap-2">
+              ${doc.apis.map((api) => `<button class="chip-button" data-facet="api" data-value="${escapeHtml(api)}">${escapeHtml(api)}</button>`).join("")}
+            </div>
+          </div>
+          <div class="mt-5">
+            <h2 class="font-serif text-xl text-stone-950">Tags</h2>
+            <div class="mt-3 flex flex-wrap gap-2">
+              ${doc.tags.map((tag) => `<button class="chip-button" data-facet="tag" data-value="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join("")}
+            </div>
+          </div>
+          <article class="prose-docs mt-8">${markdown.render(doc.markdown)}</article>
+          ${
+            current
+              ? `<div class="mt-8"><button class="text-sm font-semibold text-orange-800 transition hover:text-orange-900" data-action="back-to-results" type="button">Back to search results</button></div>`
+              : ""
+          }
+        </div>
+      </article>
+    </article>
+  `;
+}
+
+function renderCenter(context: RuntimeContext, centerNode: HTMLDivElement, current: SearchResult | null): void {
+  if (currentView === "results" && current) {
+    renderResultsPage(context, centerNode, current);
+    return;
+  }
+
+  if (currentView === "detail" && activeDocId) {
+    const doc = context.byId.get(activeDocId);
+    if (doc) {
+      renderDetailPage(context, centerNode, doc, current);
+      return;
+    }
+  }
+
+  renderHome(context, centerNode);
 }
 
 function setSearchModeFromQuery(value: string): void {
@@ -766,42 +970,38 @@ function setSearchModeFromQuery(value: string): void {
 }
 
 function wireApp(context: RuntimeContext): void {
+  const queryForm = document.querySelector<HTMLFormElement>("#query-form");
   const queryInput = document.querySelector<HTMLInputElement>("#query");
+  const clearQueryButton = document.querySelector<HTMLButtonElement>("#clear-query");
   const modeSelect = document.querySelector<HTMLSelectElement>("#mode");
   const rankingSelect = document.querySelector<HTMLSelectElement>("#ranking");
   const operationSelect = document.querySelector<HTMLSelectElement>("#operation");
   const prefixInput = document.querySelector<HTMLInputElement>("#prefix");
   const excludeAdvancedInput = document.querySelector<HTMLInputElement>("#exclude-advanced");
-  const resultsNode = document.querySelector<HTMLDivElement>("#results");
+  const suggestionsNode = document.querySelector<HTMLDivElement>("#suggestions");
   const summaryNode = document.querySelector<HTMLParagraphElement>("#summary");
-  const summaryTitleNode = document.querySelector<HTMLHeadingElement>("#summary-title");
-  const detailTitleNode = document.querySelector<HTMLHeadingElement>("#detail-title");
-  const detailMetaNode = document.querySelector<HTMLParagraphElement>("#detail-meta");
-  const detailNode = document.querySelector<HTMLDivElement>("#detail");
-  const sectionFacetsNode = document.querySelector<HTMLDivElement>("#section-facets");
-  const tagFacetsNode = document.querySelector<HTMLDivElement>("#tag-facets");
-  const apiFacetsNode = document.querySelector<HTMLDivElement>("#api-facets");
-  const significantTermsNode = document.querySelector<HTMLDivElement>("#significant-terms");
-  const coverageNode = document.querySelector<HTMLDivElement>("#coverage");
+  const centerNode = document.querySelector<HTMLDivElement>("#center-view");
+  const tocNode = document.querySelector<HTMLDivElement>("#toc");
+  const tocStatusNode = document.querySelector<HTMLParagraphElement>("#toc-status");
+  const activeFiltersNode = document.querySelector<HTMLDivElement>("#active-filters");
+  const facetSectionsNode = document.querySelector<HTMLDivElement>("#facet-sections");
 
   if (
+    !queryForm ||
     !queryInput ||
+    !clearQueryButton ||
     !modeSelect ||
     !rankingSelect ||
     !operationSelect ||
     !prefixInput ||
     !excludeAdvancedInput ||
-    !resultsNode ||
+    !suggestionsNode ||
     !summaryNode ||
-    !summaryTitleNode ||
-    !detailTitleNode ||
-    !detailMetaNode ||
-    !detailNode ||
-    !sectionFacetsNode ||
-    !tagFacetsNode ||
-    !apiFacetsNode ||
-    !significantTermsNode ||
-    !coverageNode
+    !centerNode ||
+    !tocNode ||
+    !tocStatusNode ||
+    !activeFiltersNode ||
+    !facetSectionsNode
   ) {
     throw new Error("app nodes not found");
   }
@@ -813,115 +1013,176 @@ function wireApp(context: RuntimeContext): void {
     operationSelect.value = state.operation;
     prefixInput.checked = state.prefix;
     excludeAdvancedInput.checked = state.excludeAdvanced;
+    clearQueryButton.disabled = state.query.length === 0;
   };
 
-  const runSearch = () => {
-    const current = searchForState(context, state);
-    if (!current.selectedIds.has(activeDocId)) {
-      activeDocId = current.finalHits[0]?.[0] ?? context.docs[0]?.id ?? "";
-    }
-
-    updateSummary(summaryTitleNode, summaryNode, current);
-    renderResults(context, resultsNode, current);
-    renderFacetList(sectionFacetsNode, current.sectionFacets, state.section, "section");
-    renderFacetList(tagFacetsNode, current.tagFacets, state.tag, "tag");
-    renderFacetList(apiFacetsNode, current.apiFacets, null, "api");
-    significantTermsNode.innerHTML = Object.entries(current.significantTerms)
-      .slice(0, 10)
-      .map(([term, [score, count]]) => `<span class="rounded-full border border-stone-900/10 bg-white/80 px-3 py-2 text-sm text-stone-700">${escapeHtml(term)} <strong class="font-mono text-orange-800">${score.toFixed(2)}</strong> <em class="font-mono not-italic text-stone-500">${count}</em></span>`)
-      .join("");
-    renderDetail(context, detailNode, detailTitleNode, detailMetaNode, context.byId.get(activeDocId), current);
-    renderCoverage(context, coverageNode, current);
+  const renderApp = () => {
+    syncControls();
+    updateSummary(summaryNode, submittedResult);
+    renderSuggestions(context, suggestionsNode, suggestionResult);
+    renderToc(context, tocNode, tocStatusNode, submittedResult);
+    renderFacets(context, activeFiltersNode, facetSectionsNode, submittedResult);
+    renderCenter(context, centerNode, submittedResult);
   };
 
-  let pendingSearch: ReturnType<typeof window.setTimeout> | null = null;
-  const scheduleSearch = () => {
-    if (pendingSearch !== null) {
-      window.clearTimeout(pendingSearch);
+  const runSubmittedSearch = (nextView: "results" | "detail" = "results") => {
+    submittedResult = searchForState(context, state);
+    if (submittedResult.finalHits.length > 0 && !submittedResult.selectedIds.has(activeDocId)) {
+      activeDocId = submittedResult.finalHits[0]?.[0] ?? "";
     }
-    pendingSearch = window.setTimeout(() => {
-      pendingSearch = null;
-      runSearch();
+    currentView = nextView;
+    renderApp();
+  };
+
+  let pendingSuggestions: ReturnType<typeof window.setTimeout> | null = null;
+  const scheduleSuggestions = () => {
+    if (pendingSuggestions !== null) {
+      window.clearTimeout(pendingSuggestions);
+    }
+    if (!state.query.trim()) {
+      suggestionResult = null;
+      renderApp();
+      return;
+    }
+    pendingSuggestions = window.setTimeout(() => {
+      pendingSuggestions = null;
+      suggestionResult = searchForState(context, state);
+      renderApp();
     }, SEARCH_INPUT_DEBOUNCE_MS);
   };
-  const runSearchNow = () => {
-    if (pendingSearch !== null) {
-      window.clearTimeout(pendingSearch);
-      pendingSearch = null;
+
+  const resetToHomeIfEmpty = () => {
+    if (!state.query.trim() && !state.tag && !state.section && !state.excludeAdvanced) {
+      submittedResult = null;
+      suggestionResult = null;
+      currentView = "home";
+      activeDocId = "";
     }
-    runSearch();
   };
 
   queryInput.addEventListener("input", () => {
     state.query = queryInput.value;
-    scheduleSearch();
+    syncControls();
+    scheduleSuggestions();
   });
+
+  queryInput.addEventListener("focus", () => {
+    scheduleSuggestions();
+  });
+
+  queryInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      suggestionResult = null;
+      renderApp();
+    }
+  });
+
+  queryForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    runSubmittedSearch("results");
+  });
+
+  clearQueryButton.addEventListener("click", () => {
+    state.query = "";
+    resetToHomeIfEmpty();
+    queryInput.focus();
+    renderApp();
+  });
+
+  const applySearchOptions = () => {
+    if (currentView === "home" && !submittedResult) {
+      renderApp();
+      return;
+    }
+    runSubmittedSearch(currentView === "detail" ? "detail" : "results");
+  };
+
   modeSelect.addEventListener("change", () => {
     state.mode = modeSelect.value as SearchMode;
-    runSearchNow();
+    applySearchOptions();
   });
   rankingSelect.addEventListener("change", () => {
     state.ranking = rankingSelect.value as RankingAlgorithm;
-    runSearchNow();
+    applySearchOptions();
   });
   operationSelect.addEventListener("change", () => {
     state.operation = operationSelect.value as OP;
-    runSearchNow();
+    applySearchOptions();
   });
   prefixInput.addEventListener("change", () => {
     state.prefix = prefixInput.checked;
-    runSearchNow();
+    applySearchOptions();
   });
   excludeAdvancedInput.addEventListener("change", () => {
     state.excludeAdvanced = excludeAdvancedInput.checked;
-    runSearchNow();
+    applySearchOptions();
   });
 
   document.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
+    const backToResults = target.closest<HTMLElement>("[data-action='back-to-results']");
+    if (backToResults) {
+      if (submittedResult) {
+        currentView = "results";
+      }
+      renderApp();
+      return;
+    }
+
     const example = target.closest<HTMLElement>("[data-example]")?.dataset.example;
     if (example) {
       state.query = example;
       setSearchModeFromQuery(example);
-      syncControls();
-      runSearchNow();
+      runSubmittedSearch("results");
       return;
     }
 
-    const docId = target.closest<HTMLElement>("[data-doc]")?.dataset.doc;
+    const docTarget = target.closest<HTMLElement>("[data-doc]");
+    const docId = docTarget?.dataset.doc;
     if (docId) {
       activeDocId = docId;
-      runSearchNow();
+      if (docTarget?.dataset.openDoc === "true" || docTarget?.dataset.suggestion === "true") {
+        if (!submittedResult && state.query.trim()) {
+          submittedResult = searchForState(context, state);
+        }
+        currentView = "detail";
+      } else if (!submittedResult) {
+        currentView = "detail";
+      }
+      suggestionResult = null;
+      renderApp();
       return;
     }
 
     const facetTarget = target.closest<HTMLElement>("[data-facet]");
     if (!facetTarget) {
+      if (!target.closest("#query-form")) {
+        suggestionResult = null;
+        renderApp();
+      }
       return;
     }
     const facet = facetTarget.dataset.facet;
     const value = facetTarget.dataset.value ?? "";
-    if (facet === "section") {
-      state.section = state.section === value ? null : value;
-    } else if (facet === "tag") {
+    if (facet === "tag") {
       state.tag = state.tag === value ? null : value;
     } else if (facet === "api") {
       state.query = value;
       state.mode = "match";
+    } else if (facet === "section") {
+      state.section = state.section === value ? null : value;
     }
-    syncControls();
-    runSearchNow();
+    runSubmittedSearch("results");
   });
 
   syncControls();
-  runSearch();
+  renderApp();
 }
 
 async function bootstrap(): Promise<void> {
   renderLoading("Scanning markdown files from the repository and building the browser-side indexes.");
   const docs = await loadDocs();
   const context = createRuntimeContext(docs);
-  activeDocId = docs[0]?.id ?? "";
   createShell(context);
 }
 
