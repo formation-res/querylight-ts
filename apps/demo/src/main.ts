@@ -850,9 +850,6 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
 }
 
 function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, doc: DocEntry, current: SearchResult | null): void {
-  const vectorRank = current?.vectorHits.findIndex(([id]) => id === doc.id) ?? -1;
-  const fuzzyRank = current?.fuzzyHits.findIndex(([id]) => id === doc.id) ?? -1;
-  const lexicalRank = current?.lexicalHits.findIndex(([id]) => id === doc.id) ?? -1;
   const topResults = current?.finalHits.slice(0, 3) ?? [];
 
   const renderedMarkdown = context.renderedMarkdown.get(doc.id) ?? markdown.render(doc.markdown);
@@ -908,15 +905,6 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
         </header>
         <div class="px-6 py-8 sm:px-8 sm:py-10">
           <p class="text-lg text-stone-600">${escapeHtml(doc.summary)}</p>
-          <div class="mt-5 rounded-3xl border border-stone-900/10 bg-stone-50/80 p-4">
-            <h2 class="font-serif text-xl text-stone-950">Search Coverage</h2>
-            <ul class="mt-3 grid list-disc gap-2 pl-5 text-sm text-stone-700">
-              <li>Lexical rank: ${lexicalRank >= 0 ? lexicalRank + 1 : "not matched"}</li>
-              <li>Fuzzy rank: ${fuzzyRank >= 0 ? fuzzyRank + 1 : "not matched"}</li>
-              <li>Vector rank: ${vectorRank >= 0 ? vectorRank + 1 : "not matched"}</li>
-              <li>Markdown source: <code>${escapeHtml(doc.path.replace("../../../", ""))}</code></li>
-            </ul>
-          </div>
           <div class="mt-5">
             <h2 class="font-serif text-xl text-stone-950">Relevant APIs</h2>
             <div class="mt-3 flex flex-wrap gap-2">
