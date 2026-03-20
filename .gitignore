@@ -3,6 +3,8 @@ node_modules/
 # Build outputs
 dist/
 build/
+!apps/demo/build/
+!apps/demo/build/demo-data.ts
 coverage/
 *.tsbuildinfo
 
