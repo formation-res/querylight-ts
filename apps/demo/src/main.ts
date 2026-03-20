@@ -576,15 +576,23 @@ function createShell(context: RuntimeContext): void {
         </form>
       </section>
 
-      <section class="reader-layout reader-layout-below mt-5">
+      <section id="reader-layout" class="reader-layout reader-layout-below mt-5" data-mobile-panel="none">
+        <div class="reader-mobile-bar">
+          <button type="button" class="control-button control-button-muted reader-mobile-button" data-action="open-mobile-toc">Browse docs</button>
+          <button type="button" class="control-button control-button-muted reader-mobile-button" data-action="open-mobile-filters">Search tools</button>
+        </div>
+
         <aside class="reader-sidebar">
-          <section class="surface p-5">
+          <section class="surface reader-mobile-panel-shell p-5">
             <div class="flex items-end justify-between gap-3">
               <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Table of Contents</p>
                 <h2 class="mt-2 font-serif text-2xl text-stone-950">All Documentation</h2>
               </div>
-              <p id="toc-status" class="text-right text-xs text-stone-500"></p>
+              <div class="flex items-center gap-3">
+                <p id="toc-status" class="text-right text-xs text-stone-500"></p>
+                <button type="button" class="reader-mobile-close" data-action="close-mobile-panel">Close</button>
+              </div>
             </div>
             <div id="toc" class="mt-5 grid gap-5">
               ${navSections
@@ -607,8 +615,11 @@ function createShell(context: RuntimeContext): void {
 
         <aside class="reader-facets">
           <div class="reader-facets-inner">
-            <section class="surface p-5">
-              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Search Options</p>
+            <section class="surface reader-mobile-panel-shell p-5">
+              <div class="flex items-start justify-between gap-3">
+                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Search Options</p>
+                <button type="button" class="reader-mobile-close" data-action="close-mobile-panel">Close</button>
+              </div>
               <div class="mt-4 grid gap-3">
                 <label>
                   <span class="mb-2 block text-sm font-semibold text-stone-700">Mode</span>
@@ -648,7 +659,7 @@ function createShell(context: RuntimeContext): void {
               </div>
             </section>
 
-            <section class="surface p-5">
+            <section class="surface reader-mobile-panel-shell p-5">
               <div class="flex items-end justify-between gap-3">
                 <div>
                   <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Facets</p>
@@ -661,6 +672,8 @@ function createShell(context: RuntimeContext): void {
             </section>
           </div>
         </aside>
+
+        <button id="reader-mobile-overlay" type="button" class="reader-mobile-overlay" data-action="close-mobile-panel" aria-label="Close mobile panels"></button>
       </section>
     </main>
   `;
@@ -985,6 +998,7 @@ function wireApp(context: RuntimeContext): void {
   const tocStatusNode = document.querySelector<HTMLParagraphElement>("#toc-status");
   const activeFiltersNode = document.querySelector<HTMLDivElement>("#active-filters");
   const facetSectionsNode = document.querySelector<HTMLDivElement>("#facet-sections");
+  const readerLayout = document.querySelector<HTMLElement>("#reader-layout");
 
   if (
     !queryForm ||
@@ -1001,10 +1015,26 @@ function wireApp(context: RuntimeContext): void {
     !tocNode ||
     !tocStatusNode ||
     !activeFiltersNode ||
-    !facetSectionsNode
+    !facetSectionsNode ||
+    !readerLayout
   ) {
     throw new Error("app nodes not found");
   }
+
+  const setMobilePanel = (panel: "none" | "toc" | "filters") => {
+    readerLayout.dataset.mobilePanel = panel;
+    document.body.classList.toggle("mobile-panel-open", panel !== "none");
+  };
+
+  const closeMobilePanel = () => {
+    setMobilePanel("none");
+  };
+
+  const syncViewportState = () => {
+    if (window.innerWidth >= 1280) {
+      closeMobilePanel();
+    }
+  };
 
   const syncControls = () => {
     queryInput.value = state.query;
@@ -1133,6 +1163,7 @@ function wireApp(context: RuntimeContext): void {
     if (example) {
       state.query = example;
       setSearchModeFromQuery(example);
+      closeMobilePanel();
       runSubmittedSearch("results");
       return;
     }
@@ -1141,6 +1172,7 @@ function wireApp(context: RuntimeContext): void {
     const docId = docTarget?.dataset.doc;
     if (docId) {
       activeDocId = docId;
+      closeMobilePanel();
       if (docTarget?.dataset.openDoc === "true" || docTarget?.dataset.suggestion === "true") {
         if (!submittedResult && state.query.trim()) {
           submittedResult = searchForState(context, state);
@@ -1156,6 +1188,19 @@ function wireApp(context: RuntimeContext): void {
 
     const facetTarget = target.closest<HTMLElement>("[data-facet]");
     if (!facetTarget) {
+      const action = target.closest<HTMLElement>("[data-action]")?.dataset.action;
+      if (action === "open-mobile-toc") {
+        setMobilePanel("toc");
+        return;
+      }
+      if (action === "open-mobile-filters") {
+        setMobilePanel("filters");
+        return;
+      }
+      if (action === "close-mobile-panel") {
+        closeMobilePanel();
+        return;
+      }
       if (!target.closest("#query-form")) {
         suggestionResult = null;
         renderApp();
@@ -1172,10 +1217,14 @@ function wireApp(context: RuntimeContext): void {
     } else if (facet === "section") {
       state.section = state.section === value ? null : value;
     }
+    closeMobilePanel();
     runSubmittedSearch("results");
   });
 
+  window.addEventListener("resize", syncViewportState);
+
   syncControls();
+  syncViewportState();
   renderApp();
 }
 

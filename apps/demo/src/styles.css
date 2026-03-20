@@ -20,6 +20,10 @@
       linear-gradient(180deg, #f8f4ec 0%, #efe5d7 100%);
   }
 
+  body.mobile-panel-open {
+    overflow: hidden;
+  }
+
   button,
   input,
   select {
@@ -60,6 +64,14 @@
     @apply relative z-0;
   }
 
+  .reader-mobile-bar {
+    @apply flex gap-3 xl:hidden;
+  }
+
+  .reader-mobile-button {
+    @apply flex-1;
+  }
+
   .reader-sidebar {
     @apply min-w-0;
   }
@@ -82,6 +94,18 @@
 
   .reader-page {
     @apply min-h-[70vh] w-full max-w-4xl overflow-hidden;
+  }
+
+  .reader-mobile-panel-shell {
+    @apply relative;
+  }
+
+  .reader-mobile-close {
+    @apply hidden rounded-full border border-stone-900/10 bg-white/85 px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100;
+  }
+
+  .reader-mobile-overlay {
+    @apply pointer-events-none fixed inset-0 z-40 border-0 bg-stone-950/30 opacity-0 transition xl:hidden;
   }
 
   .search-form {
@@ -178,5 +202,75 @@
 
   .result-summary-sm {
     @apply mt-1;
+  }
+}
+
+@media (max-width: 1279px) {
+  .reader-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reader-main {
+    order: 1;
+  }
+
+  .reader-mobile-bar {
+    order: 2;
+    position: sticky;
+    top: 1rem;
+    z-index: 20;
+  }
+
+  .reader-sidebar,
+  .reader-facets {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 50;
+    max-height: min(76vh, calc(100vh - 120px));
+    overflow-y: auto;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(20px);
+    transition:
+      opacity 180ms ease,
+      transform 180ms ease;
+  }
+
+  .reader-sidebar {
+    order: 3;
+  }
+
+  .reader-facets {
+    order: 4;
+  }
+
+  .reader-facets-inner {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .reader-mobile-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .reader-layout[data-mobile-panel="toc"] .reader-sidebar,
+  .reader-layout[data-mobile-panel="filters"] .reader-facets {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .reader-layout[data-mobile-panel="toc"] .reader-mobile-overlay,
+  .reader-layout[data-mobile-panel="filters"] .reader-mobile-overlay {
+    pointer-events: auto;
+    opacity: 1;
+  }
+
+  .reader-page {
+    min-height: auto;
   }
 }
