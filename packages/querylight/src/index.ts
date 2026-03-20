@@ -140,6 +140,7 @@ export interface DocumentIndexState {
 export interface FieldIndex {
   readonly indexState: IndexState;
   loadState(fieldIndexState: IndexState): FieldIndex;
+  indexValue?(documentId: string, value: string): void;
 }
 
 export enum RankingAlgorithm {
@@ -430,11 +431,7 @@ export class DocumentIndex {
         this.mapping[field] = fieldIndex;
       }
       for (const value of texts) {
-        if (fieldIndex instanceof TextFieldIndex) {
-          fieldIndex.add(document.id, value);
-        } else if (fieldIndex instanceof GeoFieldIndex) {
-          fieldIndex.add(document.id, value);
-        }
+        fieldIndex.indexValue?.(document.id, value);
       }
     }
   }
@@ -540,6 +537,10 @@ export class TextFieldIndex implements FieldIndex {
       this.termDocPositions.set(term, docPositions);
       this.trie.add(term);
     }
+  }
+
+  indexValue(docId: string, value: string): void {
+    this.add(docId, value);
   }
 
   searchTerm(term: string, allowPrefixMatch = false): Hits {
@@ -788,6 +789,10 @@ export class GeoFieldIndex implements FieldIndex {
       }
       this.geohashMap.set(hash, values);
     }
+  }
+
+  indexValue(docId: string, value: string): void {
+    this.add(docId, value);
   }
 
   queryPoint(latitude: number, longitude: number): string[] {
