@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BoolQuery, MatchAll, MatchPhrase, MatchQuery, RankingAlgorithm } from "../src/index";
+import { BoolQuery, DocumentIndex, MatchAll, MatchPhrase, MatchQuery, OP, RankingAlgorithm, TextFieldIndex } from "../src/index";
 import { quotesIndex } from "./testfixture";
 
 describe("queries", () => {
@@ -47,5 +47,13 @@ describe("queries", () => {
       expect(index.searchRequest({ query: new MatchQuery("description", "ba") })).toHaveLength(0);
       expect(index.searchRequest({ query: new MatchQuery("description", "ba", undefined, true) }).length).toBeGreaterThan(0);
     });
+  });
+
+  it("should require all terms for AND match queries", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex() });
+    index.index({ id: "1", fields: { title: ["alpha beta"] } });
+    index.index({ id: "2", fields: { title: ["alpha gamma"] } });
+
+    expect(index.searchRequest({ query: new MatchQuery("title", "alpha beta", OP.AND) }).map(([id]) => id)).toEqual(["1"]);
   });
 });

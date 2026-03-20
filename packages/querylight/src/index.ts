@@ -1109,10 +1109,14 @@ export class MatchQuery implements Query {
         collectedHits.set(id, score);
       }
       for (const hits of termHits.slice(1)) {
-        for (const [id, score] of hits) {
-          if (collectedHits.has(id)) {
-            collectedHits.set(id, score + (collectedHits.get(id) ?? 0));
+        const hitMap = new Map(hits);
+        for (const [id, score] of [...collectedHits.entries()]) {
+          const nextScore = hitMap.get(id);
+          if (nextScore == null) {
+            collectedHits.delete(id);
+            continue;
           }
+          collectedHits.set(id, score + nextScore);
         }
       }
     } else {

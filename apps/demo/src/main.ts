@@ -17,9 +17,6 @@ import {
   reciprocalRankFusion,
   TermQuery,
   TextFieldIndex,
-  VectorFieldIndex,
-  bigramVector,
-  createSeededRandom,
   type Hits
 } from "@tryformation/querylight-ts";
 import hljs from "highlight.js/lib/core";
@@ -32,7 +29,7 @@ import packageMeta from "../../../packages/querylight/package.json";
 
 declare const __BUILD_TIMESTAMP__: string;
 
-type SearchMode = "hybrid" | "match" | "phrase" | "fuzzy" | "vector" | "all";
+type SearchMode = "hybrid" | "match" | "phrase" | "fuzzy";
 
 type DocEntry = {
   id: string;
@@ -63,7 +60,6 @@ type SearchState = {
 type SearchResult = {
   lexicalHits: Hits;
   fuzzyHits: Hits;
-  vectorHits: Hits;
   finalHits: Hits;
   selectedIds: Set<string>;
   tagFacets: Record<string, number>;
@@ -75,8 +71,6 @@ type SearchResult = {
 type RuntimeIndexes = {
   hydrated: DocumentIndex;
   fuzzy: DocumentIndex;
-  vector: VectorFieldIndex | null;
-  vectorEmbeddings: Record<string, number[]>;
 };
 
 type DemoDataPayload = {
@@ -86,7 +80,6 @@ type DemoDataPayload = {
     {
       hydrated: DocumentIndexState;
       fuzzy: DocumentIndexState;
-      vectorEmbeddings: Record<string, number[]>;
     }
   >;
 };
@@ -131,7 +124,6 @@ const markdown = new MarkdownIt({
 const tagAnalyzer = new Analyzer([], new KeywordTokenizer());
 const fuzzyAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3)]);
 const edgeAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilter(2, 6)]);
-const vectorAnalyzer = new Analyzer();
 const SEARCH_INPUT_DEBOUNCE_MS = 150;
 const DOC_SECTION_ORDER = ["Overview", "Analysis", "Queries", "Discovery", "Ranking", "Indexing", "Advanced", "Operations"];
 const PACKAGE_NAME = packageMeta.name;
@@ -149,7 +141,7 @@ const GITHUB_ICON = `
 const initialState: SearchState = {
   query: "",
   mode: "hybrid",
-  operation: OP.AND,
+  operation: OP.OR,
   prefix: false,
   ranking: RankingAlgorithm.BM25,
   tag: null,
@@ -227,29 +219,14 @@ function loadSerializedIndexes(
   serializedIndexes: {
     hydrated: DocumentIndexState;
     fuzzy: DocumentIndexState;
-    vectorEmbeddings: Record<string, number[]>;
   }
 ): RuntimeIndexes {
   return {
     hydrated: createDocIndex(ranking).loadState(serializedIndexes.hydrated),
     fuzzy: new DocumentIndex({
       combined: new TextFieldIndex(fuzzyAnalyzer, fuzzyAnalyzer, ranking)
-    }).loadState(serializedIndexes.fuzzy),
-    vector: null,
-    vectorEmbeddings: serializedIndexes.vectorEmbeddings
+    }).loadState(serializedIndexes.fuzzy)
   };
-}
-
-function ensureVectorIndex(indexes: RuntimeIndexes): VectorFieldIndex {
-  if (indexes.vector) {
-    return indexes.vector;
-  }
-  const vector = new VectorFieldIndex(6, 36 * 36, createSeededRandom(42));
-  for (const [id, embedding] of Object.entries(indexes.vectorEmbeddings)) {
-    vector.insert(id, [embedding]);
-  }
-  indexes.vector = vector;
-  return vector;
 }
 
 function createRuntimeContext(demoData: DemoDataPayload): RuntimeContext {
@@ -351,6 +328,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   const apiIndex = index.getFieldIndex("api") as TextFieldIndex;
   const { queryText, quotedPhrase } = parseQueryInput(current.query);
   const trimmed = queryText.trim();
+  const allowPrefixSuggestions = trimmed.length >= 2;
   const { filters, mustNot } = buildFacetFilterQueries(current);
   const filterOnlyQuery = filters.length > 0 || mustNot.length > 0 ? new BoolQuery([], [], filters, mustNot) : new MatchAll();
 
@@ -364,8 +342,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
             new MatchQuery("body", trimmed, current.operation, current.prefix, 2),
             new MatchQuery("api", trimmed, OP.OR, current.prefix, 2.75),
             new MatchQuery("tags", trimmed, OP.OR, current.prefix, 2.25),
-            new MatchQuery("examples", trimmed, OP.OR, current.prefix, 1.5),
-            new MatchQuery("suggest", trimmed, OP.OR, true, 1.25)
+            new MatchQuery("examples", trimmed, OP.OR, current.prefix, 1.5)
           ],
           [],
           filters,
@@ -403,8 +380,9 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
                   new MatchQuery("api", trimmed, OP.OR, false, 2.75),
                   new MatchQuery("tags", trimmed, OP.OR, false, 2.25),
                   new MatchQuery("examples", trimmed, OP.OR, false, 1.5),
-                  new MatchQuery("title", trimmed, OP.OR, true, 4),
-                  new MatchQuery("suggest", trimmed, OP.OR, true, 3)
+                  ...(allowPrefixSuggestions
+                    ? [new MatchQuery("title", trimmed, OP.OR, true, 4), new MatchQuery("suggest", trimmed, OP.OR, true, 3)]
+                    : [])
                 ])
           ],
           [],
@@ -425,10 +403,6 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
       ? index.searchRequest({ query: filterOnlyQuery }).map(([id]) => id)
       : undefined;
 
-  const vectorHits =
-    trimmed.length === 0
-      ? []
-      : ensureVectorIndex(active).query(bigramVector(trimmed, vectorAnalyzer), 20, allowedIds);
   const phraseHits =
     trimmed.length === 0
       ? []
@@ -442,10 +416,6 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   let lexicalHits: Hits;
 
   switch (current.mode) {
-    case "all":
-      lexicalHits = index.searchRequest({ query: filterOnlyQuery });
-      finalHits = lexicalHits;
-      break;
     case "phrase":
       lexicalHits = phraseHits;
       finalHits = lexicalHits;
@@ -453,10 +423,6 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
     case "fuzzy":
       lexicalHits = [];
       finalHits = fuzzyHits;
-      break;
-    case "vector":
-      lexicalHits = [];
-      finalHits = vectorHits;
       break;
     case "match":
       lexicalHits = index.searchRequest({ query: baseTextQuery, limit: 20 });
@@ -484,7 +450,6 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   return {
     lexicalHits,
     fuzzyHits,
-    vectorHits,
     finalHits,
     selectedIds,
     tagFacets,
@@ -563,8 +528,6 @@ function createShell(context: RuntimeContext): void {
                     <option value="match">Match</option>
                     <option value="phrase">Phrase</option>
                     <option value="fuzzy">Fuzzy (ngrams)</option>
-                    <option value="vector">Vector</option>
-                    <option value="all">Match all</option>
                   </select>
                 </label>
                 <label>
@@ -1031,12 +994,18 @@ function wireApp(context: RuntimeContext): void {
     renderSuggestions(context, suggestionsNode, suggestionResult);
   };
 
+  const hideSuggestions = () => {
+    suggestionResult = null;
+    renderSuggestions(context, suggestionsNode, suggestionResult);
+  };
+
   const renderApp = () => {
     renderShell();
     renderSuggestionsOnly();
   };
 
   const runSubmittedSearch = (nextView: "results" | "detail" = "results") => {
+    suggestionResult = null;
     submittedResult = searchForState(context, state);
     if (submittedResult.finalHits.length > 0 && !submittedResult.selectedIds.has(activeDocId)) {
       activeDocId = submittedResult.finalHits[0]?.[0] ?? "";
@@ -1083,8 +1052,7 @@ function wireApp(context: RuntimeContext): void {
 
   queryInput.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      suggestionResult = null;
-      renderSuggestionsOnly();
+      hideSuggestions();
     }
   });
 
@@ -1183,8 +1151,7 @@ function wireApp(context: RuntimeContext): void {
         return;
       }
       if (!target.closest("#query-form")) {
-        suggestionResult = null;
-        renderSuggestionsOnly();
+        hideSuggestions();
       }
       return;
     }

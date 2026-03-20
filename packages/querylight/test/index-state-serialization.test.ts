@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DocumentIndex, RankingAlgorithm, TextFieldIndex, type TextFieldIndexState } from "../src/index";
+import { Analyzer, DocumentIndex, MatchQuery, NgramTokenFilter, OP, RankingAlgorithm, TextFieldIndex, type TextFieldIndexState } from "../src/index";
 import { quotesIndex, sampleObject, toDoc } from "./testfixture";
 
 describe("index state serialization", () => {
@@ -26,5 +26,24 @@ describe("index state serialization", () => {
     expect(loadedField.rankingAlgorithm).toBe(RankingAlgorithm.BM25);
     expect(loadedField.bm25Config.k1).toBe(2.0);
     expect(loadedField.bm25Config.b).toBe(0.6);
+  });
+
+  it("should preserve ngram-based matches after loading state", () => {
+    const ngramAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3)]);
+    const index = new DocumentIndex({
+      combined: new TextFieldIndex(ngramAnalyzer, ngramAnalyzer, RankingAlgorithm.BM25)
+    });
+
+    index.index({
+      id: "range-filters",
+      fields: {
+        combined: ["RangeQuery compares lexical terms and supports range filters over string values."]
+      }
+    });
+
+    const loaded = index.loadState(index.indexState);
+
+    expect(index.searchRequest({ query: new MatchQuery("combined", "range", OP.OR), limit: 10 }).map(([id]) => id)).toContain("range-filters");
+    expect(loaded.searchRequest({ query: new MatchQuery("combined", "range", OP.OR), limit: 10 }).map(([id]) => id)).toContain("range-filters");
   });
 });
