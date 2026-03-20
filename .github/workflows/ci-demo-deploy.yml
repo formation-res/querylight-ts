@@ -52,6 +52,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build core package
+        run: npm run build --workspace @querylight/core
+
       - name: Build demo
         run: npm run build --workspace @querylight/demo
 
