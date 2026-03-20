@@ -62,6 +62,11 @@ export interface SearchRequest {
   limit?: number;
 }
 
+export interface ReciprocalRankFusionOptions {
+  rankConstant?: number;
+  weights?: number[];
+}
+
 export interface IndexStateBase {
   kind: string;
 }
@@ -186,6 +191,46 @@ export function orHits(left: Hits, right: Hits): Hits {
   return [...collectedHits.entries()]
     .filter(([, score]) => score > 0)
     .sort((a, b) => b[1] - a[1]);
+}
+
+export function reciprocalRankFusion(
+  rankings: Hits[],
+  { rankConstant = 60, weights = [] }: ReciprocalRankFusionOptions = {}
+): Hits {
+  if (!Number.isFinite(rankConstant) || rankConstant < 0) {
+    throw new Error("rankConstant should be a finite number >= 0");
+  }
+  if (weights.length > rankings.length) {
+    throw new Error("weights cannot be longer than rankings");
+  }
+
+  const scores = new Map<string, number>();
+  const firstSeen = new Map<string, number>();
+
+  rankings.forEach((ranking, rankingIndex) => {
+    const weight = weights[rankingIndex] ?? 1.0;
+    if (!Number.isFinite(weight) || weight < 0) {
+      throw new Error("weights should be finite numbers >= 0");
+    }
+    ranking.forEach(([id], rankIndex) => {
+      firstSeen.set(id, Math.min(firstSeen.get(id) ?? Number.POSITIVE_INFINITY, rankIndex));
+      scores.set(id, (scores.get(id) ?? 0) + weight / (rankConstant + rankIndex + 1));
+    });
+  });
+
+  return [...scores.entries()]
+    .filter(([, score]) => score > 0)
+    .sort((a, b) => {
+      const scoreDelta = b[1] - a[1];
+      if (scoreDelta !== 0) {
+        return scoreDelta;
+      }
+      const firstSeenDelta = (firstSeen.get(a[0]) ?? Number.POSITIVE_INFINITY) - (firstSeen.get(b[0]) ?? Number.POSITIVE_INFINITY);
+      if (firstSeenDelta !== 0) {
+        return firstSeenDelta;
+      }
+      return a[0].localeCompare(b[0]);
+    });
 }
 
 export class DocumentIndex {

@@ -11,6 +11,7 @@ Pure TypeScript port of the Kotlin `querylight` library, packaged for browsers a
 
 - In-memory reverse index for structured documents
 - TF-IDF and BM25 ranking
+- Reciprocal rank fusion for combining lexical, geo, filter, and vector results
 - Boolean, term, range, phrase, prefix, and match-all queries
 - Analyzer/tokenizer/token-filter pipeline
 - Trie-backed prefix expansion
