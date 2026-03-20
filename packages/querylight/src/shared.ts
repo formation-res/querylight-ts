@@ -23,7 +23,7 @@ export interface HighlightSpan {
   startOffset: number;
   endOffset: number;
   term: string;
-  kind: "exact" | "phrase" | "prefix";
+  kind: "exact" | "phrase" | "prefix" | "fuzzy";
 }
 
 export interface HighlightFragmentPart {

@@ -487,16 +487,23 @@ export class TextFieldIndex implements FieldIndex {
       return this.highlightPhrase(tokens, queryTerms, clause.slop ?? 0);
     }
 
-    const matchesPerTerm = queryTerms.map((term) => tokens.filter((token) => clause.prefixMatch ? token.term.startsWith(term) : token.term === term));
+    const usesApproximateMatching = this.analyzer.tokenFilters.length > 0 || this.queryAnalyzer.tokenFilters.length > 0;
+    const matchesPerTerm = queryTerms.map((term) => tokens
+      .filter((token) => clause.prefixMatch
+        ? token.term.startsWith(term)
+        : token.term === term || (usesApproximateMatching && token.term.includes(term)))
+      .map((token) => ({ token, matchedTerm: term })));
     if (clause.operation === "AND" && matchesPerTerm.some((matches) => matches.length === 0)) {
       return [];
     }
 
-    return mergeSpans(matchesPerTerm.flat().map((token) => ({
+    return mergeSpans(matchesPerTerm.flat().map(({ token, matchedTerm }) => ({
       startOffset: token.startOffset,
       endOffset: token.endOffset,
       term: token.term,
-      kind: clause.prefixMatch && token.term !== queryTerms.find((term) => token.term === term) ? "prefix" : "exact"
+      kind: clause.prefixMatch
+        ? token.term === matchedTerm ? "exact" : "prefix"
+        : token.term === matchedTerm ? "exact" : "fuzzy"
     })));
   }
 

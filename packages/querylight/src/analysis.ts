@@ -115,10 +115,6 @@ export class Analyzer {
   }
 
   analyzeWithOffsets(text: string): AnalyzedToken[] {
-    if (this.tokenFilters.length > 0) {
-      return [];
-    }
-
     const rawTokens = this.tokenizer.tokenize(text);
     const analyzedTokens: AnalyzedToken[] = [];
     let searchStart = 0;

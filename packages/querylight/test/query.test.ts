@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BoolQuery, DocumentIndex, ExistsQuery, MatchAll, MatchPhrase, MatchQuery, MultiMatchQuery, OP, PrefixQuery, RankingAlgorithm, TermsQuery, TextFieldIndex } from "../src/index";
+import { Analyzer, BoolQuery, DocumentIndex, ExistsQuery, MatchAll, MatchPhrase, MatchQuery, MultiMatchQuery, NgramTokenFilter, OP, PrefixQuery, RankingAlgorithm, TermsQuery, TextFieldIndex } from "../src/index";
 import { quotesIndex } from "./testfixture";
 
 describe("queries", () => {
@@ -114,5 +114,16 @@ describe("queries", () => {
     const result = index.highlight("1", new MatchPhrase("body", "range filters"), { fields: ["body"] });
 
     expect(result.fields[0]?.fragments[0]?.parts.filter((part) => part.highlighted).map((part) => part.text).join("")).toContain("Range filters");
+  });
+
+  it("should highlight fuzzy matches from ngram analyzers", () => {
+    const fuzzyAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3)]);
+    const index = new DocumentIndex({ title: new TextFieldIndex(fuzzyAnalyzer, fuzzyAnalyzer) });
+    index.index({ id: "1", fields: { title: ["vector search"] } });
+
+    const result = index.highlight("1", new MatchQuery("title", "vectro", OP.OR), { fields: ["title"] });
+
+    expect(result.fields[0]?.fragments[0]?.parts.some((part) => part.highlighted && part.text.includes("vector"))).toBe(true);
+    expect(result.fields[0]?.fragments[0]?.spans[0]?.kind).toBe("fuzzy");
   });
 });
