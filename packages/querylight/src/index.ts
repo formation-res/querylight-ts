@@ -245,6 +245,16 @@ function applyBoost(hits: Hits, boost: number): Hits {
   return hits.map(([id, score]) => [id, score * boost]);
 }
 
+function textFieldHits(documentIndex: DocumentIndex, field: string, block: (fieldIndex: TextFieldIndex) => Hits): Hits {
+  const fieldIndex = documentIndex.getFieldIndex(field);
+  return fieldIndex instanceof TextFieldIndex ? block(fieldIndex) : [];
+}
+
+function geoFieldHits(documentIndex: DocumentIndex, field: string, block: (fieldIndex: GeoFieldIndex) => Hits): Hits {
+  const fieldIndex = documentIndex.getFieldIndex(field);
+  return fieldIndex instanceof GeoFieldIndex ? block(fieldIndex) : [];
+}
+
 export function ids(hits: Hits): string[] {
   return hits.map(([id]) => id);
 }
@@ -1082,10 +1092,11 @@ export class TermQuery implements Query {
   ) {}
 
   hits(documentIndex: DocumentIndex): Hits {
-    const fieldIndex = documentIndex.getFieldIndex(this.field);
-    const hits = fieldIndex instanceof TextFieldIndex
-      ? (fieldIndex.termMatches(this.text) ?? []).map((match): Hit => [match.id, 1.0])
-      : [];
+    const hits = textFieldHits(
+      documentIndex,
+      this.field,
+      (fieldIndex) => (fieldIndex.termMatches(this.text) ?? []).map((match): Hit => [match.id, 1.0])
+    );
     return applyBoost(hits, normalizedBoost(this));
   }
 }
@@ -1103,8 +1114,7 @@ export class RangeQuery implements Query {
   ) {}
 
   hits(documentIndex: DocumentIndex): Hits {
-    const fieldIndex = documentIndex.getFieldIndex(this.field);
-    const hits = fieldIndex instanceof TextFieldIndex ? fieldIndex.filterTermsByRange(this.params) : [];
+    const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => fieldIndex.filterTermsByRange(this.params));
     return applyBoost(hits, normalizedBoost(this));
   }
 }
@@ -1119,45 +1129,45 @@ export class MatchQuery implements Query {
   ) {}
 
   hits(documentIndex: DocumentIndex): Hits {
-    const fieldIndex = documentIndex.getFieldIndex(this.field);
-    if (!(fieldIndex instanceof TextFieldIndex)) {
-      return [];
-    }
-    const searchTerms = fieldIndex.queryAnalyzer.analyze(this.text);
-    const collectedHits = new Map<string, number>();
+    const hits = textFieldHits(
+      documentIndex,
+      this.field,
+      (fieldIndex) => {
+        const searchTerms = fieldIndex.queryAnalyzer.analyze(this.text);
+        const collectedHits = new Map<string, number>();
 
-    if (this.operation === OP.AND) {
-      const termHits = searchTerms.map((term) => fieldIndex.searchTerm(term, this.prefixMatch)).sort((a, b) => a.length - b.length);
-      if (termHits.length === 0 || termHits[0]!.length === 0) {
-        return [];
-      }
-      for (const [id, score] of termHits[0]!) {
-        collectedHits.set(id, score);
-      }
-      for (const hits of termHits.slice(1)) {
-        const hitMap = new Map(hits);
-        for (const [id, score] of [...collectedHits.entries()]) {
-          const nextScore = hitMap.get(id);
-          if (nextScore == null) {
-            collectedHits.delete(id);
-            continue;
+        if (this.operation === OP.AND) {
+          const termHits = searchTerms.map((term) => fieldIndex.searchTerm(term, this.prefixMatch)).sort((a, b) => a.length - b.length);
+          if (termHits.length === 0 || termHits[0]!.length === 0) {
+            return [];
           }
-          collectedHits.set(id, score + nextScore);
+          for (const [id, score] of termHits[0]!) {
+            collectedHits.set(id, score);
+          }
+          for (const nextHits of termHits.slice(1)) {
+            const hitMap = new Map(nextHits);
+            for (const [id, score] of [...collectedHits.entries()]) {
+              const nextScore = hitMap.get(id);
+              if (nextScore == null) {
+                collectedHits.delete(id);
+                continue;
+              }
+              collectedHits.set(id, score + nextScore);
+            }
+          }
+        } else {
+          const termHits = searchTerms.map((term) => fieldIndex.searchTerm(term, this.prefixMatch));
+          for (const nextHits of termHits) {
+            for (const [id, score] of nextHits) {
+              collectedHits.set(id, score + (collectedHits.get(id) ?? 0));
+            }
+          }
         }
-      }
-    } else {
-      const termHits = searchTerms.map((term) => fieldIndex.searchTerm(term, this.prefixMatch));
-      for (const hits of termHits) {
-        for (const [id, score] of hits) {
-          collectedHits.set(id, score + (collectedHits.get(id) ?? 0));
-        }
-      }
-    }
 
-    return applyBoost(
-      [...collectedHits.entries()].sort((a, b) => b[1] - a[1]),
-      normalizedBoost(this)
+        return [...collectedHits.entries()].sort((a, b) => b[1] - a[1]);
+      }
     );
+    return applyBoost(hits, normalizedBoost(this));
   }
 }
 
@@ -1170,12 +1180,11 @@ export class MatchPhrase implements Query {
   ) {}
 
   hits(documentIndex: DocumentIndex): Hits {
-    const fieldIndex = documentIndex.getFieldIndex(this.field);
-    if (!(fieldIndex instanceof TextFieldIndex)) {
-      return [];
-    }
-    const searchTerms = fieldIndex.queryAnalyzer.analyze(this.text);
-    return applyBoost(fieldIndex.searchPhrase(searchTerms, this.slop), normalizedBoost(this));
+    const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => {
+      const searchTerms = fieldIndex.queryAnalyzer.analyze(this.text);
+      return fieldIndex.searchPhrase(searchTerms, this.slop);
+    });
+    return applyBoost(hits, normalizedBoost(this));
   }
 }
 
@@ -1196,10 +1205,11 @@ export class GeoPointQuery implements Query {
   ) {}
 
   hits(documentIndex: DocumentIndex): Hits {
-    const fieldIndex = documentIndex.getFieldIndex(this.field);
-    const hits = fieldIndex instanceof GeoFieldIndex
-      ? fieldIndex.queryPoint(this.latitude, this.longitude).map((id): Hit => [id, 1.0])
-      : [];
+    const hits = geoFieldHits(
+      documentIndex,
+      this.field,
+      (fieldIndex) => fieldIndex.queryPoint(this.latitude, this.longitude).map((id): Hit => [id, 1.0])
+    );
     return applyBoost(hits, normalizedBoost(this));
   }
 }
@@ -1212,10 +1222,11 @@ export class GeoPolygonQuery implements Query {
   ) {}
 
   hits(documentIndex: DocumentIndex): Hits {
-    const fieldIndex = documentIndex.getFieldIndex(this.field);
-    const hits = fieldIndex instanceof GeoFieldIndex
-      ? fieldIndex.queryPolygon(this.polygon).map((id): Hit => [id, 1.0])
-      : [];
+    const hits = geoFieldHits(
+      documentIndex,
+      this.field,
+      (fieldIndex) => fieldIndex.queryPolygon(this.polygon).map((id): Hit => [id, 1.0])
+    );
     return applyBoost(hits, normalizedBoost(this));
   }
 }
