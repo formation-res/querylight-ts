@@ -6,7 +6,7 @@ Querylight TS is a lightweight in-process search toolkit for static sites, brows
 
 ## Workspace Layout
 
-- `packages/querylight`: the library package (`@querylight/core`)
+- `packages/querylight`: the library package (`@tryformation/querylight-ts`)
 - `apps/demo`: a browser demo built with Vite
 
 ## Features

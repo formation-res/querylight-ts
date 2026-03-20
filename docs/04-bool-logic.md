@@ -24,7 +24,7 @@ lon: -0.1276
 - `mustNot`: excluded documents
 
 ```ts
-import { BoolQuery, MatchQuery, OP, TermQuery } from "@querylight/core";
+import { BoolQuery, MatchQuery, OP, TermQuery } from "@tryformation/querylight-ts";
 
 const query = new BoolQuery(
   [

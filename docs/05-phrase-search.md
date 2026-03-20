@@ -19,7 +19,7 @@ lon: 2.3522
 ## Exact phrase
 
 ```ts
-import { MatchPhrase } from "@querylight/core";
+import { MatchPhrase } from "@tryformation/querylight-ts";
 
 const exact = new MatchPhrase("body", "vector search");
 ```

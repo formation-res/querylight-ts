@@ -19,7 +19,7 @@ lon: 21.0122
 ## Point query
 
 ```ts
-import { GeoPointQuery } from "@querylight/core";
+import { GeoPointQuery } from "@tryformation/querylight-ts";
 
 const query = new GeoPointQuery("location", 52.52, 13.405);
 ```
@@ -27,7 +27,7 @@ const query = new GeoPointQuery("location", 52.52, 13.405);
 ## Polygon query
 
 ```ts
-import { GeoPolygonQuery, rectangleToPolygon } from "@querylight/core";
+import { GeoPolygonQuery, rectangleToPolygon } from "@tryformation/querylight-ts";
 
 const query = new GeoPolygonQuery(
   "location",

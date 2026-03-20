@@ -30,7 +30,7 @@ The default `Analyzer` applies:
 Use `KeywordTokenizer` when a field should stay as a single token, for example tags, categories, and IDs.
 
 ```ts
-import { Analyzer, KeywordTokenizer, TextFieldIndex } from "@querylight/core";
+import { Analyzer, KeywordTokenizer, TextFieldIndex } from "@tryformation/querylight-ts";
 
 const keywordAnalyzer = new Analyzer([], new KeywordTokenizer());
 const tags = new TextFieldIndex(keywordAnalyzer, keywordAnalyzer);
@@ -41,7 +41,7 @@ const tags = new TextFieldIndex(keywordAnalyzer, keywordAnalyzer);
 Use `NgramTokenFilter` for typo-tolerant matching and `EdgeNgramsTokenFilter` for suggestion-style prefix indexing.
 
 ```ts
-import { Analyzer, EdgeNgramsTokenFilter, NgramTokenFilter } from "@querylight/core";
+import { Analyzer, EdgeNgramsTokenFilter, NgramTokenFilter } from "@tryformation/querylight-ts";
 
 const fuzzyAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3)]);
 const suggestAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilter(2, 6)]);

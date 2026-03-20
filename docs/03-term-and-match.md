@@ -19,7 +19,7 @@ lon: 12.5683
 `TermQuery` looks for an exact term in an indexed field. It does not analyze the input for you.
 
 ```ts
-import { TermQuery } from "@querylight/core";
+import { TermQuery } from "@tryformation/querylight-ts";
 
 const query = new TermQuery("tags", "aggregation");
 ```
@@ -29,7 +29,7 @@ const query = new TermQuery("tags", "aggregation");
 `MatchQuery` analyzes the input text and supports both `AND` and `OR` logic. It can also use trie-backed prefix expansion.
 
 ```ts
-import { MatchQuery, OP } from "@querylight/core";
+import { MatchQuery, OP } from "@tryformation/querylight-ts";
 
 const bodyQuery = new MatchQuery("body", "vector search", OP.AND, false, 2.0);
 const prefixQuery = new MatchQuery("title", "agg", OP.OR, true);

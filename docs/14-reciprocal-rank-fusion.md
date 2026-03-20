@@ -33,7 +33,7 @@ import {
   bigramVector,
   createSeededRandom,
   reciprocalRankFusion
-} from "@querylight/core";
+} from "@tryformation/querylight-ts";
 
 const textIndex = new DocumentIndex({ title: new TextFieldIndex() });
 const vectorIndex = new VectorFieldIndex(8, 36 * 36, createSeededRandom(42));
@@ -57,7 +57,7 @@ import {
   GeoPointQuery,
   MatchQuery,
   reciprocalRankFusion
-} from "@querylight/core";
+} from "@tryformation/querylight-ts";
 
 const lexicalHits = index.search(new MatchQuery("title", "specialty coffee"));
 const geoHits = index.search(new GeoPointQuery("location", 52.52, 13.405));

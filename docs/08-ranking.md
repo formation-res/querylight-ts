@@ -28,7 +28,7 @@ lon: 18.0686
 - Useful for debugging or comparison
 
 ```ts
-import { RankingAlgorithm, TextFieldIndex } from "@querylight/core";
+import { RankingAlgorithm, TextFieldIndex } from "@tryformation/querylight-ts";
 
 const bm25 = new TextFieldIndex(undefined, undefined, RankingAlgorithm.BM25);
 const tfidf = new TextFieldIndex(undefined, undefined, RankingAlgorithm.TFIDF);

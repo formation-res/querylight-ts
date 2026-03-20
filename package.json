@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "test": "npm run test --workspace @querylight/core",
+    "test": "npm run test --workspace @tryformation/querylight-ts",
     "dev": "npm run dev --workspace @querylight/demo",
     "profile:demo": "node scripts/profile-demo.mjs"
   },

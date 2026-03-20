@@ -19,7 +19,7 @@ lon: -9.1393
 ## Example
 
 ```ts
-import { BoolQuery, RangeQuery } from "@querylight/core";
+import { BoolQuery, RangeQuery } from "@tryformation/querylight-ts";
 
 const query = new BoolQuery([], [], [
   new RangeQuery("order", { gte: "03", lte: "07" })

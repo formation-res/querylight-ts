@@ -19,7 +19,7 @@ Querylight stores indexed terms in a trie. Prefix queries can then expand agains
 ## Prefix query
 
 ```ts
-import { MatchQuery, OP } from "@querylight/core";
+import { MatchQuery, OP } from "@tryformation/querylight-ts";
 
 const query = new MatchQuery("title", "agg", OP.OR, true);
 ```
@@ -29,7 +29,7 @@ const query = new MatchQuery("title", "agg", OP.OR, true);
 Edge ngrams are different from trie expansion. They are useful when you want indexed suggestion fragments instead of exact prefix expansion over known terms.
 
 ```ts
-import { Analyzer, EdgeNgramsTokenFilter } from "@querylight/core";
+import { Analyzer, EdgeNgramsTokenFilter } from "@tryformation/querylight-ts";
 
 const suggestAnalyzer = new Analyzer(undefined, undefined, [
   new EdgeNgramsTokenFilter(2, 5)

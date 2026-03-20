@@ -20,7 +20,7 @@ import {
   bigramVector,
   createSeededRandom,
   type Hits
-} from "@querylight/core";
+} from "@tryformation/querylight-ts";
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
 import json from "highlight.js/lib/languages/json";

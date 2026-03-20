@@ -27,7 +27,7 @@ Querylight TS is a pure TypeScript search toolkit for browsers and Node.js. It c
 ## Minimal setup
 
 ```ts
-import { DocumentIndex, MatchAll, TextFieldIndex } from "@querylight/core";
+import { DocumentIndex, MatchAll, TextFieldIndex } from "@tryformation/querylight-ts";
 
 const index = new DocumentIndex({
   title: new TextFieldIndex(),

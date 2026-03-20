@@ -21,7 +21,7 @@ lon: 14.4378
 The built-in `bigramVector` helper is practical for typo-tolerant text similarity.
 
 ```ts
-import { VectorFieldIndex, bigramVector, createSeededRandom } from "@querylight/core";
+import { VectorFieldIndex, bigramVector, createSeededRandom } from "@tryformation/querylight-ts";
 
 const vectorIndex = new VectorFieldIndex(6, 36 * 36, createSeededRandom(42));
 vectorIndex.insert("doc-1", [bigramVector("vector search and typo tolerance")]);
