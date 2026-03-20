@@ -26,6 +26,7 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 - TF-IDF and BM25 ranking
 - Reciprocal rank fusion for combining lexical, geo, filter, and vector results
 - Boolean, term, range, phrase, prefix, and match-all queries
+- Beginner-friendly plain JSON indexing with `simpleTextSearch`
 - Analyzer/tokenizer/token-filter pipeline
 - Trie-backed prefix expansion
 - Aggregations and significant terms
@@ -36,6 +37,7 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 ## Documentation
 
 - [Introducing Querylight TS](docs/00-introducing-querylight-ts.md)
+- [Getting started with browser search](docs/16-getting-started.md)
 - [Documentation overview](docs/01-overview.md)
 
 ## Install
@@ -50,6 +52,29 @@ For local development in this repository:
 
 ```bash
 npm install
+```
+
+## Beginner Path
+
+If you want a reasonable default without composing your own queries, use `createSimpleTextSearchIndex` and `simpleTextSearch`:
+
+```ts
+import { createSimpleTextSearchIndex, simpleTextSearch } from "@tryformation/querylight-ts";
+
+const search = createSimpleTextSearchIndex({
+  documents: [
+    {
+      id: "intro",
+      title: "Querylight TS",
+      description: "Portable browser and Node.js search",
+      body: "A compact search toolkit with BM25, phrase search, and fuzzy recovery."
+    }
+  ],
+  primaryFields: ["title"],
+  secondaryFields: ["description", "body"]
+});
+
+const hits = simpleTextSearch(search, { query: "portble sear", limit: 5 });
 ```
 
 ## Commands
