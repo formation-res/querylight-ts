@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BoolQuery, DocumentIndex, MatchAll, MatchPhrase, MatchQuery, OP, RankingAlgorithm, TextFieldIndex } from "../src/index";
+import { BoolQuery, DocumentIndex, MatchAll, MatchPhrase, MatchQuery, OP, PrefixQuery, RankingAlgorithm, TextFieldIndex } from "../src/index";
 import { quotesIndex } from "./testfixture";
 
 describe("queries", () => {
@@ -47,6 +47,18 @@ describe("queries", () => {
       expect(index.searchRequest({ query: new MatchQuery("description", "ba") })).toHaveLength(0);
       expect(index.searchRequest({ query: new MatchQuery("description", "ba", undefined, true) }).length).toBeGreaterThan(0);
     });
+  });
+
+  it("should support prefix queries directly", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex() });
+    index.index({ id: "1", fields: { title: ["querylight"] } });
+    index.index({ id: "2", fields: { title: ["query planner"] } });
+    index.index({ id: "3", fields: { title: ["light query"] } });
+
+    expect(index.searchRequest({ query: new PrefixQuery("title", "que") }).map(([id]) => id).sort()).toEqual(["1", "2", "3"]);
+
+    const result = index.highlight("1", new PrefixQuery("title", "que"), { fields: ["title"] });
+    expect(result.fields[0]?.fragments[0]?.spans[0]?.kind).toBe("prefix");
   });
 
   it("should require all terms for AND match queries", () => {

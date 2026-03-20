@@ -73,6 +73,7 @@ export {
   MatchPhrase,
   MatchQuery,
   OP,
+  PrefixQuery,
   RangeQuery,
   TermQuery
 } from "./query";

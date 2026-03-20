@@ -210,6 +210,29 @@ export class MatchPhrase implements Query {
   }
 }
 
+export class PrefixQuery implements Query {
+  constructor(
+    private readonly field: string,
+    private readonly prefix: string,
+    public readonly boost: number | undefined = undefined
+  ) {}
+
+  hits(documentIndex: DocumentIndex): Hits {
+    const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => fieldIndex.searchPrefix(this.prefix));
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses() {
+    return [{
+      kind: "term" as const,
+      field: this.field,
+      text: this.prefix,
+      operation: OP.OR,
+      prefixMatch: true
+    }];
+  }
+}
+
 export class MatchAll implements Query {
   constructor(public readonly boost: number | undefined = undefined) {}
 
