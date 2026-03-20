@@ -71,6 +71,7 @@ export {
   GeoPointQuery,
   GeoPolygonQuery,
   MatchAll,
+  MultiMatchQuery,
   MatchPhrase,
   MatchQuery,
   OP,

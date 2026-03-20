@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BoolQuery, DocumentIndex, ExistsQuery, MatchAll, MatchPhrase, MatchQuery, OP, PrefixQuery, RankingAlgorithm, TermsQuery, TextFieldIndex } from "../src/index";
+import { BoolQuery, DocumentIndex, ExistsQuery, MatchAll, MatchPhrase, MatchQuery, MultiMatchQuery, OP, PrefixQuery, RankingAlgorithm, TermsQuery, TextFieldIndex } from "../src/index";
 import { quotesIndex } from "./testfixture";
 
 describe("queries", () => {
@@ -86,6 +86,15 @@ describe("queries", () => {
     index.index({ id: "3", fields: { title: ["gamma"], tags: [] } });
 
     expect(index.searchRequest({ query: new ExistsQuery("tags") }).map(([id]) => id)).toEqual(["2"]);
+  });
+
+  it("should support multi match queries across fields", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex(), body: new TextFieldIndex() });
+    index.index({ id: "1", fields: { title: ["querylight"], body: ["portable search toolkit"] } });
+    index.index({ id: "2", fields: { title: ["portable toolkit"], body: ["querylight search"] } });
+    index.index({ id: "3", fields: { title: ["portable"], body: ["nothing relevant"] } });
+
+    expect(index.searchRequest({ query: new MultiMatchQuery(["title", "body"], "querylight portable") }).map(([id]) => id)).toEqual(["1", "2"]);
   });
 
   it("should highlight exact term matches with source offsets", () => {

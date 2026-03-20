@@ -254,6 +254,46 @@ export class MatchQuery implements Query {
   }
 }
 
+export class MultiMatchQuery implements Query {
+  constructor(
+    private readonly fields: string[],
+    private readonly text: string,
+    private readonly operation: OP = OP.AND,
+    private readonly prefixMatch = false,
+    public readonly boost: number | undefined = undefined,
+    private readonly fieldBoosts: Record<string, number> = {}
+  ) {}
+
+  hits(documentIndex: DocumentIndex): Hits {
+    const fieldIndexes = this.fields
+      .map((field) => {
+        const fieldIndex = documentIndex.getFieldIndex(field);
+        return fieldIndex instanceof TextFieldIndex ? [field, fieldIndex] as const : null;
+      })
+      .filter((entry): entry is readonly [string, TextFieldIndex] => entry !== null);
+    if (fieldIndexes.length === 0) {
+      return [];
+    }
+
+    const searchTerms = fieldIndexes[0]![1].queryAnalyzer.analyze(this.text);
+    if (searchTerms.length === 0) {
+      return [];
+    }
+
+    const termHits = searchTerms.map((term) => fieldIndexes
+      .map(([field, fieldIndex]) => applyBoost(fieldIndex.searchTerm(term, this.prefixMatch), this.fieldBoosts[field] ?? 1.0))
+      .reduce(orHits, []));
+    const hits = this.operation === OP.AND ? termHits.reduce(andHits) : termHits.reduce(orHits);
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(documentIndex: DocumentIndex) {
+    return this.fields.flatMap((field) => (
+      new MatchQuery(field, this.text, this.operation, this.prefixMatch, this.fieldBoosts[field] ?? 1.0).highlightClauses(documentIndex)
+    ));
+  }
+}
+
 export class MatchPhrase implements Query {
   constructor(
     private readonly field: string,
