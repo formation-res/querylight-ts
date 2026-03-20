@@ -32,3 +32,9 @@ const hits = vectorIndex.query(bigramVector("vectro serch"), 5);
 ## Why the demo uses it
 
 The vector mode helps recover documentation pages even when the query spelling is poor or the exact lexical phrase is missing.
+
+## Learn more
+
+- [Nearest neighbor search on Wikipedia](https://en.wikipedia.org/wiki/Nearest_neighbor_search)
+- [Locality-sensitive hashing on Wikipedia](https://en.wikipedia.org/wiki/Locality-sensitive_hashing)
+- [Approximate Nearest Neighbor: Towards Removing the Curse of Dimensionality](https://www.theoryofcomputing.org/articles/v008a014/v008a014.pdf)

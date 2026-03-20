@@ -36,3 +36,9 @@ expect(index.searchRequest({
 ```ts
 expect(index.search(new MatchQuery("text", "foo"))[0]?.[0]).toBe("1");
 ```
+
+## Learn more
+
+- [Vitest documentation](https://vitest.dev/)
+- [Regression testing on Wikipedia](https://en.wikipedia.org/wiki/Regression_testing)
+- [Software testing on Wikipedia](https://en.wikipedia.org/wiki/Software_testing)

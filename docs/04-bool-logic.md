@@ -42,3 +42,9 @@ const query = new BoolQuery(
 - Search content but restrict to a section.
 - Hide advanced entries in an onboarding view.
 - Combine phrase-heavy title matches with broader body matches.
+
+## Learn more
+
+- [Boolean query in the Elasticsearch reference](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-bool-query)
+- [Query and filter context in the Elasticsearch reference](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-filter-context)
+- [Boolean model of information retrieval on Wikipedia](https://en.wikipedia.org/wiki/Boolean_model_of_information_retrieval)

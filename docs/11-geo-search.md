@@ -36,3 +36,9 @@ const query = new GeoPolygonQuery(
 ```
 
 The demo maps documentation topics to example points so the geo API can be explored from the same browser.
+
+## Learn more
+
+- [GeoJSON on Wikipedia](https://en.wikipedia.org/wiki/GeoJSON)
+- [RFC 7946: The GeoJSON Format](https://www.rfc-editor.org/rfc/rfc7946)
+- [Geohash on Wikipedia](https://en.wikipedia.org/wiki/Geohash)

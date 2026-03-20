@@ -44,3 +44,9 @@ index.index({
 
 const hits = index.searchRequest({ query: new MatchAll(), limit: 10 });
 ```
+
+## Learn more
+
+- [Information retrieval on Wikipedia](https://en.wikipedia.org/wiki/Information_retrieval)
+- [Okapi BM25 on Wikipedia](https://en.wikipedia.org/wiki/Okapi_BM25)
+- [Practical BM25, Part 2 on the Elastic blog](https://www.elastic.co/blog/practical-bm25-part-2-the-bm25-algorithm-and-its-variables)

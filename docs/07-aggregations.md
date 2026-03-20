@@ -39,3 +39,9 @@ const standoutTerms = bodyIndex.getTopSignificantTerms(8, subsetIds);
 - Facets help users narrow results quickly.
 - Significant terms help users understand what makes the current slice distinctive.
 - Both are useful in a documentation browser because they make exploration faster than scrolling.
+
+## Learn more
+
+- [Faceted search on Wikipedia](https://en.wikipedia.org/wiki/Faceted_search)
+- [Terms aggregation in the Elasticsearch reference](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html)
+- [Significant Terms Aggregation on the Elastic blog](https://www.elastic.co/blog/significant-terms-aggregation)

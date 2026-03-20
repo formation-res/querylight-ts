@@ -40,3 +40,9 @@ const prefixQuery = new MatchQuery("title", "agg", OP.OR, true);
 - Use `TermQuery` for exact facet values.
 - Use `MatchQuery` for full text.
 - Turn on `prefixMatch` when you want partial token lookup against known indexed terms.
+
+## Learn more
+
+- [Term-level queries in Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/term-level-queries.html)
+- [Get started with Query DSL search and filters in Elasticsearch](https://www.elastic.co/docs/solutions/search/querydsl-full-text-filter-tutorial)
+- [Trie on Wikipedia](https://en.wikipedia.org/wiki/Trie)

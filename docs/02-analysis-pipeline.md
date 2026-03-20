@@ -46,3 +46,9 @@ import { Analyzer, EdgeNgramsTokenFilter, NgramTokenFilter } from "@querylight/c
 const fuzzyAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3)]);
 const suggestAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilter(2, 6)]);
 ```
+
+## Learn more
+
+- [N-gram on Wikipedia](https://en.wikipedia.org/wiki/N-gram)
+- [Create a custom analyzer in Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/analysis-custom-analyzer.html)
+- [All About Analyzers, Part One on the Elastic blog](https://www.elastic.co/blog/found-text-analysis-part-1)

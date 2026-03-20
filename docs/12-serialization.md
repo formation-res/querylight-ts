@@ -34,3 +34,9 @@ const hydrated = index.loadState(state);
 - Ship them to the browser
 - Avoid reindexing on startup
 - Keep test fixtures deterministic
+
+## Learn more
+
+- [JSON on Wikipedia](https://en.wikipedia.org/wiki/JSON)
+- [RFC 8259: The JavaScript Object Notation (JSON) Data Interchange Format](https://www.rfc-editor.org/rfc/rfc8259)
+- [JSON.stringify() on MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify)

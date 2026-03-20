@@ -35,3 +35,9 @@ const tfidf = new TextFieldIndex(undefined, undefined, RankingAlgorithm.TFIDF);
 ```
 
 The docs browser keeps both indexes live and lets you switch between them from the toolbar.
+
+## Learn more
+
+- [TF-IDF on Wikipedia](https://en.wikipedia.org/wiki/Tf%E2%80%93idf)
+- [Okapi BM25 on Wikipedia](https://en.wikipedia.org/wiki/Okapi_BM25)
+- [The Probabilistic Relevance Framework: BM25 and Beyond](https://ir.webis.de/anthology/2009.ftir_journal-ir0anthology0volumeA3A4.0/)
