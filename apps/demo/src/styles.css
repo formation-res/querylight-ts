@@ -203,6 +203,20 @@
   .result-summary-sm {
     @apply mt-1;
   }
+
+  .result-explanation {
+    @apply mt-3 rounded-2xl border border-stone-900/8 bg-stone-50/85 px-3 py-3 text-sm leading-7 text-stone-700;
+  }
+
+  .result-explanation-label {
+    @apply mr-2 inline-block text-[11px] font-semibold uppercase tracking-[0.14em] text-orange-800;
+  }
+
+  .search-highlight {
+    @apply rounded-md bg-orange-200/80 px-1 py-0.5 text-stone-950;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
 }
 
 @media (max-width: 1279px) {

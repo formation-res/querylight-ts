@@ -2,7 +2,7 @@
 
 Lightweight in-memory search for TypeScript applications.
 
-`@tryformation/querylight-ts` combines structured indexing, lexical ranking, boolean queries, aggregations, vector search, and geo search in one small API for browser and Node.js projects.
+`@tryformation/querylight-ts` combines structured indexing, lexical ranking, boolean queries, aggregations, vector search, geo search, and offset-based highlighting in one small API for browser and Node.js projects.
 
 ## Install
 
@@ -22,3 +22,4 @@ npm install @tryformation/querylight-ts
 
 - Introduction: [https://github.com/formation-res/querylight-ts/blob/main/docs/00-introducing-querylight-ts.md](https://github.com/formation-res/querylight-ts/blob/main/docs/00-introducing-querylight-ts.md)
 - Overview: [https://github.com/formation-res/querylight-ts/blob/main/docs/01-overview.md](https://github.com/formation-res/querylight-ts/blob/main/docs/01-overview.md)
+- Highlighting: [https://github.com/formation-res/querylight-ts/blob/main/docs/17-highlighting.md](https://github.com/formation-res/querylight-ts/blob/main/docs/17-highlighting.md)

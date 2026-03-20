@@ -70,6 +70,13 @@ export class BoolQuery implements Query {
 
     return applyBoost(result, normalizedBoost(this));
   }
+
+  highlightClauses(documentIndex: DocumentIndex) {
+    return [
+      ...this.should.flatMap((query) => query.highlightClauses?.(documentIndex) ?? []),
+      ...this.must.flatMap((query) => query.highlightClauses?.(documentIndex) ?? [])
+    ];
+  }
 }
 
 export class TermQuery implements Query {
@@ -86,6 +93,10 @@ export class TermQuery implements Query {
       (fieldIndex) => (fieldIndex.termMatches(this.text) ?? []).map((match): Hit => [match.id, 1.0])
     );
     return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
   }
 }
 
@@ -104,6 +115,10 @@ export class RangeQuery implements Query {
   hits(documentIndex: DocumentIndex): Hits {
     const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => fieldIndex.filterTermsByRange(this.params));
     return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
   }
 }
 
@@ -157,6 +172,16 @@ export class MatchQuery implements Query {
     );
     return applyBoost(hits, normalizedBoost(this));
   }
+
+  highlightClauses() {
+    return [{
+      kind: "term" as const,
+      field: this.field,
+      text: this.text,
+      operation: this.operation,
+      prefixMatch: this.prefixMatch
+    }];
+  }
 }
 
 export class MatchPhrase implements Query {
@@ -174,6 +199,15 @@ export class MatchPhrase implements Query {
     });
     return applyBoost(hits, normalizedBoost(this));
   }
+
+  highlightClauses() {
+    return [{
+      kind: "phrase" as const,
+      field: this.field,
+      text: this.text,
+      slop: this.slop
+    }];
+  }
 }
 
 export class MatchAll implements Query {
@@ -181,6 +215,10 @@ export class MatchAll implements Query {
 
   hits(documentIndex: DocumentIndex): Hits {
     return applyBoost([...documentIndex.ids()].map((id): Hit => [id, 1.0]), normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
   }
 }
 
@@ -200,6 +238,10 @@ export class GeoPointQuery implements Query {
     );
     return applyBoost(hits, normalizedBoost(this));
   }
+
+  highlightClauses(): [] {
+    return [];
+  }
 }
 
 export class GeoPolygonQuery implements Query {
@@ -216,5 +258,9 @@ export class GeoPolygonQuery implements Query {
       (fieldIndex) => fieldIndex.queryPolygon(this.polygon).map((id): Hit => [id, 1.0])
     );
     return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
   }
 }

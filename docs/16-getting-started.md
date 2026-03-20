@@ -72,6 +72,8 @@ What this gives you:
 
 If you stop here, you already have a practical site-search baseline.
 
+If you also want result highlighting, treat it as a second step after retrieval. Querylight TS now exposes `documentIndex.highlight(...)` for exact and phrase highlighting against stored source text.
+
 ## Equivalent manual setup
 
 The beginner helper is just a convenience layer around the lower-level primitives.
@@ -220,6 +222,11 @@ const hydratedSearch = {
 };
 
 const hits = simpleTextSearch(hydratedSearch, { query: "range fi", limit: 5 });
+
+const query = new MatchQuery("title", "range filters");
+const highlighted = hydratedSearch.documentIndex.highlight(hits[0]![0], query, {
+  fields: ["title", "body"]
+});
 ```
 
 This pattern keeps the browser simple:
@@ -242,3 +249,5 @@ Move to manual queries when you need:
 - geo queries
 
 The important point is that the beginner path is not a dead end. It gets you to a useful search box quickly, and the same library lets you grow from there.
+
+For highlight-specific behavior and current limitations, see [Highlighting with Querylight TS](./17-highlighting.md).

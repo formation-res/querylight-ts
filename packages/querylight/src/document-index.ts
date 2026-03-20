@@ -14,6 +14,12 @@ import {
   type DocumentIndexState,
   type FieldIndex,
   type GeoFieldIndexState,
+  type HighlightClause,
+  type HighlightFieldResult,
+  type HighlightFragment,
+  type HighlightRequest,
+  type HighlightResult,
+  type HighlightSpan,
   type Hit,
   type Hits,
   type IndexState,
@@ -111,6 +117,76 @@ function countDocsInSubset(docPositions: Map<string, number[]>, subsetDocIds: Se
   return count;
 }
 
+function mergeSpans(spans: HighlightSpan[]): HighlightSpan[] {
+  const sorted = spans.slice().sort((a, b) => a.startOffset - b.startOffset || a.endOffset - b.endOffset);
+  const merged: HighlightSpan[] = [];
+  for (const span of sorted) {
+    const previous = merged.at(-1);
+    if (!previous || span.startOffset > previous.endOffset) {
+      merged.push({ ...span });
+      continue;
+    }
+    previous.endOffset = Math.max(previous.endOffset, span.endOffset);
+    previous.term = previous.term.length >= span.term.length ? previous.term : span.term;
+    previous.kind = previous.kind === "phrase" || span.kind === "phrase" ? "phrase" : previous.kind;
+  }
+  return merged;
+}
+
+function createHighlightFragments(
+  field: string,
+  valueIndex: number,
+  value: string,
+  spans: HighlightSpan[],
+  fragmentSize: number
+): HighlightFragment[] {
+  return spans.map((span) => {
+    const fragmentStart = Math.max(0, Math.min(span.startOffset, Math.max(0, span.startOffset - Math.floor((fragmentSize - (span.endOffset - span.startOffset)) / 2))));
+    const fragmentEnd = Math.min(value.length, Math.max(span.endOffset, fragmentStart + fragmentSize));
+    const containedSpans = spans
+      .filter((candidate) => candidate.startOffset < fragmentEnd && candidate.endOffset > fragmentStart)
+      .map((candidate) => ({
+        ...candidate,
+        startOffset: Math.max(candidate.startOffset, fragmentStart),
+        endOffset: Math.min(candidate.endOffset, fragmentEnd)
+      }));
+    const text = value.slice(fragmentStart, fragmentEnd);
+    return {
+      field,
+      valueIndex,
+      text,
+      spans: containedSpans.map((candidate) => ({
+        ...candidate,
+        startOffset: candidate.startOffset - fragmentStart,
+        endOffset: candidate.endOffset - fragmentStart
+      })),
+      parts: createFragmentParts(text, containedSpans.map((candidate) => ({
+        ...candidate,
+        startOffset: candidate.startOffset - fragmentStart,
+        endOffset: candidate.endOffset - fragmentStart
+      })))
+    };
+  });
+}
+
+function createFragmentParts(text: string, spans: HighlightSpan[]) {
+  const parts: HighlightFragment["parts"] = [];
+  let cursor = 0;
+  for (const span of spans) {
+    if (span.startOffset > cursor) {
+      parts.push({ text: text.slice(cursor, span.startOffset), highlighted: false });
+    }
+    if (span.endOffset > span.startOffset) {
+      parts.push({ text: text.slice(span.startOffset, span.endOffset), highlighted: true });
+    }
+    cursor = Math.max(cursor, span.endOffset);
+  }
+  if (cursor < text.length) {
+    parts.push({ text: text.slice(cursor), highlighted: false });
+  }
+  return parts.filter((part) => part.text.length > 0);
+}
+
 export class DocumentIndex {
   constructor(
     public readonly mapping: Record<string, FieldIndex>,
@@ -167,6 +243,40 @@ export class DocumentIndex {
   searchRequest({ query, from = 0, limit = 200 }: SearchRequest = {}): Hits {
     const hits = query ? this.search(query, 0, Number.MAX_SAFE_INTEGER) : [...this.ids()].map((id): Hit => [id, 1.0]);
     return hits.slice(from, Math.min(from + limit, hits.length));
+  }
+
+  highlight(id: string, query: SearchRequest["query"], {
+    fields,
+    fragmentSize = 160,
+    numberOfFragments = 1,
+    requireFieldMatch = true
+  }: HighlightRequest): HighlightResult {
+    const document = this.get(id);
+    if (!document || !query?.highlightClauses) {
+      return { fields: [] };
+    }
+
+    const clauses = query.highlightClauses(this);
+    const fieldResults: HighlightFieldResult[] = [];
+    for (const field of fields) {
+      const fieldIndex = this.getFieldIndex(field);
+      if (!(fieldIndex instanceof TextFieldIndex)) {
+        continue;
+      }
+      const matchingClauses = requireFieldMatch ? clauses.filter((clause) => clause.field === field) : clauses;
+      if (matchingClauses.length === 0) {
+        continue;
+      }
+      const values = document.fields[field] ?? [];
+      const fragments = values.flatMap((value, valueIndex) =>
+        fieldIndex.highlightValue(field, valueIndex, value, matchingClauses, fragmentSize, numberOfFragments)
+      );
+      if (fragments.length > 0) {
+        fieldResults.push({ field, fragments });
+      }
+    }
+
+    return { fields: fieldResults };
   }
 
   count(request: SearchRequest = {}): number {
@@ -313,6 +423,28 @@ export class TextFieldIndex implements FieldIndex {
     return this.reverseMap.get(term);
   }
 
+  highlightValue(
+    field: string,
+    valueIndex: number,
+    value: string,
+    clauses: HighlightClause[],
+    fragmentSize: number,
+    numberOfFragments: number
+  ): HighlightFragment[] {
+    const tokens = this.analyzer.analyzeWithOffsets(value);
+    if (tokens.length === 0) {
+      return [];
+    }
+
+    const spans = mergeSpans(clauses.flatMap((clause) => this.highlightClause(tokens, clause)));
+    if (spans.length === 0) {
+      return [];
+    }
+
+    const fragments = createHighlightFragments(field, valueIndex, value, spans, fragmentSize);
+    return fragments.slice(0, numberOfFragments);
+  }
+
   filterTermsByRange({
     lt,
     lte,
@@ -343,6 +475,63 @@ export class TextFieldIndex implements FieldIndex {
 
   private calculateScore(docIds: string[]): Hits {
     return this.rankingStrategy.score(this, docIds);
+  }
+
+  private highlightClause(tokens: ReturnType<Analyzer["analyzeWithOffsets"]>, clause: HighlightClause): HighlightSpan[] {
+    const queryTerms = this.queryAnalyzer.analyze(clause.text);
+    if (queryTerms.length === 0) {
+      return [];
+    }
+
+    if (clause.kind === "phrase") {
+      return this.highlightPhrase(tokens, queryTerms, clause.slop ?? 0);
+    }
+
+    const matchesPerTerm = queryTerms.map((term) => tokens.filter((token) => clause.prefixMatch ? token.term.startsWith(term) : token.term === term));
+    if (clause.operation === "AND" && matchesPerTerm.some((matches) => matches.length === 0)) {
+      return [];
+    }
+
+    return mergeSpans(matchesPerTerm.flat().map((token) => ({
+      startOffset: token.startOffset,
+      endOffset: token.endOffset,
+      term: token.term,
+      kind: clause.prefixMatch && token.term !== queryTerms.find((term) => token.term === term) ? "prefix" : "exact"
+    })));
+  }
+
+  private highlightPhrase(tokens: ReturnType<Analyzer["analyzeWithOffsets"]>, queryTerms: string[], slop: number): HighlightSpan[] {
+    const spans: HighlightSpan[] = [];
+    for (let start = 0; start < tokens.length; start += 1) {
+      let tokenIndex = start;
+      let matched = true;
+      for (const term of queryTerms) {
+        let found = false;
+        const maxIndex = Math.min(tokens.length - 1, tokenIndex + Math.max(1, slop + 1));
+        for (let candidate = tokenIndex; candidate <= maxIndex; candidate += 1) {
+          if (tokens[candidate]?.term === term) {
+            tokenIndex = candidate + 1;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          matched = false;
+          break;
+        }
+      }
+      if (!matched) {
+        continue;
+      }
+      const matchedTokens = tokens.slice(start, tokenIndex);
+      spans.push({
+        startOffset: matchedTokens[0]!.startOffset,
+        endOffset: matchedTokens[matchedTokens.length - 1]!.endOffset,
+        term: matchedTokens.map((token) => token.term).join(" "),
+        kind: "phrase"
+      });
+    }
+    return mergeSpans(spans);
   }
 
   get documentCount(): number {

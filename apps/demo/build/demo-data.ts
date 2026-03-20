@@ -46,7 +46,7 @@ const vectorAnalyzer = new Analyzer();
 
 function stripMarkdown(value: string): string {
   return value
-    .replace(/```[\w-]*\n([\s\S]*?)```/g, " $1 ")
+    .replace(/```[\w-]*\n[\s\S]*?```/g, " ")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^\s*[-*+]\s+/gm, "")
@@ -131,7 +131,7 @@ function toDocument(entry: DocEntry): Document {
       tags: entry.tags,
       api: entry.apis,
       examples: entry.examples,
-      combined: [entry.title, entry.summary, entry.body, entry.tags.join(" "), entry.apis.join(" "), entry.examples.join(" ")].join(" "),
+      combined: [entry.title, entry.summary, entry.body, entry.tags.join(" "), entry.apis.join(" ")].join(" "),
       suggest: [entry.title, entry.tags.join(" "), entry.apis.join(" ")].join(" "),
       order: [entry.order]
     }

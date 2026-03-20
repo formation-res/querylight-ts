@@ -43,4 +43,6 @@ const hits = simpleTextSearch(search, { query: "range fi", limit: 5 });
 
 The returned bundle also exposes the underlying `DocumentIndex` so you can graduate to custom queries later without re-indexing your data.
 
-For a fuller walkthrough, including the equivalent manual setup and a build-time browser architecture, see [Getting Started with Browser Search](./16-getting-started.md).
+If you need highlighting, keep retrieval and highlighting separate: use `simpleTextSearch` to rank results, then call `documentIndex.highlight(...)` on the returned ids for fields such as `title` and `body`.
+
+For a fuller walkthrough, including the equivalent manual setup and a build-time browser architecture, see [Getting Started with Browser Search](./16-getting-started.md). For the offset-based highlighter API, see [Highlighting with Querylight TS](./17-highlighting.md).

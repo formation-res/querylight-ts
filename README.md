@@ -27,6 +27,7 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 - Reciprocal rank fusion for combining lexical, geo, filter, and vector results
 - Boolean, term, range, phrase, prefix, and match-all queries
 - Beginner-friendly plain JSON indexing with `simpleTextSearch`
+- Offset-based exact and phrase highlighting
 - Analyzer/tokenizer/token-filter pipeline
 - Trie-backed prefix expansion
 - Aggregations and significant terms
@@ -39,6 +40,7 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 - [Introducing Querylight TS](docs/00-introducing-querylight-ts.md)
 - [Getting started with browser search](docs/16-getting-started.md)
 - [Documentation overview](docs/01-overview.md)
+- [Highlighting with Querylight TS](docs/17-highlighting.md)
 
 ## Install
 
@@ -75,6 +77,18 @@ const search = createSimpleTextSearchIndex({
 });
 
 const hits = simpleTextSearch(search, { query: "portble sear", limit: 5 });
+```
+
+If you need highlight fragments, run highlighting as a second step on the returned ids:
+
+```ts
+import { MatchQuery } from "@tryformation/querylight-ts";
+
+const query = new MatchQuery("title", "range filters");
+const hits = search.documentIndex.searchRequest({ query, limit: 5 });
+const highlight = search.documentIndex.highlight(hits[0]![0], query, {
+  fields: ["title", "body"]
+});
 ```
 
 ## Commands

@@ -8,7 +8,7 @@ export {
   NgramTokenFilter,
   SplittingTokenizer
 } from "./analysis";
-export type { TextFilter, TokenFilter, Tokenizer } from "./analysis";
+export type { AnalyzedToken, TextFilter, TokenFilter, Tokenizer } from "./analysis";
 
 export {
   decodeGeohash,
@@ -37,6 +37,13 @@ export {
   type DocumentIndexState,
   type FieldIndex,
   type GeoFieldIndexState,
+  type HighlightClause,
+  type HighlightFieldResult,
+  type HighlightFragment,
+  type HighlightFragmentPart,
+  type HighlightRequest,
+  type HighlightResult,
+  type HighlightSpan,
   type Hit,
   type Hits,
   type IndexState,

@@ -10,9 +10,55 @@ export interface Document {
 export type Hit = [string, number];
 export type Hits = Hit[];
 
+export interface HighlightClause {
+  kind: "term" | "phrase";
+  field: string;
+  text: string;
+  operation?: "AND" | "OR";
+  prefixMatch?: boolean;
+  slop?: number;
+}
+
+export interface HighlightSpan {
+  startOffset: number;
+  endOffset: number;
+  term: string;
+  kind: "exact" | "phrase" | "prefix";
+}
+
+export interface HighlightFragmentPart {
+  text: string;
+  highlighted: boolean;
+}
+
+export interface HighlightFragment {
+  field: string;
+  valueIndex: number;
+  text: string;
+  parts: HighlightFragmentPart[];
+  spans: HighlightSpan[];
+}
+
+export interface HighlightFieldResult {
+  field: string;
+  fragments: HighlightFragment[];
+}
+
+export interface HighlightRequest {
+  fields: string[];
+  fragmentSize?: number;
+  numberOfFragments?: number;
+  requireFieldMatch?: boolean;
+}
+
+export interface HighlightResult {
+  fields: HighlightFieldResult[];
+}
+
 export interface Query {
   readonly boost: number | undefined;
   hits(documentIndex: DocumentIndex, context?: QueryContext): Hits;
+  highlightClauses?(documentIndex: DocumentIndex): HighlightClause[];
 }
 
 export interface SearchRequest {

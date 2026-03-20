@@ -17,6 +17,8 @@ import {
   reciprocalRankFusion,
   TermQuery,
   TextFieldIndex,
+  type HighlightFragment,
+  type HighlightResult,
   type Hits
 } from "@tryformation/querylight-ts";
 import hljs from "highlight.js/lib/core";
@@ -61,6 +63,7 @@ type SearchResult = {
   lexicalHits: Hits;
   fuzzyHits: Hits;
   finalHits: Hits;
+  highlightsById: Map<string, HighlightResult>;
   selectedIds: Set<string>;
   tagFacets: Record<string, number>;
   sectionFacets: Record<string, number>;
@@ -196,6 +199,47 @@ function formatRelativeBuildTime(timestamp: string): string {
 
   const diffDays = Math.round(diffHours / 24);
   return `Built ${formatter.format(diffDays, "day")}`;
+}
+
+function renderHighlightFragment(fragment: HighlightFragment): string {
+  return fragment.parts
+    .map((part) => part.highlighted ? `<mark class="search-highlight">${escapeHtml(part.text)}</mark>` : escapeHtml(part.text))
+    .join("");
+}
+
+function renderLiteralHighlight(text: string, query: string): string {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return escapeHtml(text);
+  }
+  const pattern = new RegExp(`(${escapeRegExp(trimmed)})`, "ig");
+  const parts = text.split(pattern);
+  if (parts.length === 1) {
+    return escapeHtml(text);
+  }
+  return parts
+    .map((part, index) => index % 2 === 1 ? `<mark class="search-highlight">${escapeHtml(part)}</mark>` : escapeHtml(part))
+    .join("");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function fieldHighlight(highlight: HighlightResult | undefined, field: string): HighlightFragment | null {
+  return highlight?.fields.find((result) => result.field === field)?.fragments[0] ?? null;
+}
+
+function bestExplanation(highlight: HighlightResult | undefined): { label: string; html: string } | null {
+  const tagline = fieldHighlight(highlight, "tagline");
+  if (tagline) {
+    return { label: "Summary", html: renderHighlightFragment(tagline) };
+  }
+  const body = fieldHighlight(highlight, "body");
+  if (body) {
+    return { label: "Excerpt", html: renderHighlightFragment(body) };
+  }
+  return null;
 }
 
 function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
@@ -341,8 +385,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
             new MatchQuery("tagline", trimmed, current.operation, current.prefix, 2.5),
             new MatchQuery("body", trimmed, current.operation, current.prefix, 2),
             new MatchQuery("api", trimmed, OP.OR, current.prefix, 2.75),
-            new MatchQuery("tags", trimmed, OP.OR, current.prefix, 2.25),
-            new MatchQuery("examples", trimmed, OP.OR, current.prefix, 1.5)
+            new MatchQuery("tags", trimmed, OP.OR, current.prefix, 2.25)
           ],
           [],
           filters,
@@ -355,8 +398,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
       : new BoolQuery(
           [
             new MatchPhrase("title", quotedPhrase ?? trimmed, quotedPhrase ? 0 : 1, 8),
-            new MatchPhrase("body", quotedPhrase ?? trimmed, quotedPhrase ? 1 : 2, 3),
-            new MatchPhrase("examples", quotedPhrase ?? trimmed, quotedPhrase ? 1 : 2, 2)
+            new MatchPhrase("body", quotedPhrase ?? trimmed, quotedPhrase ? 1 : 2, 3)
           ],
           [],
           filters,
@@ -370,7 +412,6 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
           [
             new MatchPhrase("title", quotedPhrase ?? trimmed, quotedPhrase ? 0 : 1, 8),
             new MatchPhrase("body", quotedPhrase ?? trimmed, quotedPhrase ? 1 : 2, 3),
-            new MatchPhrase("examples", quotedPhrase ?? trimmed, quotedPhrase ? 1 : 2, 2),
             ...(quotedPhrase
               ? []
               : [
@@ -379,7 +420,6 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
                   new MatchQuery("body", trimmed, current.operation, false, 2),
                   new MatchQuery("api", trimmed, OP.OR, false, 2.75),
                   new MatchQuery("tags", trimmed, OP.OR, false, 2.25),
-                  new MatchQuery("examples", trimmed, OP.OR, false, 1.5),
                   ...(allowPrefixSuggestions
                     ? [new MatchQuery("title", trimmed, OP.OR, true, 4), new MatchQuery("suggest", trimmed, OP.OR, true, 3)]
                     : [])
@@ -414,19 +454,23 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
 
   let finalHits: Hits;
   let lexicalHits: Hits;
+  let highlightQuery: BoolQuery | MatchAll | null = null;
 
   switch (current.mode) {
     case "phrase":
       lexicalHits = phraseHits;
       finalHits = lexicalHits;
+      highlightQuery = phraseQuery;
       break;
     case "fuzzy":
       lexicalHits = [];
       finalHits = fuzzyHits;
+      highlightQuery = null;
       break;
     case "match":
       lexicalHits = index.searchRequest({ query: baseTextQuery, limit: 20 });
       finalHits = rerankWithTitleBoost(context, trimmed, lexicalHits);
+      highlightQuery = baseTextQuery;
       break;
     case "hybrid":
     default:
@@ -435,8 +479,22 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
         trimmed.length === 0
           ? lexicalHits
           : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([hybridLexicalHits, fuzzyHits], { rankConstant: 20, weights: [3, 1] }));
+      highlightQuery = hybridLexicalQuery;
       break;
   }
+
+  const highlightsById = new Map(
+    (highlightQuery && trimmed.length > 0 ? finalHits : [])
+      .map(([id]) => [
+        id,
+        index.highlight(id, highlightQuery!, {
+          fields: ["title", "tagline", "body"],
+          fragmentSize: 140,
+          numberOfFragments: 1,
+          requireFieldMatch: true
+        })
+      ] as const)
+  );
 
   const selectedIds = new Set(finalHits.map(([id]) => id));
   const tagFacets = tagIndex.termsAggregation(12, selectedIds.size > 0 ? selectedIds : undefined);
@@ -451,6 +509,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
     lexicalHits,
     fuzzyHits,
     finalHits,
+    highlightsById,
     selectedIds,
     tagFacets,
     sectionFacets,
@@ -682,11 +741,14 @@ function renderSuggestions(context: RuntimeContext, suggestionsNode: HTMLDivElem
       if (!doc) {
         return "";
       }
+      const highlight = current.highlightsById.get(id);
+      const title = fieldHighlight(highlight, "title");
+      const explanation = bestExplanation(highlight);
       return `
         <button type="button" class="suggestion-item" data-doc="${escapeHtml(id)}" data-suggestion="true">
           <span class="text-xs uppercase tracking-[0.12em] text-stone-500">${index + 1}. ${escapeHtml(doc.section)} · ${score.toFixed(2)}</span>
-          <span class="suggestion-title">${escapeHtml(doc.title)}</span>
-          <span class="suggestion-summary">${escapeHtml(doc.summary)}</span>
+          <span class="suggestion-title">${title ? renderHighlightFragment(title) : renderLiteralHighlight(doc.title, state.query)}</span>
+          <span class="suggestion-summary">${explanation?.html ?? escapeHtml(doc.summary)}</span>
         </button>
       `;
     })
@@ -794,14 +856,18 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
                   if (!doc) {
                     return "";
                   }
+                  const highlight = current.highlightsById.get(id);
+                  const title = fieldHighlight(highlight, "title");
+                  const explanation = bestExplanation(highlight);
                   return `
                     <button class="nav-result" data-doc="${escapeHtml(id)}" data-open-doc="true">
                       <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
                         <span>${index + 1}. ${escapeHtml(doc.section)}</span>
                         <span>${score.toFixed(2)}</span>
                       </div>
-                      <h2 class="result-title">${escapeHtml(doc.title)}</h2>
+                      <h2 class="result-title">${title ? renderHighlightFragment(title) : renderLiteralHighlight(doc.title, state.query)}</h2>
                       <p class="result-summary">${escapeHtml(doc.summary)}</p>
+                      ${explanation ? `<p class="result-explanation"><span class="result-explanation-label">${escapeHtml(explanation.label)}</span>${explanation.html}</p>` : ""}
                     </button>
                   `;
                 })
@@ -838,13 +904,15 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
                     if (!resultDoc) {
                       return "";
                     }
+                    const highlight = current?.highlightsById.get(id);
+                    const title = fieldHighlight(highlight, "title");
                     return `
                       <button class="nav-result ${resultDoc.id === doc.id ? "nav-result-active" : ""}" data-doc="${escapeHtml(id)}" data-open-doc="true">
                         <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
                           <span>${index + 1}. ${escapeHtml(resultDoc.section)}</span>
                           <span>${score.toFixed(2)}</span>
                         </div>
-                        <h3 class="result-title result-title-sm">${escapeHtml(resultDoc.title)}</h3>
+                        <h3 class="result-title result-title-sm">${title ? renderHighlightFragment(title) : renderLiteralHighlight(resultDoc.title, state.query)}</h3>
                         <p class="result-summary result-summary-sm">${escapeHtml(resultDoc.summary)}</p>
                       </button>
                     `;

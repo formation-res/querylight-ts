@@ -2,6 +2,13 @@ export interface TextFilter {
   filter(text: string): string;
 }
 
+export interface AnalyzedToken {
+  term: string;
+  startOffset: number;
+  endOffset: number;
+  position: number;
+}
+
 export class LowerCaseTextFilter implements TextFilter {
   filter(text: string): string {
     return text.toLowerCase();
@@ -105,5 +112,41 @@ export class Analyzer {
       tokens = filter.filter(tokens);
     }
     return tokens;
+  }
+
+  analyzeWithOffsets(text: string): AnalyzedToken[] {
+    if (this.tokenFilters.length > 0) {
+      return [];
+    }
+
+    const rawTokens = this.tokenizer.tokenize(text);
+    const analyzedTokens: AnalyzedToken[] = [];
+    let searchStart = 0;
+
+    for (const rawToken of rawTokens) {
+      const startOffset = text.indexOf(rawToken, searchStart);
+      if (startOffset < 0) {
+        continue;
+      }
+      const endOffset = startOffset + rawToken.length;
+      searchStart = endOffset;
+
+      let term = rawToken;
+      for (const filter of this.textFilters) {
+        term = filter.filter(term);
+      }
+      if (term.trim().length === 0) {
+        continue;
+      }
+
+      analyzedTokens.push({
+        term,
+        startOffset,
+        endOffset,
+        position: analyzedTokens.length
+      });
+    }
+
+    return analyzedTokens;
   }
 }
