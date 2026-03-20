@@ -153,6 +153,55 @@ export interface TermPos {
   position: number;
 }
 
+interface RankingStrategy {
+  score(index: TextFieldIndex, docIds: string[]): Hits;
+}
+
+class TfIdfRankingStrategy implements RankingStrategy {
+  score(index: TextFieldIndex, docIds: string[]): Hits {
+    const termCountsPerDoc = countTermsPerDoc(docIds);
+    const matchedDocs = new Set(termCountsPerDoc.keys());
+    const idf = matchedDocs.size === 0 ? 0 : Math.log10(index.documentCount / matchedDocs.size);
+    return [...termCountsPerDoc.entries()]
+      .map(([docId, termCount]): Hit => {
+        const wordCount = index.wordCount(docId);
+        const tf = wordCount === 0 ? 0 : termCount / wordCount;
+        return [docId, tf * idf];
+      })
+      .sort((a, b) => b[1] - a[1]);
+  }
+}
+
+class Bm25RankingStrategy implements RankingStrategy {
+  score(index: TextFieldIndex, docIds: string[]): Hits {
+    const termCountsPerDoc = countTermsPerDoc(docIds);
+    const df = termCountsPerDoc.size;
+    const totalDocs = index.documentCount;
+    const avgDocLength = totalDocs === 0 ? 0 : index.totalIndexedTermCount / totalDocs;
+    const idf = df === 0 ? 0 : Math.log(1 + (totalDocs - df + 0.5) / (df + 0.5));
+    return [...termCountsPerDoc.entries()]
+      .map(([docId, termCount]): Hit => {
+        const wordCount = index.wordCount(docId);
+        const numerator = termCount * (index.bm25Config.k1 + 1);
+        const denominator = termCount + index.bm25Config.k1 * (1 - index.bm25Config.b + index.bm25Config.b * (wordCount / avgDocLength));
+        return [docId, denominator === 0 ? 0 : (idf * numerator) / denominator];
+      })
+      .sort((a, b) => b[1] - a[1]);
+  }
+}
+
+function rankingStrategyFor(algorithm: RankingAlgorithm): RankingStrategy {
+  return algorithm === RankingAlgorithm.BM25 ? new Bm25RankingStrategy() : new TfIdfRankingStrategy();
+}
+
+function countTermsPerDoc(docIds: string[]): Map<string, number> {
+  const termCountsPerDoc = new Map<string, number>();
+  for (const docId of docIds) {
+    termCountsPerDoc.set(docId, (termCountsPerDoc.get(docId) ?? 0) + 1);
+  }
+  return termCountsPerDoc;
+}
+
 export class QueryContext {
   private excludeIds: Set<string> | null = null;
   private includeIds: Set<string> | null = null;
@@ -467,6 +516,7 @@ export class TextFieldIndex implements FieldIndex {
   private readonly reverseMap: Map<string, TermPos[]>;
   private readonly termDocPositions: Map<string, Map<string, number[]>>;
   private readonly trie: SimpleStringTrie;
+  private readonly rankingStrategy: RankingStrategy;
   private totalTermCount: number;
 
   constructor(
@@ -485,6 +535,7 @@ export class TextFieldIndex implements FieldIndex {
     this.termDocPositions = termDocPositions;
     this.totalTermCount = totalTermCount;
     this.trie = trie;
+    this.rankingStrategy = rankingStrategyFor(this.rankingAlgorithm);
   }
 
   get indexState(): TextFieldIndexState {
@@ -624,48 +675,18 @@ export class TextFieldIndex implements FieldIndex {
   }
 
   private calculateScore(docIds: string[]): Hits {
-    return this.rankingAlgorithm === RankingAlgorithm.TFIDF ? this.calculateTfIdf(docIds) : this.calculateBm25(docIds);
+    return this.rankingStrategy.score(this, docIds);
   }
 
-  private calculateTfIdf(docIds: string[]): Hits {
-    const termCountsPerDoc = new Map<string, number>();
-    const matchedDocs = new Set<string>();
-    for (const docId of docIds) {
-      termCountsPerDoc.set(docId, (termCountsPerDoc.get(docId) ?? 0) + 1);
-      matchedDocs.add(docId);
-    }
-    const idf = matchedDocs.size === 0 ? 0 : Math.log10(this.termCounts.size / matchedDocs.size);
-    return [...termCountsPerDoc.entries()]
-      .map(([docId, termCount]): Hit => {
-        const wordCount = this.wordCount(docId);
-        const tf = wordCount === 0 ? 0 : termCount / wordCount;
-        return [docId, tf * idf];
-      })
-      .sort((a, b) => b[1] - a[1]);
+  get documentCount(): number {
+    return this.termCounts.size;
   }
 
-  private calculateBm25(docIds: string[]): Hits {
-    const termCountsPerDoc = new Map<string, number>();
-    const matchedDocs = new Set<string>();
-    for (const docId of docIds) {
-      termCountsPerDoc.set(docId, (termCountsPerDoc.get(docId) ?? 0) + 1);
-      matchedDocs.add(docId);
-    }
-    const df = matchedDocs.size;
-    const totalDocs = this.termCounts.size;
-    const avgDocLength = totalDocs === 0 ? 0 : this.totalTermCount / totalDocs;
-    const idf = df === 0 ? 0 : Math.log(1 + (totalDocs - df + 0.5) / (df + 0.5));
-    return [...termCountsPerDoc.entries()]
-      .map(([docId, termCount]): Hit => {
-        const wordCount = this.wordCount(docId);
-        const numerator = termCount * (this.bm25Config.k1 + 1);
-        const denominator = termCount + this.bm25Config.k1 * (1 - this.bm25Config.b + this.bm25Config.b * (wordCount / avgDocLength));
-        return [docId, denominator === 0 ? 0 : (idf * numerator) / denominator];
-      })
-      .sort((a, b) => b[1] - a[1]);
+  get totalIndexedTermCount(): number {
+    return this.totalTermCount;
   }
 
-  private wordCount(docId: string): number {
+  wordCount(docId: string): number {
     return this.termCounts.get(docId) ?? 0;
   }
 
