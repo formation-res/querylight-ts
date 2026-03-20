@@ -14,6 +14,7 @@ import {
   OP,
   RangeQuery,
   RankingAlgorithm,
+  reciprocalRankFusion,
   TermQuery,
   TextFieldIndex,
   VectorFieldIndex,
@@ -280,17 +281,6 @@ function createNavSections(context: RuntimeContext): NavSection[] {
     .filter((section) => section.docs.length > 0);
 }
 
-function mergeHits(...groups: Hits[]): Hits {
-  const scores = new Map<string, number>();
-  groups.forEach((hits, index) => {
-    const weight = Math.max(0.25, 1 - index * 0.2);
-    hits.forEach(([id, score]) => {
-      scores.set(id, (scores.get(id) ?? 0) + score * weight);
-    });
-  });
-  return [...scores.entries()].sort((a, b) => b[1] - a[1]);
-}
-
 function rerankWithTitleBoost(context: RuntimeContext, rawQuery: string, hits: Hits): Hits {
   const normalizedQuery = rawQuery.trim().toLowerCase();
   if (!normalizedQuery) {
@@ -387,9 +377,35 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
       ? filterOnlyQuery
       : new BoolQuery(
           [
-            new MatchPhrase("title", quotedPhrase ?? trimmed, 0, 8),
-            new MatchPhrase("body", quotedPhrase ?? trimmed, 1, 3),
-            new MatchPhrase("examples", quotedPhrase ?? trimmed, 1, 2)
+            new MatchPhrase("title", quotedPhrase ?? trimmed, quotedPhrase ? 0 : 1, 8),
+            new MatchPhrase("body", quotedPhrase ?? trimmed, quotedPhrase ? 1 : 2, 3),
+            new MatchPhrase("examples", quotedPhrase ?? trimmed, quotedPhrase ? 1 : 2, 2)
+          ],
+          [],
+          filters,
+          mustNot
+        );
+
+  const hybridLexicalQuery =
+    trimmed.length === 0
+      ? filterOnlyQuery
+      : new BoolQuery(
+          [
+            new MatchPhrase("title", quotedPhrase ?? trimmed, quotedPhrase ? 0 : 1, 8),
+            new MatchPhrase("body", quotedPhrase ?? trimmed, quotedPhrase ? 1 : 2, 3),
+            new MatchPhrase("examples", quotedPhrase ?? trimmed, quotedPhrase ? 1 : 2, 2),
+            ...(quotedPhrase
+              ? []
+              : [
+                  new MatchQuery("title", trimmed, current.operation, false, 6),
+                  new MatchQuery("tagline", trimmed, current.operation, false, 2.5),
+                  new MatchQuery("body", trimmed, current.operation, false, 2),
+                  new MatchQuery("api", trimmed, OP.OR, false, 2.75),
+                  new MatchQuery("tags", trimmed, OP.OR, false, 2.25),
+                  new MatchQuery("examples", trimmed, OP.OR, false, 1.5),
+                  new MatchQuery("title", trimmed, OP.OR, true, 4),
+                  new MatchQuery("suggest", trimmed, OP.OR, true, 3)
+                ])
           ],
           [],
           filters,
@@ -400,7 +416,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
     trimmed.length === 0
       ? []
       : active.fuzzy.searchRequest({
-          query: new MatchQuery("combined", trimmed, OP.AND, false, 1.5),
+          query: new MatchQuery("combined", trimmed, OP.OR, false, 1.5),
           limit: 20
         });
 
@@ -413,6 +429,14 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
     trimmed.length === 0
       ? []
       : ensureVectorIndex(active).query(bigramVector(trimmed, vectorAnalyzer), 20, allowedIds);
+  const phraseHits =
+    trimmed.length === 0
+      ? []
+      : index.searchRequest({ query: phraseQuery, limit: 20 });
+  const hybridLexicalHits =
+    trimmed.length === 0
+      ? []
+      : index.searchRequest({ query: hybridLexicalQuery, limit: 20 });
 
   let finalHits: Hits;
   let lexicalHits: Hits;
@@ -423,7 +447,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
       finalHits = lexicalHits;
       break;
     case "phrase":
-      lexicalHits = index.searchRequest({ query: phraseQuery, limit: 20 });
+      lexicalHits = phraseHits;
       finalHits = lexicalHits;
       break;
     case "fuzzy":
@@ -440,11 +464,11 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
       break;
     case "hybrid":
     default:
-      lexicalHits = index.searchRequest({ query: baseTextQuery, limit: 20 });
+      lexicalHits = hybridLexicalHits;
       finalHits =
         trimmed.length === 0
           ? lexicalHits
-          : rerankWithTitleBoost(context, trimmed, mergeHits(index.searchRequest({ query: phraseQuery, limit: 10 }), lexicalHits, fuzzyHits, vectorHits));
+          : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([hybridLexicalHits, fuzzyHits], { rankConstant: 20, weights: [3, 1] }));
       break;
   }
 
