@@ -67,6 +67,7 @@ export { DocumentIndex, GeoFieldIndex, TextFieldIndex } from "./document-index";
 
 export {
   BoolQuery,
+  ExistsQuery,
   GeoPointQuery,
   GeoPolygonQuery,
   MatchAll,

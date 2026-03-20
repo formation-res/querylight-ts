@@ -152,6 +152,24 @@ export class TermsQuery implements Query {
   }
 }
 
+export class ExistsQuery implements Query {
+  constructor(
+    private readonly field: string,
+    public readonly boost: number | undefined = undefined
+  ) {}
+
+  hits(documentIndex: DocumentIndex): Hits {
+    const hits = Object.values(documentIndex.documents)
+      .filter((document) => (document.fields[this.field] ?? []).length > 0)
+      .map((document): Hit => [document.id, 1.0]);
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
+  }
+}
+
 export class RangeQuery implements Query {
   constructor(
     private readonly field: string,

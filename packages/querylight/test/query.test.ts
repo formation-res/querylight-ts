@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BoolQuery, DocumentIndex, MatchAll, MatchPhrase, MatchQuery, OP, PrefixQuery, RankingAlgorithm, TermsQuery, TextFieldIndex } from "../src/index";
+import { BoolQuery, DocumentIndex, ExistsQuery, MatchAll, MatchPhrase, MatchQuery, OP, PrefixQuery, RankingAlgorithm, TermsQuery, TextFieldIndex } from "../src/index";
 import { quotesIndex } from "./testfixture";
 
 describe("queries", () => {
@@ -77,6 +77,15 @@ describe("queries", () => {
     index.index({ id: "4", fields: { tags: ["alpha", "beta"] } });
 
     expect(index.searchRequest({ query: new TermsQuery("tags", ["alpha", "beta"]) }).map(([id]) => id).sort()).toEqual(["1", "2", "4"]);
+  });
+
+  it("should support exists queries", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex(), tags: new TextFieldIndex() });
+    index.index({ id: "1", fields: { title: ["alpha"] } });
+    index.index({ id: "2", fields: { title: ["beta"], tags: ["tagged"] } });
+    index.index({ id: "3", fields: { title: ["gamma"], tags: [] } });
+
+    expect(index.searchRequest({ query: new ExistsQuery("tags") }).map(([id]) => id)).toEqual(["2"]);
   });
 
   it("should highlight exact term matches with source offsets", () => {
