@@ -35,8 +35,19 @@ function demoDataPlugin(): Plugin {
 }
 
 export default defineConfig({
+  define: {
+    __BUILD_TIMESTAMP__: JSON.stringify(new Date().toISOString())
+  },
+  resolve: {
+    alias: {
+      "@tryformation/querylight-ts": path.resolve(__dirname, "../../packages/querylight/src/index.ts")
+    }
+  },
   plugins: [demoDataPlugin(), tailwindcss()],
   server: {
-    port: 4173
+    port: 4173,
+    fs: {
+      allow: [path.resolve(__dirname, "../..")]
+    }
   }
 });

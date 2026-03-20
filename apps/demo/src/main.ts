@@ -27,6 +27,9 @@ import json from "highlight.js/lib/languages/json";
 import typescript from "highlight.js/lib/languages/typescript";
 import MarkdownIt from "markdown-it";
 import demoDataUrl from "./generated/demo-data.json?url";
+import packageMeta from "../../../packages/querylight/package.json";
+
+declare const __BUILD_TIMESTAMP__: string;
 
 type SearchMode = "hybrid" | "match" | "phrase" | "fuzzy" | "vector" | "all";
 
@@ -130,6 +133,17 @@ const edgeAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilt
 const vectorAnalyzer = new Analyzer();
 const SEARCH_INPUT_DEBOUNCE_MS = 150;
 const DOC_SECTION_ORDER = ["Overview", "Analysis", "Queries", "Discovery", "Ranking", "Indexing", "Advanced", "Operations"];
+const PACKAGE_NAME = packageMeta.name;
+const PACKAGE_VERSION = packageMeta.version;
+const REPOSITORY_URL = packageMeta.repository.url.replace(/^git\+/, "").replace(/\.git$/, "");
+const NPM_PACKAGE_URL = `https://www.npmjs.com/package/${encodeURIComponent(PACKAGE_NAME)}`;
+const NPM_BADGE_URL = `https://img.shields.io/npm/v/${encodeURIComponent(PACKAGE_NAME)}?label=npm&color=cb3837`;
+const BUILD_TIMESTAMP = __BUILD_TIMESTAMP__;
+const GITHUB_ICON = `
+  <svg viewBox="0 0 24 24" aria-hidden="true" class="size-4 fill-current">
+    <path d="M12 0.5C5.37 0.5 0 5.87 0 12.5c0 5.3 3.44 9.79 8.21 11.38.6.11.82-.26.82-.58 0-.29-.01-1.05-.02-2.06-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.74.08-.74 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.49.99.11-.78.42-1.31.76-1.61-2.66-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.52.12-3.17 0 0 1.01-.32 3.3 1.23a11.4 11.4 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.25 2.87.12 3.17.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.62-5.49 5.92.43.37.82 1.1.82 2.23 0 1.61-.01 2.91-.01 3.31 0 .32.21.7.83.58A12 12 0 0 0 24 12.5C24 5.87 18.63 0.5 12 0.5Z"/>
+  </svg>
+`;
 
 const initialState: SearchState = {
   query: "",
@@ -167,6 +181,28 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll("\"", "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function formatRelativeBuildTime(timestamp: string): string {
+  const builtAt = new Date(timestamp).getTime();
+  if (!Number.isFinite(builtAt)) {
+    return "Built recently";
+  }
+
+  const diffMinutes = Math.round((builtAt - Date.now()) / 60000);
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+  if (Math.abs(diffMinutes) < 60) {
+    return `Built ${formatter.format(diffMinutes, "minute")}`;
+  }
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (Math.abs(diffHours) < 24) {
+    return `Built ${formatter.format(diffHours, "hour")}`;
+  }
+
+  const diffDays = Math.round(diffHours / 24);
+  return `Built ${formatter.format(diffDays, "day")}`;
 }
 
 function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
@@ -436,6 +472,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
 
 function createShell(context: RuntimeContext): void {
   const navSections = createNavSections(context);
+  const buildTimeLabel = formatRelativeBuildTime(BUILD_TIMESTAMP);
 
   app.innerHTML = `
     <main class="mx-auto w-[min(1560px,calc(100vw-24px))] py-6 lg:py-8">
@@ -547,6 +584,49 @@ function createShell(context: RuntimeContext): void {
 
         <button id="reader-mobile-overlay" type="button" class="reader-mobile-overlay" data-action="close-mobile-panel" aria-label="Close mobile panels"></button>
       </section>
+
+      <footer class="surface mt-5 px-5 py-4 sm:px-6">
+        <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div class="flex flex-wrap items-center gap-3">
+            <a
+              class="chip-button"
+              href="https://formationxyz.com"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Created by FORMATION XYZ
+            </a>
+          </div>
+          <div class="flex flex-col items-start gap-3 md:items-end">
+            <div class="flex flex-wrap items-center gap-3 md:justify-end">
+              <a
+                class="chip-button"
+                href="${escapeHtml(NPM_PACKAGE_URL)}"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="${escapeHtml(`${PACKAGE_NAME} on npm, version ${PACKAGE_VERSION}`)}"
+              >
+                <img
+                  src="${escapeHtml(NPM_BADGE_URL)}"
+                  alt="${escapeHtml(`npm version ${PACKAGE_VERSION}`)}"
+                  class="block h-5"
+                />
+              </a>
+              <a
+                class="chip-button"
+                href="${escapeHtml(REPOSITORY_URL)}"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="GitHub repository"
+              >
+                ${GITHUB_ICON}
+                <span>GitHub</span>
+              </a>
+            </div>
+            <p class="text-xs text-stone-500 md:text-right">${escapeHtml(buildTimeLabel)} · Copyright FORMARTION GmbH 2026-present</p>
+          </div>
+        </div>
+      </footer>
     </main>
   `;
 
