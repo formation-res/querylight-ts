@@ -40,4 +40,3 @@ const suggestAnalyzer = new Analyzer(undefined, undefined, [
 
 - [Trie on Wikipedia](https://en.wikipedia.org/wiki/Trie)
 - [N-gram on Wikipedia](https://en.wikipedia.org/wiki/N-gram)
-- [All About Analyzers, Part One on the Elastic blog](https://www.elastic.co/blog/found-text-analysis-part-1)

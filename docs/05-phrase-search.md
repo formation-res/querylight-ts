@@ -40,6 +40,4 @@ const tolerant = new MatchPhrase("body", "portable json index state", 2, 2.0);
 
 ## Learn more
 
-- [Match phrase query in the Elasticsearch reference](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-match-query-phrase)
 - [Phrase search on Wikipedia](https://en.wikipedia.org/wiki/Phrase_search)
-- [Span queries in the Elasticsearch reference](https://www.elastic.co/docs/reference/query-languages/query-dsl/span-queries)

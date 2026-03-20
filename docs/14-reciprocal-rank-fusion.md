@@ -78,4 +78,3 @@ const fusedHits = reciprocalRankFusion([lexicalHits, geoHits], {
 
 - [Reciprocal rank fusion paper in the IR Anthology](https://ir.webis.de/anthology/2009.sigirconf_conference-2009.146/)
 - [Data fusion in information retrieval on Wikipedia](https://en.wikipedia.org/wiki/Data_fusion#Information_retrieval)
-- [Introducing approximate nearest neighbor search in Elasticsearch 8.0](https://www.elastic.co/blog/introducing-approximate-nearest-neighbor-search-in-elasticsearch-8-0)

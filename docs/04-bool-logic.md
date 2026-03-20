@@ -45,6 +45,4 @@ const query = new BoolQuery(
 
 ## Learn more
 
-- [Boolean query in the Elasticsearch reference](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-bool-query)
-- [Query and filter context in the Elasticsearch reference](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-filter-context)
 - [Boolean model of information retrieval on Wikipedia](https://en.wikipedia.org/wiki/Boolean_model_of_information_retrieval)

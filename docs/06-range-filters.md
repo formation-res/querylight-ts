@@ -32,6 +32,4 @@ If you want numeric-style ordering, store values as zero-padded strings such as 
 
 ## Learn more
 
-- [Query DSL overview in the Elasticsearch reference](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html)
-- [Query string query notes about ranges in the Elasticsearch reference](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query)
 - [Lexicographic order on Wikipedia](https://en.wikipedia.org/wiki/Lexicographic_order)
