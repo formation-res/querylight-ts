@@ -2,6 +2,8 @@
 
 Pure TypeScript port of the Kotlin `querylight` library, packaged for browsers and Node.js.
 
+Querylight TS is a lightweight in-process search toolkit for static sites, browser apps, and Node.js projects that need more than fuzzy matching but less than a full search server. It combines structured indexing, lexical ranking, boolean queries, aggregations, vector search, and geo search behind one small API. Read the full introduction in [`docs/00-introducing-querylight-ts.md`](docs/00-introducing-querylight-ts.md).
+
 ## Workspace Layout
 
 - `packages/querylight`: the library package (`@querylight/core`)
@@ -19,6 +21,11 @@ Pure TypeScript port of the Kotlin `querylight` library, packaged for browsers a
 - Approximate nearest-neighbour vector search
 - Basic geo point/polygon queries
 - Portable JSON-serializable index state
+
+## Documentation
+
+- [Introducing Querylight TS](docs/00-introducing-querylight-ts.md)
+- [Documentation overview](docs/01-overview.md)
 
 ## Commands
 
