@@ -14,9 +14,9 @@ lon: 4.9041
 
 # Introducing Querylight TS
 
-Querylight TS is a TypeScript port of the original [`querylight`](https://github.com/jillesvangurp/querylight) library, built for browser and Node.js use cases where shipping a full search server would be excessive.
+Querylight TS is a [TypeScript](https://www.typescriptlang.org/) port of the original [`querylight`](https://github.com/jillesvangurp/querylight) library, built for browser and [Node.js](https://nodejs.org/) use cases where shipping a full search server would be excessive.
 
-The project focuses on a practical middle ground: more capable than simple fuzzy matching, much smaller in scope than a full Lucene-based search stack. You can use it to add fast, local, explainable search to static sites, browser apps, demos, documentation portals, and other small to medium datasets.
+The project focuses on a practical middle ground: more capable than simple fuzzy matching libraries such as [`fuse.js`](https://github.com/krisk/Fuse), much smaller in scope than a full Lucene-based search stack. You can use it to add fast, local, explainable search to static sites, browser apps, demos, documentation portals, and other small to medium datasets.
 
 ## Who it is for
 
@@ -31,11 +31,11 @@ Typical use cases include:
 - Lightweight vector search for similarity and recommendation features
 - Offline or local-first retrieval experiments in the browser
 
-If you want to get ambitious, you can even pair it with in-browser or WASM-based embedding models and keep the entire retrieval pipeline client-side.
+If you want to get ambitious, you can even pair it with in-browser or [WASM](https://webassembly.org/)-based embedding models and keep the entire retrieval pipeline client-side.
 
 ## Where it came from
 
-The original Querylight project started as a hobby project built around tries and lightweight term matching. Over time it grew into a broader retrieval toolkit with TF-IDF ranking, BM25, phrase queries, aggregations, geo search, vector search, and query composition.
+The original Querylight project started as a hobby project built around [tries](https://en.wikipedia.org/wiki/Trie) and lightweight term matching. Over time it grew into a broader retrieval toolkit with [TF-IDF](https://en.wikipedia.org/wiki/Tf%E2%80%93idf) ranking, [BM25](https://en.wikipedia.org/wiki/Okapi_BM25), phrase queries, aggregations, geo search, vector search, and query composition.
 
 That evolution reflects my own background. I have spent most of my career working with search systems such as [Lucene](https://lucene.apache.org/), [Solr](https://solr.apache.org/), [Elasticsearch](https://www.elastic.co/elasticsearch), and [OpenSearch](https://opensearch.org/). Querylight TS is informed by that experience, but it is intentionally not trying to reproduce those systems in miniature.
 
@@ -45,7 +45,7 @@ The TypeScript port exists because modern browser applications increasingly need
 
 Querylight TS supports several retrieval patterns under one API:
 
-- Lexical search with TF-IDF and BM25 ranking
+- Lexical search with [TF-IDF](https://en.wikipedia.org/wiki/Tf%E2%80%93idf) and [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) ranking
 - Structured boolean queries
 - Phrase queries and prefix expansion
 - Aggregations and significant terms
@@ -65,9 +65,9 @@ The more useful question is whether Querylight TS is the right amount of search 
 
 If you need distributed indexing, large-scale operations, advanced relevance tooling, or the broad ecosystem around established search servers, use those tools.
 
-If you need a lightweight in-process search toolkit for browser or Node.js applications, Querylight TS may be a better fit.
+If you need a lightweight in-process search toolkit for browser or [Node.js](https://nodejs.org/) applications, Querylight TS may be a better fit.
 
-Compared to smaller client-side libraries such as [`fuse.js`](https://github.com/krisk/Fuse), Querylight TS aims to cover a wider slice of retrieval functionality. That does not automatically make it better. `fuse.js` is excellent at being simple, useful, and easy to adopt. Querylight TS gives you more building blocks, but whether you need them depends on your application.
+Compared to smaller client-side libraries such as [`fuse.js`](https://github.com/krisk/Fuse), Querylight TS aims to cover a wider slice of retrieval functionality. That does not automatically make it better. `fuse.js` is excellent at being simple, useful, and easy to adopt, and it is often the right choice when all you need is straightforward fuzzy matching. Querylight TS gives you more building blocks, but whether you need them depends on your application.
 
 ## Repositories
 
