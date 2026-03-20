@@ -38,15 +38,20 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 ## Documentation
 
 - [Introducing Querylight TS](docs/00-introducing-querylight-ts.md)
+- [Comparing Querylight TS to other browser search libraries](docs/31-browser-search-library-comparison.md)
 - [Getting started with browser search](docs/16-getting-started.md)
 - [Documentation overview](docs/01-overview.md)
+- [Analyzer and tokenization deep dive](docs/21-analyzer-deep-dive.md)
 - [Choosing a schema for search](docs/20-schema-design.md)
 - [How to build autocomplete](docs/22-how-to-build-autocomplete.md)
 - [How to build faceted navigation](docs/23-how-to-build-faceted-navigation.md)
 - [Relevance tuning with BM25, TF-IDF, and RRF](docs/24-relevance-tuning.md)
 - [Document chunking strategies](docs/25-document-chunking-strategies.md)
+- [Serialization, hydration, and shipping indexes](docs/26-shipping-indexes.md)
+- [Performance and memory tuning](docs/27-performance-and-memory-tuning.md)
+- [Testing search behavior](docs/28-testing-search-behavior.md)
+- [Real-world recipes](docs/29-real-world-recipes.md)
 - [Other work related to Querylight TS](docs/30-other-related-work.md)
-- [Comparing Querylight TS to other browser search libraries](docs/31-browser-search-library-comparison.md)
 - [Ask the Docs end to end](docs/18-ask-the-docs.md)
 - [How the tag aggregations sidebar works](docs/19-tag-aggregations-sidebar.md)
 - [Highlighting with Querylight TS](docs/17-highlighting.md)
@@ -111,4 +116,10 @@ npm run dev
 
 ## Positioning
 
-This is intended as a broader client-side search toolkit than fuzzy-match-only libraries such as `fuse.js`: it combines ranking, boolean logic, multi-field search, phrase search, prefixes, aggregations, vector search, and geo support behind one small pure TypeScript API.
+This is intended as a broader client-side search toolkit than fuzzy-match-only libraries such as `fuse.js`: it combines ranking, boolean logic, multi-field search, phrase search, prefixes, aggregations, vector search, and geo support behind one small pure TypeScript API. For a fuller comparison with `fuse.js`, Lunr, MiniSearch, FlexSearch, Pagefind, and Orama, see [the comparison article](docs/31-browser-search-library-comparison.md).
+
+## Project Notes
+
+Parts of this project were developed with AI-assisted agentic coding tools, with design, review, and release decisions still made manually.
+
+Most of the documentation was also AI-generated. That serves two practical purposes: it makes it possible to provide comprehensive coverage of the library's broad feature set without spending disproportionate time writing docs by hand, and it provides a large enough corpus for the [demo application](https://querylight-ts-demo.pages.dev) to showcase vector search through the "Ask the Docs" feature.

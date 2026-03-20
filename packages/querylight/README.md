@@ -14,6 +14,8 @@ npm install @tryformation/querylight-ts
 
 - Cloudflare demo: [https://querylight-ts-demo.pages.dev](https://querylight-ts-demo.pages.dev)
 
+The demo site also includes the most comprehensive documentation set for the project and showcases the "Ask the Docs" vector-search experience over that documentation corpus.
+
 ## Repository
 
 - Source: [https://github.com/formation-res/querylight-ts](https://github.com/formation-res/querylight-ts)
@@ -22,4 +24,6 @@ npm install @tryformation/querylight-ts
 
 - Introduction: [https://github.com/formation-res/querylight-ts/blob/main/docs/00-introducing-querylight-ts.md](https://github.com/formation-res/querylight-ts/blob/main/docs/00-introducing-querylight-ts.md)
 - Overview: [https://github.com/formation-res/querylight-ts/blob/main/docs/01-overview.md](https://github.com/formation-res/querylight-ts/blob/main/docs/01-overview.md)
+- Getting started: [https://github.com/formation-res/querylight-ts/blob/main/docs/16-getting-started.md](https://github.com/formation-res/querylight-ts/blob/main/docs/16-getting-started.md)
 - Highlighting: [https://github.com/formation-res/querylight-ts/blob/main/docs/17-highlighting.md](https://github.com/formation-res/querylight-ts/blob/main/docs/17-highlighting.md)
+- Comparison with other browser search libraries: [https://github.com/formation-res/querylight-ts/blob/main/docs/31-browser-search-library-comparison.md](https://github.com/formation-res/querylight-ts/blob/main/docs/31-browser-search-library-comparison.md)

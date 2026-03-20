@@ -56,6 +56,8 @@ That combination makes it useful for more than a search box. It can also power "
 
 Usually that is the wrong question.
 
+If you want the detailed version of that answer, read [Comparing Querylight TS to Other Browser Search Libraries](./31-browser-search-library-comparison.md).
+
 There are many search libraries and products, and search is one of those domains where people regularly build a side project and then claim it replaces Elasticsearch. Querylight TS is not presented that way. It is not a replacement for Elasticsearch, OpenSearch, Solr, or Lucene. Those systems are far more mature, scalable, and operationally complete.
 
 The more useful question is whether Querylight TS is the right amount of search for your problem.
