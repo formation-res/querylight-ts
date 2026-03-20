@@ -306,7 +306,9 @@ export class DocumentIndex {
 export class TextFieldIndex implements FieldIndex {
   private readonly termCounts: Map<string, number>;
   private readonly reverseMap: Map<string, TermPos[]>;
+  private readonly termDocPositions: Map<string, Map<string, number[]>>;
   private readonly trie: SimpleStringTrie;
+  private totalTermCount: number;
 
   constructor(
     public readonly analyzer: Analyzer = new Analyzer(),
@@ -315,10 +317,14 @@ export class TextFieldIndex implements FieldIndex {
     public readonly bm25Config: Bm25Config = defaultBm25Config(),
     termCounts: Map<string, number> = new Map(),
     reverseMap: Map<string, TermPos[]> = new Map(),
+    termDocPositions: Map<string, Map<string, number[]>> = new Map(),
+    totalTermCount = 0,
     trie: SimpleStringTrie = new SimpleStringTrie()
   ) {
     this.termCounts = termCounts;
     this.reverseMap = reverseMap;
+    this.termDocPositions = termDocPositions;
+    this.totalTermCount = totalTermCount;
     this.trie = trie;
   }
 
@@ -346,12 +352,15 @@ export class TextFieldIndex implements FieldIndex {
       fieldIndexState.bm25Config,
       new Map(Object.entries(fieldIndexState.termCounts)),
       new Map(Object.entries(fieldIndexState.reverseMap).map(([term, positions]) => [term, [...positions]])),
+      createTermDocPositions(fieldIndexState.reverseMap),
+      [...Object.values(fieldIndexState.termCounts)].reduce((sum, count) => sum + count, 0),
       new SimpleStringTrie(new TrieNode(fieldIndexState.trie))
     );
   }
 
   add(docId: string, text: string): void {
     const tokens = this.analyzer.analyze(text);
+    this.totalTermCount += tokens.length;
     const termPositions = new Map<string, number[]>();
     tokens.forEach((term, index) => {
       const positions = termPositions.get(term) ?? [];
@@ -364,15 +373,28 @@ export class TextFieldIndex implements FieldIndex {
       const existing = this.reverseMap.get(term) ?? [];
       existing.push(...positions.map((position) => ({ id: docId, position })));
       this.reverseMap.set(term, existing);
+      const docPositions = this.termDocPositions.get(term) ?? new Map<string, number[]>();
+      docPositions.set(docId, [...(docPositions.get(docId) ?? []), ...positions]);
+      this.termDocPositions.set(term, docPositions);
       this.trie.add(term);
     }
   }
 
   searchTerm(term: string, allowPrefixMatch = false): Hits {
-    const matches = this.termMatches(term) ?? (allowPrefixMatch
-      ? [...new Set(this.trie.match(term).flatMap((matchedTerm) => this.termMatches(matchedTerm) ?? []))]
-      : null);
-    return matches ? this.calculateScore(matches.map((match) => match.id)) : [];
+    const directMatches = this.termMatches(term);
+    if (directMatches) {
+      return this.calculateScore(directMatches.map((match) => match.id));
+    }
+    if (!allowPrefixMatch) {
+      return [];
+    }
+    const docIds = new Set<string>();
+    for (const matchedTerm of this.trie.match(term)) {
+      for (const match of this.termMatches(matchedTerm) ?? []) {
+        docIds.add(match.id);
+      }
+    }
+    return docIds.size > 0 ? this.calculateScore([...docIds]) : [];
   }
 
   searchPhrase(terms: string[], slop = 0): Hits {
@@ -387,9 +409,7 @@ export class TextFieldIndex implements FieldIndex {
     for (const { id: docId, position: startPos } of initialMatches) {
       let match = true;
       for (let i = 1; i < terms.length; i += 1) {
-        const positions = (this.reverseMap.get(terms[i]!) ?? [])
-          .filter((termPos) => termPos.id === docId)
-          .map((termPos) => termPos.position);
+        const positions = this.termDocPositions.get(terms[i]!)?.get(docId) ?? [];
         const valid = positions.some((pos) => pos === startPos + i || (slop > 0 && pos >= startPos + i - slop && pos <= startPos + i + slop));
         if (!valid) {
           match = false;
@@ -470,7 +490,7 @@ export class TextFieldIndex implements FieldIndex {
     }
     const df = matchedDocs.size;
     const totalDocs = this.termCounts.size;
-    const avgDocLength = totalDocs === 0 ? 0 : [...this.termCounts.values()].reduce((sum, value) => sum + value, 0) / totalDocs;
+    const avgDocLength = totalDocs === 0 ? 0 : this.totalTermCount / totalDocs;
     const idf = df === 0 ? 0 : Math.log(1 + (totalDocs - df + 0.5) / (df + 0.5));
     return [...termCountsPerDoc.entries()]
       .map(([docId, termCount]): Hit => {
@@ -487,30 +507,23 @@ export class TextFieldIndex implements FieldIndex {
   }
 
   getTopSignificantTerms(n: number, subsetDocIds: Set<string>): Record<string, [number, number]> {
-    const subsetTermCounts = new Map<string, number>();
-    const subsetTermDocs = new Map<string, Set<string>>();
-    for (const docId of subsetDocIds) {
-      for (const [term, docIds] of this.reverseMap.entries()) {
-        if (docIds.some((entry) => entry.id === docId)) {
-          subsetTermCounts.set(term, (subsetTermCounts.get(term) ?? 0) + 1);
-          const docs = subsetTermDocs.get(term) ?? new Set<string>();
-          docs.add(docId);
-          subsetTermDocs.set(term, docs);
-        }
-      }
-    }
     const totalDocs = this.termCounts.size;
     const subsetSize = subsetDocIds.size;
-    const backgroundTermCounts = new Map<string, number>([...this.reverseMap.entries()].map(([term, docIds]) => [term, docIds.length]));
     return Object.fromEntries(
-      [...subsetTermCounts.entries()]
-        .map(([term, subsetCount]) => {
+      [...this.termDocPositions.entries()]
+        .map(([term, docPositions]) => {
+          const docCount = countDocsInSubset(docPositions, subsetDocIds);
+          if (docCount === 0) {
+            return null;
+          }
+          const backgroundCount = docPositions.size;
+          const subsetCount = docCount;
           const subsetFrequency = subsetSize === 0 ? 0 : subsetCount / subsetSize;
-          const backgroundFrequency = (backgroundTermCounts.get(term) ?? 0) / (totalDocs || 1);
+          const backgroundFrequency = backgroundCount / (totalDocs || 1);
           const significance = backgroundFrequency > 0 ? subsetFrequency / backgroundFrequency : subsetFrequency;
-          const docCount = subsetTermDocs.get(term)?.size ?? 0;
           return [term, [significance, docCount] as [number, number]] as [string, [number, number]];
         })
+        .filter((entry): entry is [string, [number, number]] => entry !== null)
         .sort((a, b) => b[1][0] - a[1][0])
         .slice(0, n)
     );
@@ -519,20 +532,55 @@ export class TextFieldIndex implements FieldIndex {
   termsAggregation(n: number, subsetDocIds?: Set<string>): Record<string, number> {
     const termCounts = new Map<string, number>();
     if (!subsetDocIds) {
-      for (const [term, docIds] of this.reverseMap.entries()) {
-        termCounts.set(term, docIds.length);
+      for (const [term, docPositions] of this.termDocPositions.entries()) {
+        termCounts.set(term, docPositions.size);
       }
     } else {
-      for (const docId of subsetDocIds) {
-        for (const [term, docIds] of this.reverseMap.entries()) {
-          if (docIds.some((entry) => entry.id === docId)) {
-            termCounts.set(term, (termCounts.get(term) ?? 0) + 1);
-          }
+      for (const [term, docPositions] of this.termDocPositions.entries()) {
+        const count = countDocsInSubset(docPositions, subsetDocIds);
+        if (count > 0) {
+          termCounts.set(term, count);
         }
       }
     }
     return Object.fromEntries([...termCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, n));
   }
+}
+
+function createTermDocPositions(reverseMap: Record<string, TermPos[]>): Map<string, Map<string, number[]>> {
+  const termDocPositions = new Map<string, Map<string, number[]>>();
+  for (const [term, positions] of Object.entries(reverseMap)) {
+    const docPositions = new Map<string, number[]>();
+    for (const { id, position } of positions) {
+      const existing = docPositions.get(id) ?? [];
+      existing.push(position);
+      docPositions.set(id, existing);
+    }
+    termDocPositions.set(term, docPositions);
+  }
+  return termDocPositions;
+}
+
+function countDocsInSubset(docPositions: Map<string, number[]>, subsetDocIds: Set<string>): number {
+  if (subsetDocIds.size === 0 || docPositions.size === 0) {
+    return 0;
+  }
+  if (subsetDocIds.size < docPositions.size) {
+    let count = 0;
+    for (const docId of subsetDocIds) {
+      if (docPositions.has(docId)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+  let count = 0;
+  for (const docId of docPositions.keys()) {
+    if (subsetDocIds.has(docId)) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 export class GeoFieldIndex implements FieldIndex {
@@ -784,7 +832,7 @@ export class BoolQuery implements Query {
   ) {}
 
   hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
-    if (this.filter.length === 0 && this.should.length === 0 && this.must.length === 0) {
+    if (this.filter.length === 0 && this.should.length === 0 && this.must.length === 0 && this.mustNot.length === 0) {
       throw new Error("should specify at least one of filter, must, or should");
     }
 
@@ -798,6 +846,11 @@ export class BoolQuery implements Query {
         context.include(ids(reduced));
       }
     });
+
+    if (this.filter.length === 0 && this.should.length === 0 && this.must.length === 0 && this.mustNot.length > 0) {
+      context.setIncludeIds([...documentIndex.ids()]);
+      return applyBoost(context.hits(), normalizedBoost(this));
+    }
 
     const mustHits = this.must.length === 0 && this.filter.length > 0
       ? context.hits()

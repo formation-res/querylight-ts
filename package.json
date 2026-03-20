@@ -9,7 +9,8 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspace @querylight/core",
-    "dev": "npm run dev --workspace @querylight/demo"
+    "dev": "npm run dev --workspace @querylight/demo",
+    "profile:demo": "node scripts/profile-demo.mjs"
   },
   "devDependencies": {
     "tsup": "^8.5.1",

@@ -5,9 +5,6 @@ import {
   BoolQuery,
   DocumentIndex,
   EdgeNgramsTokenFilter,
-  GeoFieldIndex,
-  GeoPointQuery,
-  GeoPolygonQuery,
   KeywordTokenizer,
   MatchAll,
   MatchPhrase,
@@ -21,7 +18,6 @@ import {
   VectorFieldIndex,
   bigramVector,
   createSeededRandom,
-  rectangleToPolygon,
   type Document,
   type Hits
 } from "@querylight/core";
@@ -31,7 +27,7 @@ import json from "highlight.js/lib/languages/json";
 import typescript from "highlight.js/lib/languages/typescript";
 import MarkdownIt from "markdown-it";
 
-type SearchMode = "hybrid" | "match" | "phrase" | "fuzzy" | "vector" | "geo-point" | "geo-polygon" | "all";
+type SearchMode = "hybrid" | "match" | "phrase" | "fuzzy" | "vector" | "all";
 
 type DocEntry = {
   id: string;
@@ -42,8 +38,6 @@ type DocEntry = {
   apis: string[];
   level: "foundation" | "querying" | "indexing" | "advanced";
   order: string;
-  city: string;
-  point: [number, number];
   markdown: string;
   body: string;
   examples: string[];
@@ -65,7 +59,6 @@ type SearchResult = {
   lexicalHits: Hits;
   fuzzyHits: Hits;
   vectorHits: Hits;
-  geoHits: Hits;
   finalHits: Hits;
   selectedIds: Set<string>;
   tagFacets: Record<string, number>;
@@ -78,7 +71,6 @@ type RuntimeIndexes = {
   hydrated: DocumentIndex;
   fuzzy: DocumentIndex;
   vector: VectorFieldIndex;
-  geo: DocumentIndex;
   serialized: ReturnType<DocumentIndex["indexState"]>;
 };
 
@@ -87,7 +79,7 @@ type RuntimeContext = {
   byId: Map<string, DocEntry>;
   sections: string[];
   allTags: string[];
-  allCities: string[];
+  renderedMarkdown: Map<string, string>;
   indexes: Record<RankingAlgorithm, RuntimeIndexes>;
 };
 
@@ -222,11 +214,7 @@ function toDocEntry(path: string, raw: string): DocEntry {
   const section = metadata.section;
   const level = metadata.level as DocEntry["level"];
   const order = metadata.order;
-  const city = metadata.city;
-  const lat = Number(metadata.lat);
-  const lon = Number(metadata.lon);
-
-  if (!title || !summary || !id || !section || !level || !order || !city || Number.isNaN(lat) || Number.isNaN(lon)) {
+  if (!title || !summary || !id || !section || !level || !order) {
     throw new Error(`invalid doc metadata in ${path}`);
   }
 
@@ -239,8 +227,6 @@ function toDocEntry(path: string, raw: string): DocEntry {
     apis: parseStringArray(metadata.apis ?? ""),
     level,
     order,
-    city,
-    point: [lat, lon],
     markdown: markdownBody,
     body: stripMarkdown(markdownBody),
     examples: extractCodeBlocks(markdownBody),
@@ -272,8 +258,7 @@ function toDocument(entry: DocEntry): Document {
       examples: entry.examples,
       combined: [entry.title, entry.summary, entry.body, entry.tags.join(" "), entry.apis.join(" "), entry.examples.join(" ")].join(" "),
       suggest: [entry.title, entry.tags.join(" "), entry.apis.join(" ")].join(" "),
-      order: [entry.order],
-      location: [JSON.stringify({ type: "Point", coordinates: [entry.point[1], entry.point[0]] })]
+      order: [entry.order]
     }
   };
 }
@@ -290,8 +275,7 @@ function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
     examples: new TextFieldIndex(undefined, undefined, ranking),
     combined: new TextFieldIndex(undefined, undefined, ranking),
     suggest: new TextFieldIndex(edgeAnalyzer, edgeAnalyzer, ranking),
-    order: new TextFieldIndex(tagAnalyzer, tagAnalyzer),
-    location: new GeoFieldIndex()
+    order: new TextFieldIndex(tagAnalyzer, tagAnalyzer)
   });
 }
 
@@ -301,15 +285,11 @@ function createIndexes(docs: DocEntry[], ranking: RankingAlgorithm): RuntimeInde
     combined: new TextFieldIndex(fuzzyAnalyzer, fuzzyAnalyzer, ranking)
   });
   const vector = new VectorFieldIndex(6, 36 * 36, createSeededRandom(42));
-  const geo = new DocumentIndex({
-    location: new GeoFieldIndex()
-  });
 
   docs.forEach((entry) => {
     const doc = toDocument(entry);
     source.index(doc);
     fuzzy.index({ id: entry.id, fields: { combined: [doc.fields.combined?.[0] ?? ""] } });
-    geo.index({ id: entry.id, fields: { location: doc.fields.location ?? [] } });
     vector.insert(entry.id, [bigramVector(doc.fields.combined?.[0] ?? "", vectorAnalyzer)]);
   });
 
@@ -318,7 +298,6 @@ function createIndexes(docs: DocEntry[], ranking: RankingAlgorithm): RuntimeInde
     hydrated: createDocIndex(ranking).loadState(serialized),
     fuzzy,
     vector,
-    geo,
     serialized
   };
 }
@@ -334,7 +313,7 @@ function createRuntimeContext(docs: DocEntry[]): RuntimeContext {
     byId: new Map(docs.map((doc) => [doc.id, doc])),
     sections,
     allTags: [...new Set(docs.flatMap((doc) => doc.tags))].sort(),
-    allCities: [...new Set(docs.map((doc) => doc.city))],
+    renderedMarkdown: new Map(),
     indexes: {
       [RankingAlgorithm.BM25]: createIndexes(docs, RankingAlgorithm.BM25),
       [RankingAlgorithm.TFIDF]: createIndexes(docs, RankingAlgorithm.TFIDF)
@@ -485,16 +464,8 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
       ? []
       : active.vector.query(bigramVector(trimmed, vectorAnalyzer), 20, allowedIds);
 
-  const geoPointHits = active.geo.searchRequest({
-    query: new GeoPointQuery("location", 52.52, 13.405)
-  });
-  const geoPolygonHits = active.geo.searchRequest({
-    query: new GeoPolygonQuery("location", rectangleToPolygon(-10, 48, 25, 61))
-  });
-
   let finalHits: Hits;
   let lexicalHits: Hits;
-  let geoHits: Hits = [];
 
   switch (current.mode) {
     case "all":
@@ -512,16 +483,6 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
     case "vector":
       lexicalHits = [];
       finalHits = vectorHits;
-      break;
-    case "geo-point":
-      lexicalHits = [];
-      geoHits = geoPointHits;
-      finalHits = geoPointHits;
-      break;
-    case "geo-polygon":
-      lexicalHits = [];
-      geoHits = geoPolygonHits;
-      finalHits = geoPolygonHits;
       break;
     case "match":
       lexicalHits = index.searchRequest({ query: baseTextQuery, limit: 20 });
@@ -550,7 +511,6 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
     lexicalHits,
     fuzzyHits,
     vectorHits,
-    geoHits,
     finalHits,
     selectedIds,
     tagFacets,
@@ -629,8 +589,6 @@ function createShell(context: RuntimeContext): void {
                     <option value="phrase">Phrase</option>
                     <option value="fuzzy">Fuzzy (ngrams)</option>
                     <option value="vector">Vector</option>
-                    <option value="geo-point">Geo point</option>
-                    <option value="geo-polygon">Geo polygon</option>
                     <option value="all">Match all</option>
                   </select>
                 </label>
@@ -867,11 +825,13 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
 }
 
 function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, doc: DocEntry, current: SearchResult | null): void {
-  const locationLabel = `${doc.city} (${doc.point[0].toFixed(2)}, ${doc.point[1].toFixed(2)})`;
   const vectorRank = current?.vectorHits.findIndex(([id]) => id === doc.id) ?? -1;
   const fuzzyRank = current?.fuzzyHits.findIndex(([id]) => id === doc.id) ?? -1;
   const lexicalRank = current?.lexicalHits.findIndex(([id]) => id === doc.id) ?? -1;
   const topResults = current?.finalHits.slice(0, 3) ?? [];
+
+  const renderedMarkdown = context.renderedMarkdown.get(doc.id) ?? markdown.render(doc.markdown);
+  context.renderedMarkdown.set(doc.id, renderedMarkdown);
 
   centerNode.innerHTML = `
     <article class="reader-page grid gap-4">
@@ -929,7 +889,6 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
               <li>Lexical rank: ${lexicalRank >= 0 ? lexicalRank + 1 : "not matched"}</li>
               <li>Fuzzy rank: ${fuzzyRank >= 0 ? fuzzyRank + 1 : "not matched"}</li>
               <li>Vector rank: ${vectorRank >= 0 ? vectorRank + 1 : "not matched"}</li>
-              <li>Geo demo point: ${escapeHtml(locationLabel)}</li>
               <li>Markdown source: <code>${escapeHtml(doc.path.replace("../../../", ""))}</code></li>
             </ul>
           </div>
@@ -945,7 +904,7 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
               ${doc.tags.map((tag) => `<button class="chip-button" data-facet="tag" data-value="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join("")}
             </div>
           </div>
-          <article class="prose-docs mt-8">${markdown.render(doc.markdown)}</article>
+          <article class="prose-docs mt-8">${renderedMarkdown}</article>
           ${
             current
               ? `<div class="mt-8"><button class="text-sm font-semibold text-orange-800 transition hover:text-orange-900" data-action="back-to-results" type="button">Back to search results</button></div>`
@@ -1046,13 +1005,22 @@ function wireApp(context: RuntimeContext): void {
     clearQueryButton.disabled = state.query.length === 0;
   };
 
-  const renderApp = () => {
+  const renderShell = () => {
     syncControls();
     updateSummary(summaryNode, submittedResult);
-    renderSuggestions(context, suggestionsNode, suggestionResult);
     renderToc(context, tocNode, tocStatusNode, submittedResult);
     renderFacets(context, activeFiltersNode, facetSectionsNode, submittedResult);
     renderCenter(context, centerNode, submittedResult);
+  };
+
+  const renderSuggestionsOnly = () => {
+    syncControls();
+    renderSuggestions(context, suggestionsNode, suggestionResult);
+  };
+
+  const renderApp = () => {
+    renderShell();
+    renderSuggestionsOnly();
   };
 
   const runSubmittedSearch = (nextView: "results" | "detail" = "results") => {
@@ -1071,13 +1039,13 @@ function wireApp(context: RuntimeContext): void {
     }
     if (!state.query.trim()) {
       suggestionResult = null;
-      renderApp();
+      renderSuggestionsOnly();
       return;
     }
     pendingSuggestions = window.setTimeout(() => {
       pendingSuggestions = null;
       suggestionResult = searchForState(context, state);
-      renderApp();
+      renderSuggestionsOnly();
     }, SEARCH_INPUT_DEBOUNCE_MS);
   };
 
@@ -1103,7 +1071,7 @@ function wireApp(context: RuntimeContext): void {
   queryInput.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       suggestionResult = null;
-      renderApp();
+      renderSuggestionsOnly();
     }
   });
 
@@ -1121,7 +1089,7 @@ function wireApp(context: RuntimeContext): void {
 
   const applySearchOptions = () => {
     if (currentView === "home" && !submittedResult) {
-      renderApp();
+      renderShell();
       return;
     }
     runSubmittedSearch(currentView === "detail" ? "detail" : "results");
@@ -1155,7 +1123,7 @@ function wireApp(context: RuntimeContext): void {
       if (submittedResult) {
         currentView = "results";
       }
-      renderApp();
+      renderShell();
       return;
     }
 
@@ -1203,7 +1171,7 @@ function wireApp(context: RuntimeContext): void {
       }
       if (!target.closest("#query-form")) {
         suggestionResult = null;
-        renderApp();
+        renderSuggestionsOnly();
       }
       return;
     }
