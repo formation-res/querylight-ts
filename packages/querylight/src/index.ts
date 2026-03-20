@@ -75,7 +75,8 @@ export {
   OP,
   PrefixQuery,
   RangeQuery,
-  TermQuery
+  TermQuery,
+  TermsQuery
 } from "./query";
 export type { Query } from "./shared";
 

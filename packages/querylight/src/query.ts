@@ -125,6 +125,33 @@ export class TermQuery implements Query {
   }
 }
 
+export class TermsQuery implements Query {
+  constructor(
+    private readonly field: string,
+    private readonly terms: string[],
+    public readonly boost: number | undefined = undefined
+  ) {}
+
+  hits(documentIndex: DocumentIndex): Hits {
+    const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => {
+      const termHits = [...new Set(this.terms)]
+        .map((term) => (fieldIndex.termMatches(term) ?? []).map((match): Hit => [match.id, 1.0]));
+      return termHits.length > 0 ? termHits.reduce(orHits, []) : [];
+    });
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses() {
+    return this.terms.map((term) => ({
+      kind: "term" as const,
+      field: this.field,
+      text: term,
+      operation: OP.OR,
+      prefixMatch: false
+    }));
+  }
+}
+
 export class RangeQuery implements Query {
   constructor(
     private readonly field: string,
