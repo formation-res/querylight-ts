@@ -1415,6 +1415,11 @@ function wireApp(context: RuntimeContext): void {
   queryInput.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       hideSuggestions();
+      return;
+    }
+    if (event.key === "Enter" && activeExperience === "ask") {
+      event.preventDefault();
+      void runSemanticSearch();
     }
   });
 
