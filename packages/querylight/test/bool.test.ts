@@ -81,4 +81,61 @@ describe("bool queries", () => {
 
     expect(results).toEqual(["3"]);
   });
+
+  it("should treat should clauses as optional when must clauses are present", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex() });
+    [
+      ["1", "alpha"],
+      ["2", "alpha beta"],
+      ["3", "alpha gamma"]
+    ].forEach(([id, title]) => index.index({ id, fields: { title: [title] } }));
+
+    const hits = index.search(new BoolQuery(
+      [new MatchQuery("title", "beta")],
+      [new MatchQuery("title", "alpha")]
+    ));
+
+    expect(ids(hits)).toEqual(["2", "1", "3"]);
+  });
+
+  it("should support minimumShouldMatch for should-only queries", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex() });
+    [
+      ["1", "alpha"],
+      ["2", "beta"],
+      ["3", "alpha beta"],
+      ["4", "alpha beta gamma"]
+    ].forEach(([id, title]) => index.index({ id, fields: { title: [title] } }));
+
+    const hits = index.search(new BoolQuery(
+      [new MatchQuery("title", "alpha"), new MatchQuery("title", "beta")],
+      [],
+      [],
+      [],
+      undefined,
+      2
+    ));
+
+    expect(ids(hits)).toEqual(["3", "4"]);
+  });
+
+  it("should support minimumShouldMatch together with required clauses", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex() });
+    [
+      ["1", "alpha beta"],
+      ["2", "alpha gamma"],
+      ["3", "alpha beta gamma"]
+    ].forEach(([id, title]) => index.index({ id, fields: { title: [title] } }));
+
+    const hits = index.search(new BoolQuery(
+      [new MatchQuery("title", "beta"), new MatchQuery("title", "gamma")],
+      [new MatchQuery("title", "alpha")],
+      [],
+      [],
+      undefined,
+      2
+    ));
+
+    expect(ids(hits)).toEqual(["3"]);
+  });
 });

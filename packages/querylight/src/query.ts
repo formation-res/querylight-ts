@@ -14,7 +14,8 @@ export class BoolQuery implements Query {
     private readonly must: Query[] = [],
     private readonly filter: Query[] = [],
     private readonly mustNot: Query[] = [],
-    public readonly boost: number | undefined = undefined
+    public readonly boost: number | undefined = undefined,
+    private readonly minimumShouldMatch = 0
   ) {}
 
   hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
@@ -54,18 +55,42 @@ export class BoolQuery implements Query {
 
     const mappedShoulds = this.should.map((query) => query.hits(documentIndex, context));
     const shouldHits = mappedShoulds.length > 0 ? mappedShoulds.reduce(orHits) : [];
+    const shouldMatchCounts = new Map<string, number>();
+    for (const hits of mappedShoulds) {
+      for (const [id] of hits) {
+        shouldMatchCounts.set(id, (shouldMatchCounts.get(id) ?? 0) + 1);
+      }
+    }
+
+    const baseHits = this.must.length === 0 && this.filter.length === 0 ? [] : mustHits;
+    const requiredShouldMatches = this.minimumShouldMatch > 0
+      ? this.minimumShouldMatch
+      : this.must.length === 0 && this.filter.length === 0 && this.should.length > 0
+        ? 1
+        : 0;
 
     let result: Hits;
-    if (this.must.length === 0 && this.should.length === 0) {
-      result = mustHits;
-    } else if (this.filter.length === 0 && this.should.length === 0) {
-      result = mustHits;
-    } else if (this.must.length === 0 && this.filter.length === 0) {
+    if (baseHits.length === 0) {
       result = shouldHits;
-    } else if (this.filter.length === 0) {
-      result = this.should.length === 0 ? mustHits : this.must.length === 0 ? shouldHits : andHits(mustHits, shouldHits);
+    } else if (shouldHits.length === 0) {
+      result = requiredShouldMatches > 0 ? [] : baseHits;
     } else {
-      result = shouldHits.length === 0 ? mustHits : andHits(mustHits, shouldHits);
+      const shouldMap = new Map(shouldHits);
+      result = baseHits
+        .map(([id, score]): Hit | null => {
+          const shouldScore = shouldMap.get(id) ?? 0;
+          const shouldMatches = shouldMatchCounts.get(id) ?? 0;
+          if (requiredShouldMatches > 0 && shouldMatches < requiredShouldMatches) {
+            return null;
+          }
+          return [id, score + shouldScore];
+        })
+        .filter((hit): hit is Hit => hit !== null)
+        .sort((a, b) => b[1] - a[1]);
+    }
+
+    if (baseHits.length === 0 && requiredShouldMatches > 1) {
+      result = result.filter(([id]) => (shouldMatchCounts.get(id) ?? 0) >= requiredShouldMatches);
     }
 
     return applyBoost(result, normalizedBoost(this));
