@@ -17,6 +17,8 @@ import {
   reciprocalRankFusion,
   TermQuery,
   TextFieldIndex,
+  VectorFieldIndex,
+  createSeededRandom,
   type HighlightFragment,
   type HighlightResult,
   type Hits
@@ -28,10 +30,20 @@ import typescript from "highlight.js/lib/languages/typescript";
 import MarkdownIt from "markdown-it";
 import demoDataUrl from "./generated/demo-data.json?url";
 import packageMeta from "../../../packages/querylight/package.json";
+import {
+  SEMANTIC_INDEX_HASH_TABLES,
+  SEMANTIC_INDEX_RANDOM_SEED,
+  formatHeadingPath,
+  type ChunkEmbeddingRecord,
+  type RelatedArticleRecord,
+  type SemanticModelInfo,
+  type SemanticPayload
+} from "./semantic";
 
 declare const __BUILD_TIMESTAMP__: string;
 
 type SearchMode = "hybrid" | "match" | "phrase" | "fuzzy";
+type QueryExperience = "search" | "ask";
 
 type DocEntry = {
   id: string;
@@ -62,6 +74,7 @@ type SearchState = {
 type SearchResult = {
   lexicalHits: Hits;
   fuzzyHits: Hits;
+  vectorHits: Hits;
   finalHits: Hits;
   highlightsById: Map<string, HighlightResult>;
   selectedIds: Set<string>;
@@ -85,6 +98,7 @@ type DemoDataPayload = {
       fuzzy: DocumentIndexState;
     }
   >;
+  semantic: SemanticPayload;
 };
 
 type RuntimeContext = {
@@ -94,11 +108,37 @@ type RuntimeContext = {
   allTags: string[];
   renderedMarkdown: Map<string, string>;
   indexes: Record<RankingAlgorithm, RuntimeIndexes>;
+  semantic: SemanticRuntime;
 };
 
 type NavSection = {
   name: string;
   docs: DocEntry[];
+};
+
+type ChunkHitViewModel = {
+  chunk: ChunkEmbeddingRecord;
+  doc: DocEntry;
+  score: number;
+};
+
+type RelatedArticleViewModel = {
+  doc: DocEntry;
+  score: number;
+};
+
+type SemanticRuntime = {
+  model: SemanticModelInfo;
+  chunkIndex: VectorFieldIndex;
+  relatedArticlesByDocId: Map<string, RelatedArticleRecord>;
+  chunkEmbeddingsById: Map<string, ChunkEmbeddingRecord>;
+};
+
+type SemanticQuestionState = {
+  query: string;
+  status: "idle" | "loading-model" | "searching" | "ready" | "error";
+  results: ChunkHitViewModel[];
+  error: string | null;
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -154,9 +194,16 @@ const initialState: SearchState = {
 
 let state: SearchState = { ...initialState };
 let activeDocId = "";
-let currentView: "home" | "results" | "detail" = "home";
+let currentView: "home" | "results" | "detail" | "ask" = "home";
+let activeExperience: QueryExperience = "search";
 let submittedResult: SearchResult | null = null;
 let suggestionResult: SearchResult | null = null;
+let semanticQuestionState: SemanticQuestionState = {
+  query: "",
+  status: "idle",
+  results: [],
+  error: null
+};
 
 function renderLoading(message: string): void {
   app.innerHTML = `
@@ -273,6 +320,25 @@ function loadSerializedIndexes(
   };
 }
 
+function createVectorIndex(dimensions: number): VectorFieldIndex {
+  return new VectorFieldIndex(SEMANTIC_INDEX_HASH_TABLES, dimensions, createSeededRandom(SEMANTIC_INDEX_RANDOM_SEED));
+}
+
+function createSemanticRuntime(semanticPayload: SemanticPayload): SemanticRuntime {
+  const chunkIndex = createVectorIndex(semanticPayload.model.dimensions);
+
+  semanticPayload.chunkEmbeddings.forEach((record) => {
+    chunkIndex.insert(record.chunkId, [record.embedding]);
+  });
+
+  return {
+    model: semanticPayload.model,
+    chunkIndex,
+    relatedArticlesByDocId: new Map(semanticPayload.relatedArticles.map((record) => [record.docId, record])),
+    chunkEmbeddingsById: new Map(semanticPayload.chunkEmbeddings.map((record) => [record.chunkId, record]))
+  };
+}
+
 function createRuntimeContext(demoData: DemoDataPayload): RuntimeContext {
   const docs = demoData.docs;
   const sectionSet = new Set(docs.map((doc) => doc.section));
@@ -289,7 +355,8 @@ function createRuntimeContext(demoData: DemoDataPayload): RuntimeContext {
     indexes: {
       [RankingAlgorithm.BM25]: loadSerializedIndexes(RankingAlgorithm.BM25, demoData.indexes[RankingAlgorithm.BM25]),
       [RankingAlgorithm.TFIDF]: loadSerializedIndexes(RankingAlgorithm.TFIDF, demoData.indexes[RankingAlgorithm.TFIDF])
-    }
+    },
+    semantic: createSemanticRuntime(demoData.semantic)
   };
 }
 
@@ -300,6 +367,58 @@ function createNavSections(context: RuntimeContext): NavSection[] {
       docs: context.docs.filter((doc) => doc.section === section)
     }))
     .filter((section) => section.docs.length > 0);
+}
+
+let browserEmbeddingExtractorPromise: Promise<(value: string) => Promise<number[]>> | null = null;
+
+async function embedSemanticQuery(value: string, modelId: string): Promise<number[]> {
+  browserEmbeddingExtractorPromise ??= (async () => {
+    const { pipeline } = await import("@huggingface/transformers");
+    const extractor = await pipeline("feature-extraction", modelId);
+    return async (input: string) => {
+      const output = await extractor(input, { pooling: "mean", normalize: true });
+      return output.tolist()[0] as number[];
+    };
+  })();
+
+  try {
+    const extractor = await browserEmbeddingExtractorPromise;
+    return extractor(value);
+  } catch (error) {
+    browserEmbeddingExtractorPromise = null;
+    throw error;
+  }
+}
+
+function getRelatedArticles(context: RuntimeContext, doc: DocEntry): RelatedArticleViewModel[] {
+  const relatedRecord = context.semantic.relatedArticlesByDocId.get(doc.id);
+  if (!relatedRecord) {
+    return [];
+  }
+
+  return relatedRecord.neighbors
+    .map((neighbor) => {
+      const relatedDoc = context.byId.get(neighbor.docId);
+      return relatedDoc ? { doc: relatedDoc, score: neighbor.score } : null;
+    })
+    .filter((value): value is RelatedArticleViewModel => value !== null);
+}
+
+function getSemanticQuestionResults(context: RuntimeContext, queryVector: number[], limit = 4): ChunkHitViewModel[] {
+  const byDocId = new Map<string, ChunkHitViewModel>();
+
+  context.semantic.chunkIndex
+    .query(queryVector, limit * 4)
+    .forEach(([chunkId, score]) => {
+      const chunk = context.semantic.chunkEmbeddingsById.get(chunkId);
+      const doc = chunk ? context.byId.get(chunk.docId) : null;
+      if (!chunk || !doc || byDocId.has(doc.id)) {
+        return;
+      }
+      byDocId.set(doc.id, { chunk, doc, score });
+    });
+
+  return [...byDocId.values()].slice(0, limit);
 }
 
 function rerankWithTitleBoost(context: RuntimeContext, rawQuery: string, hits: Hits): Hits {
@@ -508,6 +627,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   return {
     lexicalHits,
     fuzzyHits,
+    vectorHits: [],
     finalHits,
     highlightsById,
     selectedIds,
@@ -525,6 +645,10 @@ function createShell(context: RuntimeContext): void {
   app.innerHTML = `
     <main class="mx-auto w-[min(1560px,calc(100vw-24px))] py-6 lg:py-8">
       <section class="surface search-shell p-5 sm:p-6">
+        <div class="mb-4 inline-flex rounded-full border border-stone-900/10 bg-white/75 p-1">
+          <button id="experience-search" type="button" class="chip-button">Search</button>
+          <button id="experience-ask" type="button" class="chip-button">Ask the docs</button>
+        </div>
         <form id="query-form" class="search-form" autocomplete="off">
           <div class="search-input-wrap">
             <input id="query" class="control-input min-w-0 flex-1" placeholder="Search Querylight TS documentation" />
@@ -680,6 +804,15 @@ function createShell(context: RuntimeContext): void {
 }
 
 function updateSummary(summaryNode: HTMLParagraphElement, current: SearchResult | null): void {
+  if (activeExperience === "ask") {
+    summaryNode.textContent =
+      semanticQuestionState.status === "ready"
+        ? `${semanticQuestionState.results.length} answers · semantic chunks`
+        : semanticQuestionState.status === "error"
+          ? "Ask the docs unavailable"
+          : "Ask the docs";
+    return;
+  }
   if (!current) {
     summaryNode.textContent = "No active search";
     return;
@@ -727,7 +860,7 @@ function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNo
 }
 
 function renderSuggestions(context: RuntimeContext, suggestionsNode: HTMLDivElement, current: SearchResult | null): void {
-  if (!state.query.trim() || !current || current.finalHits.length === 0) {
+  if (activeExperience !== "search" || !state.query.trim() || !current || current.finalHits.length === 0) {
     suggestionsNode.classList.add("hidden");
     suggestionsNode.innerHTML = "";
     return;
@@ -806,6 +939,39 @@ function renderFacets(context: RuntimeContext, activeFiltersNode: HTMLDivElement
   `;
 }
 
+function renderRelatedArticles(context: RuntimeContext, doc: DocEntry): string {
+  const related = getRelatedArticles(context, doc);
+  if (related.length === 0) {
+    return "";
+  }
+
+  return `
+    <section class="surface px-6 py-5 sm:px-8">
+      <div class="flex items-end justify-between gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Related Articles</p>
+          <h2 class="mt-2 font-serif text-2xl text-stone-950">Keep exploring</h2>
+        </div>
+        <p class="text-sm text-stone-500">Article-level semantic similarity</p>
+      </div>
+      <div class="mt-4 grid gap-3 md:grid-cols-2">
+        ${related
+          .map(({ doc: relatedDoc, score }) => `
+            <button class="nav-result" data-doc="${escapeHtml(relatedDoc.id)}" data-open-doc="true">
+              <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
+                <span>${escapeHtml(relatedDoc.section)}</span>
+                <span>${score.toFixed(2)}</span>
+              </div>
+              <h3 class="result-title result-title-sm">${escapeHtml(relatedDoc.title)}</h3>
+              <p class="result-summary result-summary-sm">${escapeHtml(relatedDoc.summary)}</p>
+            </button>
+          `)
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
 function renderHome(context: RuntimeContext, centerNode: HTMLDivElement): void {
   const featured = context.docs.slice(0, 6);
   centerNode.innerHTML = `
@@ -880,9 +1046,9 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
 
 function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, doc: DocEntry, current: SearchResult | null): void {
   const topResults = current?.finalHits.slice(0, 3) ?? [];
-
   const renderedMarkdown = context.renderedMarkdown.get(doc.id) ?? markdown.render(doc.markdown);
   context.renderedMarkdown.set(doc.id, renderedMarkdown);
+  const relatedArticlesPanel = renderRelatedArticles(context, doc);
 
   centerNode.innerHTML = `
     <article class="reader-page grid gap-4">
@@ -956,11 +1122,57 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
           }
         </div>
       </article>
+      ${relatedArticlesPanel}
+    </article>
+  `;
+}
+
+function renderAskResultsPage(centerNode: HTMLDivElement): void {
+  const statusMessage =
+    semanticQuestionState.status === "loading-model"
+      ? "Loading the embedding model for the first semantic query."
+      : semanticQuestionState.status === "searching"
+        ? "Matching your question against semantic chunks."
+        : semanticQuestionState.status === "error"
+          ? semanticQuestionState.error ?? "Semantic search failed."
+          : semanticQuestionState.status === "ready"
+            ? `${semanticQuestionState.results.length} semantic matches`
+            : "Ask a natural-language question and match it against article chunks.";
+
+  centerNode.innerHTML = `
+    <article class="surface reader-page px-6 py-8 sm:px-8 sm:py-10">
+      <header>
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Ask The Docs</p>
+        <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${escapeHtml(semanticQuestionState.query || "Semantic answers")}</h1>
+        <p class="mt-3 text-sm text-stone-600">${escapeHtml(statusMessage)}</p>
+      </header>
+      <div class="mt-8 grid gap-3">
+        ${
+          semanticQuestionState.results.length === 0
+            ? `<div class="rounded-3xl border border-dashed border-stone-900/10 bg-stone-50/80 px-5 py-4 text-sm text-stone-600">No semantic matches found. Try a broader question.</div>`
+            : semanticQuestionState.results
+                .map(({ chunk, doc, score }, index) => `
+                  <button class="nav-result" data-doc="${escapeHtml(doc.id)}" data-open-doc="true">
+                    <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
+                      <span>${index + 1}. ${escapeHtml(doc.section)} · ${escapeHtml(formatHeadingPath(chunk.headingPath))}</span>
+                      <span>${score.toFixed(2)}</span>
+                    </div>
+                    <h2 class="result-title">${escapeHtml(doc.title)}</h2>
+                    <p class="result-summary">${escapeHtml(chunk.text)}</p>
+                  </button>
+                `)
+                .join("")
+        }
+      </div>
     </article>
   `;
 }
 
 function renderCenter(context: RuntimeContext, centerNode: HTMLDivElement, current: SearchResult | null): void {
+  if (currentView === "ask") {
+    renderAskResultsPage(centerNode);
+    return;
+  }
   if (currentView === "results" && current) {
     renderResultsPage(context, centerNode, current);
     return;
@@ -989,6 +1201,8 @@ function wireApp(context: RuntimeContext): void {
   const queryForm = document.querySelector<HTMLFormElement>("#query-form");
   const queryInput = document.querySelector<HTMLInputElement>("#query");
   const clearQueryButton = document.querySelector<HTMLButtonElement>("#clear-query");
+  const experienceSearchButton = document.querySelector<HTMLButtonElement>("#experience-search");
+  const experienceAskButton = document.querySelector<HTMLButtonElement>("#experience-ask");
   const modeSelect = document.querySelector<HTMLSelectElement>("#mode");
   const rankingSelect = document.querySelector<HTMLSelectElement>("#ranking");
   const operationSelect = document.querySelector<HTMLSelectElement>("#operation");
@@ -1007,6 +1221,8 @@ function wireApp(context: RuntimeContext): void {
     !queryForm ||
     !queryInput ||
     !clearQueryButton ||
+    !experienceSearchButton ||
+    !experienceAskButton ||
     !modeSelect ||
     !rankingSelect ||
     !operationSelect ||
@@ -1040,13 +1256,25 @@ function wireApp(context: RuntimeContext): void {
   };
 
   const syncControls = () => {
-    queryInput.value = state.query;
+    const isAsk = activeExperience === "ask";
+    queryInput.value = isAsk ? semanticQuestionState.query : state.query;
+    queryInput.placeholder = isAsk ? "Ask a question like: how do I use vector search?" : "Search Querylight TS documentation";
     modeSelect.value = state.mode;
     rankingSelect.value = state.ranking;
     operationSelect.value = state.operation;
     prefixInput.checked = state.prefix;
     excludeAdvancedInput.checked = state.excludeAdvanced;
-    clearQueryButton.disabled = state.query.length === 0;
+    clearQueryButton.disabled = (isAsk ? semanticQuestionState.query : state.query).length === 0;
+    experienceSearchButton.classList.toggle("nav-result-active", !isAsk);
+    experienceAskButton.classList.toggle("nav-result-active", isAsk);
+    [modeSelect, rankingSelect, operationSelect, prefixInput, excludeAdvancedInput].forEach((control) => {
+      control.disabled = isAsk;
+      control.closest("label")?.classList.toggle("opacity-45", isAsk);
+    });
+    const submitLabel = queryForm.querySelector<HTMLButtonElement>("#submit-query");
+    if (submitLabel) {
+      submitLabel.textContent = isAsk ? "Ask" : "Search";
+    }
   };
 
   const renderShell = () => {
@@ -1072,6 +1300,59 @@ function wireApp(context: RuntimeContext): void {
     renderSuggestionsOnly();
   };
 
+  const runSemanticSearch = async () => {
+    const trimmed = semanticQuestionState.query.trim();
+    if (!trimmed) {
+      semanticQuestionState = {
+        query: "",
+        status: "idle",
+        results: [],
+        error: null
+      };
+      currentView = "home";
+      renderApp();
+      return;
+    }
+
+    activeExperience = "ask";
+    const firstLoad = browserEmbeddingExtractorPromise === null;
+    semanticQuestionState = {
+      ...semanticQuestionState,
+      status: firstLoad ? "loading-model" : "searching",
+      results: [],
+      error: null
+    };
+    renderApp();
+
+    try {
+      const embedding = await embedSemanticQuery(trimmed, context.semantic.model.modelId);
+      semanticQuestionState = {
+        ...semanticQuestionState,
+        status: "searching"
+      };
+      renderApp();
+
+      const results = getSemanticQuestionResults(context, embedding);
+      semanticQuestionState = {
+        ...semanticQuestionState,
+        status: "ready",
+        results,
+        error: null
+      };
+      currentView = "ask";
+    } catch (error: unknown) {
+      semanticQuestionState = {
+        ...semanticQuestionState,
+        status: "error",
+        results: [],
+        error: error instanceof Error ? error.message : String(error)
+      };
+      currentView = "ask";
+    }
+
+    renderApp();
+  };
+
   const runSubmittedSearch = (nextView: "results" | "detail" = "results") => {
     suggestionResult = null;
     submittedResult = searchForState(context, state);
@@ -1087,7 +1368,7 @@ function wireApp(context: RuntimeContext): void {
     if (pendingSuggestions !== null) {
       window.clearTimeout(pendingSuggestions);
     }
-    if (!state.query.trim()) {
+    if (activeExperience !== "search" || !state.query.trim()) {
       suggestionResult = null;
       renderSuggestionsOnly();
       return;
@@ -1106,10 +1387,23 @@ function wireApp(context: RuntimeContext): void {
       currentView = "home";
       activeDocId = "";
     }
+    if (!semanticQuestionState.query.trim()) {
+      semanticQuestionState = { query: "", status: "idle", results: [], error: null };
+    }
   };
 
   queryInput.addEventListener("input", () => {
-    state.query = queryInput.value;
+    if (activeExperience === "ask") {
+      semanticQuestionState = {
+        ...semanticQuestionState,
+        query: queryInput.value,
+        status: queryInput.value.trim() ? semanticQuestionState.status : "idle",
+        error: null,
+        ...(queryInput.value.trim() ? {} : { results: [] })
+      };
+    } else {
+      state.query = queryInput.value;
+    }
     syncControls();
     scheduleSuggestions();
   });
@@ -1126,13 +1420,44 @@ function wireApp(context: RuntimeContext): void {
 
   queryForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    runSubmittedSearch("results");
+    if (activeExperience === "ask") {
+      void runSemanticSearch();
+    } else {
+      runSubmittedSearch("results");
+    }
   });
 
   clearQueryButton.addEventListener("click", () => {
-    state.query = "";
+    if (activeExperience === "ask") {
+      semanticQuestionState = {
+        query: "",
+        status: "idle",
+        results: [],
+        error: null
+      };
+      currentView = "home";
+    } else {
+      state.query = "";
+    }
     resetToHomeIfEmpty();
     queryInput.focus();
+    renderApp();
+  });
+
+  experienceSearchButton.addEventListener("click", () => {
+    activeExperience = "search";
+    if (!submittedResult && !state.query.trim()) {
+      currentView = "home";
+    } else if (submittedResult) {
+      currentView = currentView === "detail" ? "detail" : "results";
+    }
+    renderApp();
+  });
+
+  experienceAskButton.addEventListener("click", () => {
+    activeExperience = "ask";
+    currentView = semanticQuestionState.results.length > 0 ? "ask" : "home";
+    hideSuggestions();
     renderApp();
   });
 
@@ -1172,6 +1497,7 @@ function wireApp(context: RuntimeContext): void {
       if (submittedResult) {
         currentView = "results";
       }
+      activeExperience = "search";
       renderShell();
       return;
     }
@@ -1181,6 +1507,7 @@ function wireApp(context: RuntimeContext): void {
       state.query = example;
       setSearchModeFromQuery(example);
       closeMobilePanel();
+      activeExperience = "search";
       runSubmittedSearch("results");
       return;
     }
@@ -1194,6 +1521,7 @@ function wireApp(context: RuntimeContext): void {
         if (!submittedResult && state.query.trim()) {
           submittedResult = searchForState(context, state);
         }
+        activeExperience = currentView === "ask" ? "ask" : "search";
         currentView = "detail";
       } else if (!submittedResult) {
         currentView = "detail";
@@ -1234,6 +1562,7 @@ function wireApp(context: RuntimeContext): void {
       state.section = state.section === value ? null : value;
     }
     closeMobilePanel();
+    activeExperience = "search";
     runSubmittedSearch("results");
   });
 

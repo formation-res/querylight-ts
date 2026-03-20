@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { pipeline, env, type FeatureExtractionPipeline } from "@huggingface/transformers";
 import {
   Analyzer,
   DocumentIndex,
@@ -12,6 +13,18 @@ import {
   type Document,
   type DocumentIndexState
 } from "../../../packages/querylight/src/index";
+import {
+  SEMANTIC_CHUNKING_VERSION,
+  SEMANTIC_MODEL_ID,
+  createArticleSemanticText,
+  createChunkSemanticText,
+  createChunkSourceRecords,
+  stripMarkdown,
+  type ArticleEmbeddingRecord,
+  type ChunkEmbeddingRecord,
+  type RelatedArticleRecord,
+  type SemanticPayload
+} from "../src/semantic";
 
 export type DocEntry = {
   id: string;
@@ -37,6 +50,7 @@ export type SerializedRuntimeIndexes = {
 export type DemoDataPayload = {
   docs: DocEntry[];
   indexes: Record<RankingAlgorithm, SerializedRuntimeIndexes>;
+  semantic: SemanticPayload;
 };
 
 const tagAnalyzer = new Analyzer([], new KeywordTokenizer());
@@ -44,19 +58,9 @@ const fuzzyAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3
 const edgeAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilter(2, 6)]);
 const vectorAnalyzer = new Analyzer();
 
-function stripMarkdown(value: string): string {
-  return value
-    .replace(/```[\w-]*\n[\s\S]*?```/g, " ")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/^\s*\d+\.\s+/gm, "")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[>*_~]/g, " ")
-    .replace(/\n+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+env.allowLocalModels = true;
+
+let extractorPromise: Promise<FeatureExtractionPipeline> | null = null;
 
 function extractCodeBlocks(value: string): string[] {
   return [...value.matchAll(/```[\w-]*\n([\s\S]*?)```/g)].map((match) => match[1]?.trim() ?? "").filter(Boolean);
@@ -175,7 +179,88 @@ function createSerializedIndexes(docs: DocEntry[], ranking: RankingAlgorithm): S
   };
 }
 
-export function buildDemoDataPayload(rootDir: string): DemoDataPayload {
+async function getEmbeddingExtractor(): Promise<FeatureExtractionPipeline> {
+  extractorPromise ??= pipeline("feature-extraction", SEMANTIC_MODEL_ID);
+  return extractorPromise;
+}
+
+async function embedText(value: string): Promise<number[]> {
+  const extractor = await getEmbeddingExtractor();
+  const output = await extractor(value, { pooling: "mean", normalize: true });
+  return output.tolist()[0] as number[];
+}
+
+async function createSemanticPayload(docs: DocEntry[]): Promise<SemanticPayload> {
+  const articleEmbeddings: ArticleEmbeddingRecord[] = [];
+  const chunkEmbeddings: ChunkEmbeddingRecord[] = [];
+  let dimensions = 0;
+
+  for (const doc of docs) {
+    const articleEmbedding = await embedText(createArticleSemanticText(doc));
+    dimensions ||= articleEmbedding.length;
+    articleEmbeddings.push({
+      docId: doc.id,
+      embedding: articleEmbedding
+    });
+
+    const chunks = createChunkSourceRecords(doc);
+    for (const chunk of chunks) {
+      const embedding = await embedText(createChunkSemanticText(chunk));
+      dimensions ||= embedding.length;
+      chunkEmbeddings.push({
+        ...chunk,
+        embedding
+      });
+    }
+  }
+
+  const relatedArticles = createRelatedArticleRecords(articleEmbeddings);
+
+  return {
+    model: {
+      modelId: SEMANTIC_MODEL_ID,
+      dimensions,
+      chunkingVersion: SEMANTIC_CHUNKING_VERSION,
+      pooling: "mean",
+      normalized: true
+    },
+    articleEmbeddings,
+    relatedArticles,
+    chunkEmbeddings
+  };
+}
+
+function createRelatedArticleRecords(articleEmbeddings: ArticleEmbeddingRecord[]): RelatedArticleRecord[] {
+  return articleEmbeddings.map((source) => ({
+    docId: source.docId,
+    neighbors: articleEmbeddings
+      .filter((candidate) => candidate.docId !== source.docId)
+      .map((candidate) => ({
+        docId: candidate.docId,
+        score: cosineSimilarity(source.embedding, candidate.embedding)
+      }))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 2)
+  }));
+}
+
+function cosineSimilarity(left: number[], right: number[]): number {
+  let dotProduct = 0;
+  let leftNorm = 0;
+  let rightNorm = 0;
+
+  for (let index = 0; index < left.length; index += 1) {
+    const leftValue = left[index] ?? 0;
+    const rightValue = right[index] ?? 0;
+    dotProduct += leftValue * rightValue;
+    leftNorm += leftValue * leftValue;
+    rightNorm += rightValue * rightValue;
+  }
+
+  return dotProduct / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
+}
+
+export async function buildDemoDataPayload(rootDir: string): Promise<DemoDataPayload> {
   const docsDir = path.resolve(rootDir, "docs");
   const docs = fs
     .readdirSync(docsDir)
@@ -187,17 +272,20 @@ export function buildDemoDataPayload(rootDir: string): DemoDataPayload {
     })
     .sort((left, right) => left.order.localeCompare(right.order));
 
+  const semantic = await createSemanticPayload(docs);
+
   return {
     docs,
     indexes: {
       [RankingAlgorithm.BM25]: createSerializedIndexes(docs, RankingAlgorithm.BM25),
       [RankingAlgorithm.TFIDF]: createSerializedIndexes(docs, RankingAlgorithm.TFIDF)
-    }
+    },
+    semantic
   };
 }
 
-export function writeDemoDataFile(rootDir: string, outputPath: string): void {
-  const payload = buildDemoDataPayload(rootDir);
+export async function writeDemoDataFile(rootDir: string, outputPath: string): Promise<void> {
+  const payload = await buildDemoDataPayload(rootDir);
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  fs.writeFileSync(outputPath, JSON.stringify(payload), "utf8");
 }

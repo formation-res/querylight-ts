@@ -7,23 +7,23 @@ function demoDataPlugin(): Plugin {
   const workspaceRoot = path.resolve(__dirname, "../..");
   const generatedDataPath = path.resolve(__dirname, "src/generated/demo-data.json");
   const docsDir = path.resolve(workspaceRoot, "docs") + path.sep;
-  const refresh = () => {
-    writeDemoDataFile(workspaceRoot, generatedDataPath);
+  const refresh = async () => {
+    await writeDemoDataFile(workspaceRoot, generatedDataPath);
   };
 
   return {
     name: "querylight-demo-data",
-    buildStart() {
-      refresh();
+    async buildStart() {
+      await refresh();
     },
-    configureServer() {
-      refresh();
+    async configureServer() {
+      await refresh();
     },
-    handleHotUpdate(context) {
+    async handleHotUpdate(context) {
       if (!context.file.startsWith(docsDir) || !context.file.endsWith(".md")) {
         return;
       }
-      refresh();
+      await refresh();
       const module = context.server.moduleGraph.getModuleById(generatedDataPath);
       if (!module) {
         return;
