@@ -27,3 +27,4 @@ pnpm-debug.log*
 .DS_Store
 .idea/
 .vscode/
+apps/demo/src/generated/

@@ -4,6 +4,7 @@ import {
   Analyzer,
   BoolQuery,
   DocumentIndex,
+  type DocumentIndexState,
   EdgeNgramsTokenFilter,
   KeywordTokenizer,
   MatchAll,
@@ -18,7 +19,6 @@ import {
   VectorFieldIndex,
   bigramVector,
   createSeededRandom,
-  type Document,
   type Hits
 } from "@querylight/core";
 import hljs from "highlight.js/lib/core";
@@ -26,6 +26,7 @@ import bash from "highlight.js/lib/languages/bash";
 import json from "highlight.js/lib/languages/json";
 import typescript from "highlight.js/lib/languages/typescript";
 import MarkdownIt from "markdown-it";
+import demoDataUrl from "./generated/demo-data.json?url";
 
 type SearchMode = "hybrid" | "match" | "phrase" | "fuzzy" | "vector" | "all";
 
@@ -70,8 +71,20 @@ type SearchResult = {
 type RuntimeIndexes = {
   hydrated: DocumentIndex;
   fuzzy: DocumentIndex;
-  vector: VectorFieldIndex;
-  serialized: ReturnType<DocumentIndex["indexState"]>;
+  vector: VectorFieldIndex | null;
+  vectorEmbeddings: Record<string, number[]>;
+};
+
+type DemoDataPayload = {
+  docs: DocEntry[];
+  indexes: Record<
+    RankingAlgorithm,
+    {
+      hydrated: DocumentIndexState;
+      fuzzy: DocumentIndexState;
+      vectorEmbeddings: Record<string, number[]>;
+    }
+  >;
 };
 
 type RuntimeContext = {
@@ -117,10 +130,6 @@ const edgeAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilt
 const vectorAnalyzer = new Analyzer();
 const SEARCH_INPUT_DEBOUNCE_MS = 150;
 const DOC_SECTION_ORDER = ["Overview", "Analysis", "Queries", "Discovery", "Ranking", "Indexing", "Advanced", "Operations"];
-const docModules = import.meta.glob("../../../docs/*.md", {
-  query: "?raw",
-  import: "default"
-});
 
 const initialState: SearchState = {
   query: "",
@@ -160,109 +169,6 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
-function stripMarkdown(value: string): string {
-  return value
-    .replace(/```[\w-]*\n([\s\S]*?)```/g, " $1 ")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/^\s*\d+\.\s+/gm, "")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[>*_~]/g, " ")
-    .replace(/\n+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extractCodeBlocks(value: string): string[] {
-  return [...value.matchAll(/```[\w-]*\n([\s\S]*?)```/g)].map((match) => match[1]?.trim() ?? "").filter(Boolean);
-}
-
-function parseStringArray(value: string): string[] {
-  const normalized = value.trim().replace(/^\[/, "").replace(/\]$/, "");
-  if (normalized.length === 0) {
-    return [];
-  }
-  return normalized.split(",").map((item) => item.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean);
-}
-
-function parseFrontmatter(raw: string): { metadata: Record<string, string>; body: string } {
-  const match = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!match) {
-    throw new Error("markdown file is missing frontmatter");
-  }
-  const metadata = Object.fromEntries(
-    match[1]
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const separator = line.indexOf(":");
-        const key = line.slice(0, separator).trim();
-        const value = line.slice(separator + 1).trim();
-        return [key, value.replace(/^"(.*)"$/, "$1")];
-      })
-  );
-  return { metadata, body: match[2].trim() };
-}
-
-function toDocEntry(path: string, raw: string): DocEntry {
-  const { metadata, body: markdownBody } = parseFrontmatter(raw);
-  const title = metadata.title;
-  const summary = metadata.summary;
-  const id = metadata.id;
-  const section = metadata.section;
-  const level = metadata.level as DocEntry["level"];
-  const order = metadata.order;
-  if (!title || !summary || !id || !section || !level || !order) {
-    throw new Error(`invalid doc metadata in ${path}`);
-  }
-
-  return {
-    id,
-    section,
-    title,
-    summary,
-    tags: parseStringArray(metadata.tags ?? ""),
-    apis: parseStringArray(metadata.apis ?? ""),
-    level,
-    order,
-    markdown: markdownBody,
-    body: stripMarkdown(markdownBody),
-    examples: extractCodeBlocks(markdownBody),
-    path
-  };
-}
-
-async function loadDocs(): Promise<DocEntry[]> {
-  const loaded = await Promise.all(
-    Object.entries(docModules).map(async ([path, loader]) => {
-      const raw = await loader();
-      return toDocEntry(path, raw as string);
-    })
-  );
-  return loaded.sort((left, right) => left.order.localeCompare(right.order));
-}
-
-function toDocument(entry: DocEntry): Document {
-  return {
-    id: entry.id,
-    fields: {
-      title: [entry.title],
-      tagline: [entry.summary],
-      body: [entry.body],
-      section: [entry.section],
-      level: [entry.level],
-      tags: entry.tags,
-      api: entry.apis,
-      examples: entry.examples,
-      combined: [entry.title, entry.summary, entry.body, entry.tags.join(" "), entry.apis.join(" "), entry.examples.join(" ")].join(" "),
-      suggest: [entry.title, entry.tags.join(" "), entry.apis.join(" ")].join(" "),
-      order: [entry.order]
-    }
-  };
-}
-
 function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
   return new DocumentIndex({
     title: new TextFieldIndex(undefined, undefined, ranking),
@@ -279,30 +185,38 @@ function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
   });
 }
 
-function createIndexes(docs: DocEntry[], ranking: RankingAlgorithm): RuntimeIndexes {
-  const source = createDocIndex(ranking);
-  const fuzzy = new DocumentIndex({
-    combined: new TextFieldIndex(fuzzyAnalyzer, fuzzyAnalyzer, ranking)
-  });
-  const vector = new VectorFieldIndex(6, 36 * 36, createSeededRandom(42));
-
-  docs.forEach((entry) => {
-    const doc = toDocument(entry);
-    source.index(doc);
-    fuzzy.index({ id: entry.id, fields: { combined: [doc.fields.combined?.[0] ?? ""] } });
-    vector.insert(entry.id, [bigramVector(doc.fields.combined?.[0] ?? "", vectorAnalyzer)]);
-  });
-
-  const serialized = JSON.parse(JSON.stringify(source.indexState));
+function loadSerializedIndexes(
+  ranking: RankingAlgorithm,
+  serializedIndexes: {
+    hydrated: DocumentIndexState;
+    fuzzy: DocumentIndexState;
+    vectorEmbeddings: Record<string, number[]>;
+  }
+): RuntimeIndexes {
   return {
-    hydrated: createDocIndex(ranking).loadState(serialized),
-    fuzzy,
-    vector,
-    serialized
+    hydrated: createDocIndex(ranking).loadState(serializedIndexes.hydrated),
+    fuzzy: new DocumentIndex({
+      combined: new TextFieldIndex(fuzzyAnalyzer, fuzzyAnalyzer, ranking)
+    }).loadState(serializedIndexes.fuzzy),
+    vector: null,
+    vectorEmbeddings: serializedIndexes.vectorEmbeddings
   };
 }
 
-function createRuntimeContext(docs: DocEntry[]): RuntimeContext {
+function ensureVectorIndex(indexes: RuntimeIndexes): VectorFieldIndex {
+  if (indexes.vector) {
+    return indexes.vector;
+  }
+  const vector = new VectorFieldIndex(6, 36 * 36, createSeededRandom(42));
+  for (const [id, embedding] of Object.entries(indexes.vectorEmbeddings)) {
+    vector.insert(id, [embedding]);
+  }
+  indexes.vector = vector;
+  return vector;
+}
+
+function createRuntimeContext(demoData: DemoDataPayload): RuntimeContext {
+  const docs = demoData.docs;
   const sectionSet = new Set(docs.map((doc) => doc.section));
   const sections = DOC_SECTION_ORDER.filter((section) => sectionSet.has(section)).concat(
     [...sectionSet].filter((section) => !DOC_SECTION_ORDER.includes(section))
@@ -315,8 +229,8 @@ function createRuntimeContext(docs: DocEntry[]): RuntimeContext {
     allTags: [...new Set(docs.flatMap((doc) => doc.tags))].sort(),
     renderedMarkdown: new Map(),
     indexes: {
-      [RankingAlgorithm.BM25]: createIndexes(docs, RankingAlgorithm.BM25),
-      [RankingAlgorithm.TFIDF]: createIndexes(docs, RankingAlgorithm.TFIDF)
+      [RankingAlgorithm.BM25]: loadSerializedIndexes(RankingAlgorithm.BM25, demoData.indexes[RankingAlgorithm.BM25]),
+      [RankingAlgorithm.TFIDF]: loadSerializedIndexes(RankingAlgorithm.TFIDF, demoData.indexes[RankingAlgorithm.TFIDF])
     }
   };
 }
@@ -462,7 +376,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   const vectorHits =
     trimmed.length === 0
       ? []
-      : active.vector.query(bigramVector(trimmed, vectorAnalyzer), 20, allowedIds);
+      : ensureVectorIndex(active).query(bigramVector(trimmed, vectorAnalyzer), 20, allowedIds);
 
   let finalHits: Hits;
   let lexicalHits: Hits;
@@ -1197,9 +1111,13 @@ function wireApp(context: RuntimeContext): void {
 }
 
 async function bootstrap(): Promise<void> {
-  renderLoading("Scanning markdown files from the repository and building the browser-side indexes.");
-  const docs = await loadDocs();
-  const context = createRuntimeContext(docs);
+  renderLoading("Loading prebuilt documentation search indexes.");
+  const response = await fetch(demoDataUrl);
+  if (!response.ok) {
+    throw new Error(`failed to load demo data: ${response.status} ${response.statusText}`);
+  }
+  const demoData = (await response.json()) as DemoDataPayload;
+  const context = createRuntimeContext(demoData);
   createShell(context);
 }
 
