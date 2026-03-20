@@ -97,6 +97,21 @@ Expected result:
 - Use aggregations to build facets from the current result set.
 - Serialize the index at build time and load it in the browser.
 
+## More guides
+
+- [Choosing a Schema for Search](./20-schema-design.md)
+- [Analyzer and Tokenization Deep Dive](./21-analyzer-deep-dive.md)
+- [How To Build Autocomplete](./22-how-to-build-autocomplete.md)
+- [How To Build Faceted Navigation](./23-how-to-build-faceted-navigation.md)
+- [Relevance Tuning with BM25, TF-IDF, and RRF](./24-relevance-tuning.md)
+- [Document Chunking Strategies](./25-document-chunking-strategies.md)
+- [Serialization, Hydration, and Shipping Indexes](./26-shipping-indexes.md)
+- [Performance and Memory Tuning](./27-performance-and-memory-tuning.md)
+- [Testing Search Behavior](./28-testing-search-behavior.md)
+- [Real-World Recipes](./29-real-world-recipes.md)
+- [Other Work Related to Querylight TS](./30-other-related-work.md)
+- [Comparing Querylight TS to Other Browser Search Libraries](./31-browser-search-library-comparison.md)
+
 ## Learn more
 
 - [Information retrieval on Wikipedia](https://en.wikipedia.org/wiki/Information_retrieval)
