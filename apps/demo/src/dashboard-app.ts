@@ -12,7 +12,6 @@ import {
   TermsQuery,
   TextFieldIndex
 } from "@tryformation/querylight-ts";
-import dashboardDataUrl from "./generated/dashboard-data.json?url";
 import packageMeta from "../../../packages/querylight/package.json";
 import type {
   DashboardDataPayload,
@@ -49,8 +48,33 @@ type WeatherRuntime = {
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const tagAnalyzer = new Analyzer([], new KeywordTokenizer());
+const DASHBOARD_DATA_CACHE_KEY = `querylight-dashboard:data:${packageMeta.version}`;
 
 let dashboardDataPromise: Promise<DashboardDataPayload> | null = null;
+
+function readCachedDashboardPayload(): DashboardDataPayload | null {
+  try {
+    const raw = window.sessionStorage.getItem(DASHBOARD_DATA_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw) as DashboardDataPayload;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedDashboardPayload(payload: DashboardDataPayload): void {
+  try {
+    window.sessionStorage.setItem(DASHBOARD_DATA_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore storage failures and fall back to network fetches.
+  }
+}
+
+function readCachedDashboardRuntime(): DashboardDataPayload | null {
+  return readCachedDashboardPayload();
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -330,8 +354,8 @@ function renderDashboard(payload: DashboardDataPayload): string {
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <a href="#/search" class="chip-button">Docs Search</a>
-            <a href="#/dashboard" class="chip-button nav-result-active">Dashboard</a>
+            <a href="/" class="chip-button">Docs Search</a>
+            <a href="/dashboard/" class="chip-button nav-result-active">Dashboard</a>
           </div>
         </div>
         <div class="dashboard-hero-grid mt-8">
@@ -1163,11 +1187,17 @@ function createWeatherSection(
 
 async function loadDashboardPayload(): Promise<DashboardDataPayload> {
   dashboardDataPromise ??= (async () => {
-    const response = await fetch(dashboardDataUrl);
+    const cached = readCachedDashboardRuntime();
+    if (cached) {
+      return cached;
+    }
+    const response = await fetch("/data/dashboard-data.json");
     if (!response.ok) {
       throw new Error(`failed to load dashboard data: ${response.status} ${response.statusText}`);
     }
-    return await response.json() as DashboardDataPayload;
+    const payload = await response.json() as DashboardDataPayload;
+    writeCachedDashboardPayload(payload);
+    return payload;
   })();
   return await dashboardDataPromise;
 }
@@ -1185,8 +1215,11 @@ function renderLoading(app: HTMLDivElement): void {
 }
 
 export async function mountDashboardApp(app: HTMLDivElement): Promise<Cleanup> {
-  renderLoading(app);
-  const payload = await loadDashboardPayload();
+  const cachedPayload = readCachedDashboardRuntime();
+  if (!cachedPayload) {
+    renderLoading(app);
+  }
+  const payload = cachedPayload ?? await loadDashboardPayload();
   app.innerHTML = renderDashboard(payload);
 
   const charts: ChartMap = new Map();

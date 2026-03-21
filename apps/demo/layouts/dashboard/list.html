@@ -1,0 +1,14 @@
+{{ define "main" }}
+  <div id="app">
+    {{ partial "site-header.html" . }}
+    <main class="mx-auto w-[min(1560px,calc(100vw-24px))]">
+      <section class="surface p-8">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Loading</p>
+        <h2 class="mt-3 font-serif text-4xl text-stone-950">Preparing dashboard snapshots</h2>
+        <p class="mt-4 text-sm leading-7 text-stone-600">Fetching the prebuilt open-data payload and waiting to lazily construct the first section indexes.</p>
+      </section>
+    </main>
+    {{ partial "site-footer.html" . }}
+  </div>
+  <script type="module" src="/js/site-dashboard.js"></script>
+{{ end }}

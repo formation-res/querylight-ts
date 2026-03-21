@@ -1,0 +1,29 @@
+[
+  {
+    "title": {{ site.Home.Title | jsonify }},
+    "permalink": {{ site.Home.RelPermalink | jsonify }},
+    "section": {{ "home" | jsonify }},
+    "description": {{ site.Home.Params.description | default "" | jsonify }},
+    "content": {{ "Querylight TS documentation search and dashboard demo." | jsonify }}
+  }
+  {{- range where site.RegularPages "Section" "eq" "docs" -}}
+    ,
+    {
+      "title": {{ .Title | jsonify }},
+      "permalink": {{ .RelPermalink | jsonify }},
+      "section": {{ .Section | jsonify }},
+      "description": {{ .Params.description | default "" | jsonify }},
+      "content": {{ .Plain | jsonify }}
+    }
+  {{- end -}}
+  {{- with site.GetPage "/dashboard" -}}
+    ,
+    {
+      "title": {{ .Title | jsonify }},
+      "permalink": {{ .RelPermalink | jsonify }},
+      "section": {{ .Section | jsonify }},
+      "description": {{ .Params.description | default "" | jsonify }},
+      "content": {{ .Params.description | default "" | jsonify }}
+    }
+  {{- end -}}
+]

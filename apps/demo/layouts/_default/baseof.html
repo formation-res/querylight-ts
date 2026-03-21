@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {{ partial "seo.html" . }}
+    <link rel="canonical" href="{{ .Permalink }}">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    {{ $styles := resources.Get "src/styles.css" | css.PostCSS }}
+    {{ if hugo.IsProduction }}
+      {{ $styles = $styles | minify | fingerprint }}
+    {{ end }}
+    <link rel="stylesheet" href="{{ $styles.RelPermalink }}">
+  </head>
+  <body>
+    {{ block "main" . }}{{ end }}
+  </body>
+</html>

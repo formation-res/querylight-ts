@@ -1,0 +1,14 @@
+{{ define "main" }}
+  <div id="app">
+    {{ partial "site-header.html" . }}
+    <main class="mx-auto w-[min(1560px,calc(100vw-24px))]">
+      <section class="surface p-8">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Loading</p>
+        <h2 class="mt-3 font-serif text-4xl text-stone-950">Preparing documentation search</h2>
+        <p class="mt-4 text-sm leading-7 text-stone-600">Bootstrapping the static search demo and loading the prebuilt search indexes.</p>
+      </section>
+    </main>
+    {{ partial "site-footer.html" . }}
+  </div>
+  <script type="module" src="/js/site-search.js"></script>
+{{ end }}

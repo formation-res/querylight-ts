@@ -1,4 +1,3 @@
-import "highlight.js/styles/github.css";
 import {
   Analyzer,
   BoolQuery,
@@ -24,12 +23,7 @@ import {
   type HighlightResult,
   type Hits
 } from "@tryformation/querylight-ts";
-import hljs from "highlight.js/lib/core";
-import bash from "highlight.js/lib/languages/bash";
-import json from "highlight.js/lib/languages/json";
-import typescript from "highlight.js/lib/languages/typescript";
 import MarkdownIt from "markdown-it";
-import demoDataUrl from "./generated/demo-data.json?url";
 import packageMeta from "../../../packages/querylight/package.json";
 import {
   SEMANTIC_INDEX_HASH_TABLES,
@@ -61,6 +55,7 @@ type DocEntry = {
   wordCount: number;
   examples: string[];
   path: string;
+  url: string;
 };
 
 type WordCountFacet = {
@@ -76,17 +71,21 @@ type SearchState = {
   operation: OP;
   prefix: boolean;
   ranking: RankingAlgorithm;
+  api: string | null;
   tag: string | null;
   section: string | null;
   wordCountFacet: string | null;
   excludeAdvanced: boolean;
 };
 
+type FacetKind = "api" | "section" | "tag" | "word-count";
+
 type SearchResult = {
   lexicalHits: Hits;
   fuzzyHits: Hits;
   vectorHits: Hits;
   finalHits: Hits;
+  totalHits: number;
   highlightsById: Map<string, HighlightResult>;
   selectedIds: Set<string>;
   tagFacets: Record<string, number>;
@@ -118,6 +117,7 @@ type DemoDataPayload = {
 type RuntimeContext = {
   docs: DocEntry[];
   byId: Map<string, DocEntry>;
+  byUrl: Map<string, DocEntry>;
   sections: string[];
   allTags: string[];
   renderedMarkdown: Map<string, string>;
@@ -164,51 +164,10 @@ function requireApp(): HTMLDivElement {
   return app;
 }
 
-hljs.registerLanguage("ts", typescript);
-hljs.registerLanguage("typescript", typescript);
-hljs.registerLanguage("json", json);
-hljs.registerLanguage("bash", bash);
-hljs.registerLanguage("sh", bash);
-
 const markdown = new MarkdownIt({
   html: false,
   linkify: true,
-  typographer: false,
-  highlight(code, language) {
-    if (language && hljs.getLanguage(language)) {
-      return `<pre class="hljs"><code>${hljs.highlight(code, { language }).value}</code></pre>`;
-    }
-    return `<pre class="hljs"><code>${hljs.highlightAuto(code).value}</code></pre>`;
-  }
-});
-
-markdown.core.ruler.push("querylight_heading_anchors", (state) => {
-  let currentH2: string | null = null;
-  let currentH3: string | null = null;
-
-  state.tokens.forEach((token, index) => {
-    if (token.type !== "heading_open") {
-      return;
-    }
-
-    const inlineToken = state.tokens[index + 1];
-    const headingText = inlineToken?.type === "inline" ? inlineToken.content.trim() : "";
-    if (!headingText) {
-      return;
-    }
-
-    if (token.tag === "h2") {
-      currentH2 = headingText;
-      currentH3 = null;
-      token.attrSet("id", chunkAnchorDomId(serializeHeadingPath([headingText])));
-      return;
-    }
-
-    if (token.tag === "h3") {
-      currentH3 = headingText;
-      token.attrSet("id", chunkAnchorDomId(serializeHeadingPath([currentH2, currentH3].filter((value): value is string => Boolean(value)))));
-    }
-  });
+  typographer: false
 });
 
 const tagAnalyzer = new Analyzer([], new KeywordTokenizer());
@@ -262,6 +221,7 @@ const initialState: SearchState = {
   operation: OP.OR,
   prefix: false,
   ranking: RankingAlgorithm.BM25,
+  api: null,
   tag: null,
   section: null,
   wordCountFacet: null,
@@ -281,6 +241,57 @@ let semanticQuestionState: SemanticQuestionState = {
   results: [],
   error: null
 };
+
+class SearchContextController {
+  private currentState: SearchState;
+  private readonly cache = new Map<string, SearchResult>();
+
+  constructor(private readonly runtime: RuntimeContext, initial: SearchState) {
+    this.currentState = { ...initial };
+  }
+
+  get state(): SearchState {
+    return { ...this.currentState };
+  }
+
+  replace(next: SearchState): SearchState {
+    this.currentState = { ...next };
+    return this.state;
+  }
+
+  patch(next: Partial<SearchState>): SearchState {
+    this.currentState = { ...this.currentState, ...next };
+    return this.state;
+  }
+
+  toggleFacet(facet: FacetKind, value: string): SearchState {
+    const currentValue = this.currentState[this.facetKey(facet)];
+    return this.replace({
+      ...this.currentState,
+      [this.facetKey(facet)]: currentValue === value ? null : value || null
+    });
+  }
+
+  resultFor(next: SearchState = this.currentState): SearchResult {
+    const cacheKey = JSON.stringify(next);
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const result = searchForState(this.runtime, next);
+    this.cache.set(cacheKey, result);
+    return result;
+  }
+
+  private facetKey(facet: FacetKind): "api" | "section" | "tag" | "wordCountFacet" {
+    switch (facet) {
+      case "word-count":
+        return "wordCountFacet";
+      default:
+        return facet;
+    }
+  }
+}
 
 function isSemanticSearchBusy(): boolean {
   return semanticQuestionState.status === "loading-model" || semanticQuestionState.status === "searching";
@@ -325,51 +336,48 @@ function getChunkAnchor(chunk: ChunkEmbeddingRecord): string {
   return serializeHeadingPath(chunk.headingPath);
 }
 
-function buildDetailQuery(docId: string, chunkId?: string | null): string {
-  const url = new URL(window.location.href);
-  const params = new URLSearchParams(url.search);
-  params.set("doc", docId);
-  if (chunkId) {
-    params.set("chunk", chunkId);
-  } else {
-    params.delete("chunk");
+function buildDetailQuery(): string {
+  const params = new URLSearchParams();
+  if (state.query.trim()) {
+    params.set("q", state.query.trim());
   }
   return params.toString();
 }
 
-function updateDetailHash(docId: string, chunkId?: string | null): void {
-  const url = new URL(window.location.href);
-  const nextQuery = buildDetailQuery(docId, chunkId);
-  if (url.search.replace(/^\?/, "") === nextQuery) {
-    return;
-  }
-  url.search = nextQuery;
-  window.history.replaceState(null, "", url);
+function updateDetailHash(doc: DocEntry, chunkId?: string | null): void {
+  window.history.pushState(
+    { view: "detail", docId: doc.id, chunkId },
+    "",
+    buildDocHref(doc, chunkId)
+  );
 }
 
 function clearDetailHash(): void {
-  const url = new URL(window.location.href);
-  if (!url.search) {
-    return;
-  }
-  const params = new URLSearchParams(url.search);
-  params.delete("doc");
-  params.delete("chunk");
-  const nextQuery = params.toString();
-  url.search = nextQuery;
-  window.history.replaceState(null, "", url);
+  const query = buildDetailQuery();
+  const target = query ? `/?${query}` : "/";
+  window.history.replaceState({ view: currentView }, "", target);
 }
 
-function parseDetailHash(): { docId: string; chunkId: string | null } | null {
-  const params = new URLSearchParams(window.location.search);
-  const docId = params.get("doc");
-  if (!docId) {
+function parseDetailHash(): { docUrl: string; chunkId: string | null } | null {
+  const pathname = window.location.pathname;
+  if (!pathname.startsWith("/docs/")) {
     return null;
   }
+  const normalizedPath = pathname.endsWith("/") ? pathname : `${pathname}/`;
+  const chunkAnchor = window.location.hash.replace(/^#chunk-anchor-/, "").trim() || null;
   return {
-    docId,
-    chunkId: params.get("chunk")
+    docUrl: normalizedPath,
+    chunkId: chunkAnchor
   };
+}
+
+function buildDocHref(doc: DocEntry, chunkId?: string | null): string {
+  const chunkAnchor = chunkId && chunkId.includes("::")
+    ? chunkAnchorDomId(chunkId.split("::")[1] ?? "intro")
+    : chunkId
+      ? chunkAnchorDomId(chunkId)
+    : null;
+  return `${doc.url}${chunkAnchor ? `#${chunkAnchor}` : ""}`;
 }
 
 function formatRelativeBuildTime(timestamp: string): string {
@@ -504,6 +512,7 @@ function createRuntimeContext(demoData: DemoDataPayload): RuntimeContext {
   return {
     docs,
     byId: new Map(docs.map((doc) => [doc.id, doc])),
+    byUrl: new Map(docs.map((doc) => [doc.url, doc])),
     sections,
     allTags: [...new Set(docs.flatMap((doc) => doc.tags))].sort(),
     renderedMarkdown: new Map(),
@@ -644,6 +653,9 @@ function buildFacetFilterQueries(current: SearchState): QueryFilters {
   if (current.section) {
     filters.push(new TermQuery("section", current.section));
   }
+  if (current.api) {
+    filters.push(new TermQuery("api", current.api));
+  }
   if (current.tag) {
     filters.push(new TermQuery("tags", current.tag));
   }
@@ -679,6 +691,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   const sectionIndex = index.getFieldIndex("section") as TextFieldIndex;
   const apiIndex = index.getFieldIndex("api") as TextFieldIndex;
   const wordCountIndex = index.getFieldIndex("wordCount") as NumericFieldIndex;
+  const VISIBLE_LIMIT = 20;
   const { queryText, quotedPhrase } = parseQueryInput(current.query);
   const trimmed = queryText.trim();
   const allowPrefixSuggestions = trimmed.length >= 2;
@@ -744,53 +757,59 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
       ? []
       : active.fuzzy.searchRequest({
           query: new MatchQuery("combined", trimmed, OP.OR, false, 1.5),
-          limit: 20
+          limit: Number.MAX_SAFE_INTEGER
         });
 
   const allowedIds =
     filters.length > 0 || mustNot.length > 0
       ? index.searchRequest({ query: filterOnlyQuery }).map(([id]) => id)
       : undefined;
+  const filterOnlySet = new Set(allowedIds ?? context.docs.map((doc) => doc.id));
+  const filterOnlyHits: Hits = context.docs
+    .filter((doc) => filterOnlySet.has(doc.id))
+    .map((doc) => [doc.id, 1] as const)
+    .slice(0, 20);
 
   const phraseHits =
     trimmed.length === 0
-      ? []
-      : index.searchRequest({ query: phraseQuery, limit: 20 });
+      ? filterOnlyHits
+      : index.searchRequest({ query: phraseQuery, limit: Number.MAX_SAFE_INTEGER });
   const hybridLexicalHits =
     trimmed.length === 0
-      ? []
-      : index.searchRequest({ query: hybridLexicalQuery, limit: 20 });
+      ? filterOnlyHits
+      : index.searchRequest({ query: hybridLexicalQuery, limit: Number.MAX_SAFE_INTEGER });
 
-  let finalHits: Hits;
+  let fullFinalHits: Hits;
   let lexicalHits: Hits;
   let highlightQuery: BoolQuery | MatchAll | null = null;
 
   switch (current.mode) {
     case "phrase":
       lexicalHits = phraseHits;
-      finalHits = lexicalHits;
+      fullFinalHits = lexicalHits;
       highlightQuery = phraseQuery;
       break;
     case "fuzzy":
-      lexicalHits = [];
-      finalHits = fuzzyHits;
+      lexicalHits = trimmed.length === 0 ? filterOnlyHits : [];
+      fullFinalHits = trimmed.length === 0 ? lexicalHits : fuzzyHits;
       highlightQuery = null;
       break;
     case "match":
-      lexicalHits = index.searchRequest({ query: baseTextQuery, limit: 20 });
-      finalHits = rerankWithTitleBoost(context, trimmed, lexicalHits);
+      lexicalHits = index.searchRequest({ query: baseTextQuery, limit: Number.MAX_SAFE_INTEGER });
+      fullFinalHits = rerankWithTitleBoost(context, trimmed, lexicalHits);
       highlightQuery = baseTextQuery;
       break;
     case "hybrid":
     default:
       lexicalHits = hybridLexicalHits;
-      finalHits =
+      fullFinalHits =
         trimmed.length === 0
           ? lexicalHits
           : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([hybridLexicalHits, fuzzyHits], { rankConstant: 20, weights: [3, 1] }));
       highlightQuery = hybridLexicalQuery;
       break;
   }
+  const finalHits = fullFinalHits.slice(0, VISIBLE_LIMIT);
 
   const highlightsById = new Map(
     (highlightQuery && trimmed.length > 0 ? finalHits : [])
@@ -805,7 +824,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
       ] as const)
   );
 
-  const selectedIds = new Set(finalHits.map(([id]) => id));
+  const selectedIds = new Set(fullFinalHits.map(([id]) => id));
   const tagFacets = tagIndex.termsAggregation(12, selectedIds.size > 0 ? selectedIds : undefined);
   const sectionFacets = sectionIndex.termsAggregation(8, selectedIds.size > 0 ? selectedIds : undefined);
   const apiFacets = apiIndex.termsAggregation(10, selectedIds.size > 0 ? selectedIds : undefined);
@@ -831,6 +850,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
     fuzzyHits,
     vectorHits: [],
     finalHits,
+    totalHits: fullFinalHits.length,
     highlightsById,
     selectedIds,
     tagFacets,
@@ -860,8 +880,8 @@ function createShell(context: RuntimeContext): void {
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <a href="#/search" class="chip-button nav-result-active">Docs Search</a>
-            <a href="#/dashboard" class="chip-button">Dashboard</a>
+            <a href="/" class="chip-button nav-result-active">Docs Search</a>
+            <a href="/dashboard/" class="chip-button">Dashboard</a>
           </div>
         </div>
         <p class="mt-4 text-xs text-stone-500">${escapeHtml(`Package ${packageMeta.version} · ${buildTimeLabel}`)}</p>
@@ -879,6 +899,7 @@ function createShell(context: RuntimeContext): void {
             <div id="suggestions" class="suggestions-panel hidden"></div>
           </div>
         </form>
+        <div id="active-filters-inline" class="mt-4 flex flex-wrap gap-2"></div>
       </section>
 
       <section id="reader-layout" class="reader-layout reader-layout-below mt-5" data-mobile-panel="none">
@@ -1037,8 +1058,6 @@ function createShell(context: RuntimeContext): void {
       </div>
     </main>
   `;
-
-  wireApp(context);
 }
 
 function syncSemanticBusyOverlay(): void {
@@ -1075,11 +1094,12 @@ function updateSummary(summaryNode: HTMLParagraphElement, current: SearchResult 
   }
   const filters = [
     state.section ? `section:${state.section}` : "",
+    state.api ? `api:${state.api}` : "",
     state.tag ? `tag:${state.tag}` : "",
     wordCountFacetByKey(state.wordCountFacet)?.label ? `length:${wordCountFacetByKey(state.wordCountFacet)?.label}` : "",
     state.excludeAdvanced ? "without advanced" : ""
   ].filter(Boolean).join(" · ");
-  summaryNode.textContent = `${current.finalHits.length} results · ${state.mode} · ${state.ranking}${filters ? ` · ${filters}` : ""}`;
+  summaryNode.textContent = `${current.totalHits} results · ${state.mode} · ${state.ranking}${filters ? ` · ${filters}` : ""}`;
 }
 
 function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNode: HTMLParagraphElement, current: SearchResult | null): void {
@@ -1152,25 +1172,38 @@ function renderSuggestions(context: RuntimeContext, suggestionsNode: HTMLDivElem
     .join("");
 }
 
-function renderFacets(context: RuntimeContext, activeFiltersNode: HTMLDivElement, facetSectionsNode: HTMLDivElement, current: SearchResult | null): void {
+function renderActiveFilters(...nodes: HTMLDivElement[]): void {
   const activeFilters = [
     state.section ? { label: `Section: ${state.section}`, facet: "section", value: state.section } : null,
+    state.api ? { label: `API: ${state.api}`, facet: "api", value: state.api } : null,
     state.tag ? { label: `Tag: ${state.tag}`, facet: "tag", value: state.tag } : null,
     state.wordCountFacet
       ? { label: `Length: ${wordCountFacetByKey(state.wordCountFacet)?.label ?? state.wordCountFacet}`, facet: "word-count", value: state.wordCountFacet }
       : null
   ].filter(Boolean) as Array<{ label: string; facet: string; value: string }>;
 
-  activeFiltersNode.innerHTML =
-    activeFilters.length > 0
-      ? activeFilters
-          .map((filter) => `<button class="chip-button" data-facet="${filter.facet}" data-value="${escapeHtml(filter.value)}">${escapeHtml(filter.label)} ×</button>`)
-          .join("")
-      : `<p class="text-sm text-stone-500">No active facets.</p>`;
+  const content = activeFilters.length > 0
+    ? activeFilters
+        .map((filter) => `<button class="chip-button" data-facet="${filter.facet}" data-value="${escapeHtml(filter.value)}">${escapeHtml(filter.label)} ×</button>`)
+        .join("")
+    : `<p class="text-sm text-stone-500">No active facets.</p>`;
 
-  // When there is no active search, fall back to corpus-wide facet counts so the
-  // sidebar still acts as an exploratory navigation surface.
-  const source = current ?? searchForState(context, { ...initialState, query: "", tag: null, section: null });
+  nodes.forEach((node) => {
+    node.innerHTML = content;
+  });
+}
+
+function renderFacets(
+  context: RuntimeContext,
+  searchContext: SearchContextController,
+  activeFiltersNode: HTMLDivElement,
+  activeFiltersInlineNode: HTMLDivElement,
+  facetSectionsNode: HTMLDivElement,
+  current: SearchResult | null
+): void {
+  renderActiveFilters(activeFiltersNode, activeFiltersInlineNode);
+
+  const source = current ?? searchContext.resultFor({ ...initialState });
   const sectionFacets = Object.entries(source.sectionFacets);
   const tagFacets = Object.entries(source.tagFacets);
   const apiFacets = Object.entries(source.apiFacets);
@@ -1317,11 +1350,11 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
       <header>
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Search Results</p>
         <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${state.query.trim() || "All documentation"}</h1>
-        <p class="mt-3 text-sm text-stone-600">${current.finalHits.length} matches</p>
+        <p id="result-count" class="mt-3 text-sm text-stone-600">${current.totalHits} matches${current.totalHits > current.finalHits.length ? ` · showing top ${current.finalHits.length}` : ""}</p>
       </header>
       <div class="mt-8 grid gap-3">
         ${
-          current.finalHits.length === 0
+          current.totalHits === 0
             ? `<div class="rounded-3xl border border-dashed border-stone-900/10 bg-stone-50/80 px-5 py-4 text-sm text-stone-600">No matches found. Try a broader query or remove some facets.</div>`
             : current.finalHits
                 .map(([id, score], index) => {
@@ -1433,13 +1466,13 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
           <div class="mt-5">
             <h2 class="font-serif text-xl text-stone-950">Relevant APIs</h2>
             <div class="mt-3 flex flex-wrap gap-2">
-              ${doc.apis.map((api) => `<button class="chip-button" data-facet="api" data-value="${escapeHtml(api)}">${escapeHtml(api)}</button>`).join("")}
+              ${doc.apis.map((api) => `<button class="chip-button" data-facet="api" data-facet-origin="detail" data-value="${escapeHtml(api)}">${escapeHtml(api)}</button>`).join("")}
             </div>
           </div>
           <div class="mt-5">
             <h2 class="font-serif text-xl text-stone-950">Tags</h2>
             <div class="mt-3 flex flex-wrap gap-2">
-              ${doc.tags.map((tag) => `<button class="chip-button" data-facet="tag" data-value="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join("")}
+              ${doc.tags.map((tag) => `<button class="chip-button" data-facet="tag" data-facet-origin="detail" data-value="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join("")}
             </div>
           </div>
           <article class="prose-docs mt-8">${renderedMarkdown}</article>
@@ -1535,6 +1568,7 @@ function setSearchModeFromQuery(value: string): void {
 }
 
 function wireApp(context: RuntimeContext): () => void {
+  const searchContext = new SearchContextController(context, initialState);
   const queryForm = document.querySelector<HTMLFormElement>("#query-form");
   const queryInput = document.querySelector<HTMLInputElement>("#query");
   const homeButton = document.querySelector<HTMLButtonElement>("#go-home");
@@ -1552,6 +1586,7 @@ function wireApp(context: RuntimeContext): () => void {
   const tocNode = document.querySelector<HTMLDivElement>("#toc");
   const tocStatusNode = document.querySelector<HTMLParagraphElement>("#toc-status");
   const activeFiltersNode = document.querySelector<HTMLDivElement>("#active-filters");
+  const activeFiltersInlineNode = document.querySelector<HTMLDivElement>("#active-filters-inline");
   const facetSectionsNode = document.querySelector<HTMLDivElement>("#facet-sections");
   const readerLayout = document.querySelector<HTMLElement>("#reader-layout");
 
@@ -1573,6 +1608,7 @@ function wireApp(context: RuntimeContext): () => void {
     !tocNode ||
     !tocStatusNode ||
     !activeFiltersNode ||
+    !activeFiltersInlineNode ||
     !facetSectionsNode ||
     !readerLayout
   ) {
@@ -1632,7 +1668,7 @@ function wireApp(context: RuntimeContext): () => void {
   };
 
   const goHome = () => {
-    state = { ...initialState };
+    state = searchContext.replace({ ...initialState });
     activeExperience = "search";
     submittedResult = null;
     suggestionResult = null;
@@ -1683,7 +1719,7 @@ function wireApp(context: RuntimeContext): () => void {
     syncSemanticBusyOverlay();
     updateSummary(summaryNode, submittedResult);
     renderToc(context, tocNode, tocStatusNode, submittedResult);
-    renderFacets(context, activeFiltersNode, facetSectionsNode, submittedResult);
+    renderFacets(context, searchContext, activeFiltersNode, activeFiltersInlineNode, facetSectionsNode, submittedResult);
     renderCenter(context, centerNode, submittedResult);
   };
 
@@ -1704,16 +1740,20 @@ function wireApp(context: RuntimeContext): () => void {
 
   const applyLocationHash = () => {
     const detailHash = parseDetailHash();
-    if (!detailHash || !context.byId.has(detailHash.docId)) {
+    if (!detailHash) {
       return;
     }
-
-    activeDocId = detailHash.docId;
+    const doc = context.byUrl.get(detailHash.docUrl);
+    if (!doc) {
+      return;
+    }
+    activeDocId = doc.id;
     expandSectionForDoc(activeDocId);
-    activeChunkId =
-      detailHash.chunkId && context.semantic.chunkEmbeddingsById.get(detailHash.chunkId)?.docId === detailHash.docId
-        ? detailHash.chunkId
-        : null;
+    activeChunkId = detailHash.chunkId
+      ? [...context.semantic.chunkEmbeddingsById.values()].find(
+          (chunk) => chunk.docId === doc.id && serializeHeadingPath(chunk.headingPath) === detailHash.chunkId
+        )?.chunkId ?? null
+      : null;
     currentView = "detail";
   };
 
@@ -1772,11 +1812,56 @@ function wireApp(context: RuntimeContext): () => void {
 
   const runSubmittedSearch = (nextView: "results" | "detail" = "results") => {
     suggestionResult = null;
-    submittedResult = searchForState(context, state);
+    submittedResult = searchContext.resultFor(state);
     if (submittedResult.finalHits.length > 0 && !submittedResult.selectedIds.has(activeDocId)) {
       activeDocId = submittedResult.finalHits[0]?.[0] ?? "";
     }
     currentView = nextView;
+    if (nextView !== "detail") {
+      clearDetailHash();
+    }
+    renderApp();
+  };
+
+  const syncViewFromLocation = () => {
+    const detailHash = parseDetailHash();
+    if (detailHash && window.location.pathname !== "/") {
+      applyLocationHash();
+      renderApp();
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const nextQuery = params.get("q") ?? "";
+    const nextApi = params.get("api");
+    const nextTag = params.get("tag");
+
+    state = searchContext.replace({ ...initialState });
+    submittedResult = null;
+    suggestionResult = null;
+    activeDocId = "";
+    activeChunkId = null;
+    activeExperience = "search";
+    state = searchContext.patch({
+      query: nextQuery,
+      api: nextApi,
+      tag: nextTag
+    });
+
+    if (state.query.trim()) {
+      setSearchModeFromQuery(state.query);
+      submittedResult = searchContext.resultFor(state);
+      currentView = "results";
+    } else if (state.tag || state.api || state.section || state.wordCountFacet || state.excludeAdvanced) {
+      submittedResult = searchContext.resultFor(state);
+      currentView = "results";
+    } else if (currentView !== "ask") {
+      submittedResult = null;
+      suggestionResult = null;
+      activeDocId = "";
+      activeChunkId = null;
+      currentView = "home";
+    }
     renderApp();
   };
 
@@ -1792,13 +1877,13 @@ function wireApp(context: RuntimeContext): () => void {
     }
     pendingSuggestions = window.setTimeout(() => {
       pendingSuggestions = null;
-      suggestionResult = searchForState(context, state);
+      suggestionResult = searchContext.resultFor(state);
       renderSuggestionsOnly();
     }, SEARCH_INPUT_DEBOUNCE_MS);
   };
 
   const resetToHomeIfEmpty = () => {
-    if (!state.query.trim() && !state.tag && !state.section && !state.wordCountFacet && !state.excludeAdvanced) {
+    if (!state.query.trim() && !state.tag && !state.api && !state.section && !state.wordCountFacet && !state.excludeAdvanced) {
       submittedResult = null;
       suggestionResult = null;
       currentView = "home";
@@ -1821,7 +1906,7 @@ function wireApp(context: RuntimeContext): () => void {
         ...(queryInput.value.trim() ? {} : { results: [] })
       };
     } else {
-      state.query = queryInput.value;
+      state = searchContext.patch({ query: queryInput.value });
     }
     syncControls();
     scheduleSuggestions();
@@ -1861,7 +1946,7 @@ function wireApp(context: RuntimeContext): () => void {
       };
       currentView = "home";
     } else {
-      state.query = "";
+      state = searchContext.patch({ query: "" });
     }
     resetToHomeIfEmpty();
     queryInput.focus();
@@ -1899,23 +1984,23 @@ function wireApp(context: RuntimeContext): () => void {
   };
 
   modeSelect.addEventListener("change", () => {
-    state.mode = modeSelect.value as SearchMode;
+    state = searchContext.patch({ mode: modeSelect.value as SearchMode });
     applySearchOptions();
   }, { signal });
   rankingSelect.addEventListener("change", () => {
-    state.ranking = rankingSelect.value as RankingAlgorithm;
+    state = searchContext.patch({ ranking: rankingSelect.value as RankingAlgorithm });
     applySearchOptions();
   }, { signal });
   operationSelect.addEventListener("change", () => {
-    state.operation = operationSelect.value as OP;
+    state = searchContext.patch({ operation: operationSelect.value as OP });
     applySearchOptions();
   }, { signal });
   prefixInput.addEventListener("change", () => {
-    state.prefix = prefixInput.checked;
+    state = searchContext.patch({ prefix: prefixInput.checked });
     applySearchOptions();
   }, { signal });
   excludeAdvancedInput.addEventListener("change", () => {
-    state.excludeAdvanced = excludeAdvancedInput.checked;
+    state = searchContext.patch({ excludeAdvanced: excludeAdvancedInput.checked });
     applySearchOptions();
   }, { signal });
 
@@ -1928,7 +2013,12 @@ function wireApp(context: RuntimeContext): () => void {
       }
       activeChunkId = null;
       activeExperience = "search";
-      clearDetailHash();
+      if (window.location.pathname.startsWith("/docs/")) {
+        window.history.back();
+        return;
+      } else {
+        clearDetailHash();
+      }
       renderShell();
       return;
     }
@@ -1946,20 +2036,17 @@ function wireApp(context: RuntimeContext): () => void {
     const docTarget = target.closest<HTMLElement>("[data-doc]");
     const docId = docTarget?.dataset.doc;
     if (docId) {
-      activeDocId = docId;
-      activeChunkId = docTarget?.dataset.chunkId ?? null;
-      expandSectionForDoc(activeDocId);
-      closeMobilePanel();
-      if (docTarget?.dataset.openDoc === "true" || docTarget?.dataset.suggestion === "true") {
-        if (!submittedResult && state.query.trim()) {
-          submittedResult = searchForState(context, state);
-        }
-        activeExperience = currentView === "ask" ? "ask" : "search";
-        currentView = "detail";
-      } else if (!submittedResult) {
-        currentView = "detail";
+      const doc = context.byId.get(docId);
+      if (!doc) {
+        return;
       }
-      updateDetailHash(activeDocId, activeChunkId);
+      const chunkId = docTarget?.dataset.chunkId ?? null;
+      activeDocId = doc.id;
+      activeChunkId = chunkId;
+      activeExperience = currentView === "ask" ? "ask" : "search";
+      currentView = "detail";
+      updateDetailHash(doc, chunkId);
+      closeMobilePanel();
       suggestionResult = null;
       renderApp();
       return;
@@ -1986,28 +2073,24 @@ function wireApp(context: RuntimeContext): () => void {
       return;
     }
     const facet = facetTarget.dataset.facet;
+    const facetOrigin = facetTarget.dataset.facetOrigin;
     const value = facetTarget.dataset.value ?? "";
-    if (facet === "tag") {
-      state.tag = state.tag === value ? null : value;
-    } else if (facet === "api") {
-      state.query = value;
-      state.mode = "match";
-    } else if (facet === "section") {
-      state.section = state.section === value ? null : value;
-    } else if (facet === "word-count") {
-      state.wordCountFacet = state.wordCountFacet === value ? null : value || null;
+    if (facet === "tag" || facet === "api" || facet === "section" || facet === "word-count") {
+      state = searchContext.toggleFacet(facet, value);
     }
     closeMobilePanel();
     activeExperience = "search";
-    runSubmittedSearch("results");
+    submittedResult = searchContext.resultFor(state);
+    currentView = "results";
+    clearDetailHash();
+    renderApp();
   }, { signal });
 
   window.addEventListener("resize", syncViewportState, { signal });
+  window.addEventListener("popstate", syncViewFromLocation, { signal });
 
-  applyLocationHash();
-  syncControls();
+  syncViewFromLocation();
   syncViewportState();
-  renderApp();
 
   return () => {
     if (pendingSuggestions !== null) {
@@ -2019,13 +2102,45 @@ function wireApp(context: RuntimeContext): () => void {
 }
 
 let runtimeContextPromise: Promise<RuntimeContext> | null = null;
+const DEMO_DATA_CACHE_KEY = `querylight-demo:data:${BUILD_TIMESTAMP}`;
+
+function readCachedDemoData(): DemoDataPayload | null {
+  try {
+    const raw = window.sessionStorage.getItem(DEMO_DATA_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw) as DemoDataPayload;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedDemoData(payload: DemoDataPayload): void {
+  try {
+    window.sessionStorage.setItem(DEMO_DATA_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore storage quota or privacy-mode failures and fall back to fetch.
+  }
+}
+
+function createCachedRuntimeContext(): RuntimeContext | null {
+  const cached = readCachedDemoData();
+  return cached ? createRuntimeContext(cached) : null;
+}
 
 async function loadRuntimeContext(): Promise<RuntimeContext> {
-  const response = await fetch(demoDataUrl);
+  const cachedContext = createCachedRuntimeContext();
+  if (cachedContext) {
+    return cachedContext;
+  }
+
+  const response = await fetch("/data/demo-data.json");
   if (!response.ok) {
     throw new Error(`failed to load demo data: ${response.status} ${response.statusText}`);
   }
   const demoData = (await response.json()) as DemoDataPayload;
+  writeCachedDemoData(demoData);
   return createRuntimeContext(demoData);
 }
 
@@ -2048,8 +2163,11 @@ function resetSearchState(): void {
 export async function mountSearchApp(nextApp: HTMLDivElement): Promise<() => void> {
   app = nextApp;
   resetSearchState();
-  renderLoading("Loading prebuilt documentation search indexes.");
-  runtimeContextPromise ??= loadRuntimeContext();
+  const cachedContext = createCachedRuntimeContext();
+  if (!cachedContext) {
+    renderLoading("Loading prebuilt documentation search indexes.");
+  }
+  runtimeContextPromise ??= cachedContext ? Promise.resolve(cachedContext) : loadRuntimeContext();
 
   try {
     const context = await runtimeContextPromise;

@@ -66,4 +66,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy apps/demo/dist --project-name querylight-ts-demo --branch main
+          command: pages deploy apps/demo/public --project-name querylight-ts-demo --branch main
