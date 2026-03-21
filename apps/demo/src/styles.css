@@ -86,20 +86,8 @@
     @apply prose prose-stone max-w-none prose-headings:font-serif prose-headings:text-stone-950 prose-p:text-stone-700 prose-li:text-stone-700 prose-strong:text-stone-950 prose-code:text-stone-900 prose-code:before:content-none prose-code:after:content-none prose-pre:rounded-3xl prose-pre:border prose-pre:border-stone-900/10 prose-pre:bg-stone-950 prose-pre:shadow-none;
   }
 
-  .prose-docs .highlight {
-    @apply overflow-hidden rounded-3xl border border-stone-900/10 bg-stone-950;
-  }
-
-  .prose-docs .highlight pre {
-    @apply m-0 overflow-x-auto rounded-none border-0 bg-transparent px-6 py-5 text-[15px] leading-7 shadow-none;
-  }
-
-  .prose-docs .highlight code {
-    @apply bg-transparent p-0 font-mono text-inherit;
-  }
-
-  .prose-docs .highlight pre code span {
-    background: transparent !important;
+  .prose-docs pre code {
+    @apply text-stone-100;
   }
 
   .reader-layout {

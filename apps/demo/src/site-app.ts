@@ -1,3 +1,8 @@
+import "highlight.js/styles/github-dark.css";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import json from "highlight.js/lib/languages/json";
+import typescript from "highlight.js/lib/languages/typescript";
 import { mountDashboardApp } from "./dashboard-app";
 import { mountSearchApp } from "./search-app";
 
@@ -5,6 +10,22 @@ type Cleanup = () => void;
 type RouteMode = "search" | "dashboard" | "unknown";
 
 const app = document.querySelector<HTMLDivElement>("#app");
+
+hljs.registerLanguage("ts", typescript);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("sh", bash);
+
+function highlightCodeBlocks(root: ParentNode = document): void {
+  for (const block of root.querySelectorAll<HTMLElement>("pre code")) {
+    if (block.dataset.highlighted === "true") {
+      continue;
+    }
+    hljs.highlightElement(block);
+    block.dataset.highlighted = "true";
+  }
+}
 
 function routeModeForPath(pathname: string): RouteMode {
   if (pathname === "/" || pathname.startsWith("/docs/")) {
@@ -47,6 +68,7 @@ if (app) {
     }
 
     cleanup = nextCleanup;
+    highlightCodeBlocks(app);
   };
 
   document.addEventListener("click", (event) => {
@@ -90,3 +112,4 @@ if (app) {
   void renderCurrentRoute(true);
 }
 
+highlightCodeBlocks();

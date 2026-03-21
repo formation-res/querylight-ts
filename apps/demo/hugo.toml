@@ -11,6 +11,8 @@ useResourceCacheWhen = "fallback"
   [markup.goldmark]
     [markup.goldmark.renderer]
       unsafe = true
+  [markup.highlight]
+    codeFences = false
 
 [outputs]
 home = ["HTML", "SearchIndex"]

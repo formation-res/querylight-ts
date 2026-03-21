@@ -23,6 +23,10 @@ import {
   type HighlightResult,
   type Hits
 } from "@tryformation/querylight-ts";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import json from "highlight.js/lib/languages/json";
+import typescript from "highlight.js/lib/languages/typescript";
 import MarkdownIt from "markdown-it";
 import packageMeta from "../../../packages/querylight/package.json";
 import { resolveDocLink } from "./doc-routes";
@@ -170,10 +174,22 @@ function requireApp(): HTMLDivElement {
   return app;
 }
 
+hljs.registerLanguage("ts", typescript);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("sh", bash);
+
 const markdown = new MarkdownIt({
   html: false,
   linkify: true,
-  typographer: false
+  typographer: false,
+  highlight(code, language) {
+    if (language && hljs.getLanguage(language)) {
+      return `<pre class="hljs"><code>${hljs.highlight(code, { language }).value}</code></pre>`;
+    }
+    return `<pre class="hljs"><code>${hljs.highlightAuto(code).value}</code></pre>`;
+  }
 });
 
 const tagAnalyzer = new Analyzer([], new KeywordTokenizer());

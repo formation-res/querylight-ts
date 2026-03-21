@@ -11,6 +11,7 @@
       {{ $styles = $styles | minify | fingerprint }}
     {{ end }}
     <link rel="stylesheet" href="{{ $styles.RelPermalink }}">
+    <link rel="stylesheet" href="/js/site-app.css">
   </head>
   <body>
     {{ block "main" . }}{{ end }}

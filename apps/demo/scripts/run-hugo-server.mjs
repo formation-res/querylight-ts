@@ -25,18 +25,45 @@ function listPidsOnPort(port) {
     .filter(Boolean);
 }
 
-function killPids(pids) {
-  if (pids.length === 0) {
-    return;
-  }
-
-  const result = spawnSync("kill", pids, {
+function readPidCommand(pid) {
+  const result = spawnSync("ps", ["-p", String(pid), "-o", "command="], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
 
   if (result.status !== 0) {
-    throw new Error(result.stderr.trim() || `Failed to kill processes: ${pids.join(", ")}`);
+    throw new Error(result.stderr.trim() || `Failed to inspect process ${pid}`);
+  }
+
+  return result.stdout.trim();
+}
+
+function isDevServerCommand(command) {
+  return /\b(vite|hugo)\b/.test(command);
+}
+
+function killPids(pids) {
+  if (pids.length === 0) {
+    return;
+  }
+
+  const killablePids = [];
+
+  for (const pid of pids) {
+    const command = readPidCommand(pid);
+    if (!isDevServerCommand(command)) {
+      throw new Error(`Port is already in use by a non-dev-server process: ${command}`);
+    }
+    killablePids.push(pid);
+  }
+
+  const result = spawnSync("kill", killablePids, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || `Failed to kill processes: ${killablePids.join(", ")}`);
   }
 }
 
