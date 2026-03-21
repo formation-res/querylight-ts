@@ -1,7 +1,6 @@
 /content/docs/
 /static/data/
-/static/js/site-dashboard.js
-/static/js/site-search.js
+/static/js/
 /\.hugo_build.lock
 /test-results/
 /public/
