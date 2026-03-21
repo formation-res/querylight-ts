@@ -1,16 +1,21 @@
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
+import { writeDashboardDataFile } from "./build/dashboard-data";
 import { writeDemoDataFile } from "./build/demo-data";
 
 function demoDataPlugin(): Plugin {
   const workspaceRoot = path.resolve(__dirname, "../..");
   const generatedDataPath = path.resolve(__dirname, "src/generated/demo-data.json");
+  const generatedDashboardDataPath = path.resolve(__dirname, "src/generated/dashboard-data.json");
   const docsDir = path.resolve(workspaceRoot, "docs") + path.sep;
   const refresh = async () => {
     // Rebuild the generated demo payload from markdown so dev, production
     // builds, and CI all use the same indexing and embedding pipeline.
-    await writeDemoDataFile(workspaceRoot, generatedDataPath);
+    await Promise.all([
+      writeDemoDataFile(workspaceRoot, generatedDataPath),
+      writeDashboardDataFile(generatedDashboardDataPath)
+    ]);
   };
 
   return {

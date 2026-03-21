@@ -20,6 +20,9 @@ This index mirrors the documentation table of contents used by the demo.
 - [Getting Started with Browser Search](./overview/getting-started-with-browser-search.md)
 - [Comparing Querylight TS to Other Browser Search Libraries](./overview/browser-search-library-comparison.md)
 - [Other Work Related to Querylight TS](./overview/other-work-related-to-querylight-ts.md)
+- [Why Local-First Data Exploration Helps API Prototyping](./overview/why-local-first-data-exploration-helps-api-prototyping.md)
+- [Search Engine Techniques for Analytics UIs](./overview/search-engine-techniques-for-analytics-uis.md)
+- [What Querylight TS Can Do Beyond Full-Text Search](./overview/what-querylight-ts-can-do-beyond-full-text-search.md)
 
 ## Schema
 
@@ -86,13 +89,17 @@ This index mirrors the documentation table of contents used by the demo.
 - [How To Build Autocomplete](./guides/how-to-build-autocomplete.md)
 - [How To Build Faceted Navigation](./guides/how-to-build-faceted-navigation.md)
 - [Real-World Recipes](./guides/real-world-recipes.md)
+- [From Raw API Payloads to Browser Dashboards](./guides/from-raw-api-payloads-to-browser-dashboards.md)
+- [Using Querylight TS as a Local Analytics Engine](./guides/using-querylight-ts-as-a-local-analytics-engine.md)
+- [Build Interactive ECharts Dashboards from Plain JSON](./guides/building-echarts-dashboards-from-plain-json.md)
+- [Slicing and Dicing Open Data with Querylight TS](./guides/slicing-and-dicing-open-data-with-querylight-ts.md)
 
 ## Demo Internals
 
 - [Ask the Docs End to End](./demo/ask-the-docs-end-to-end.md)
 - [How the Aggregations Sidebar Works](./demo/tag-aggregations-sidebar.md)
 - [Article Length Facets in the Demo](./demo/article-length-facets-in-the-demo.md)
-- [How the Aggregations Sidebar Works](./demo/tag-aggregations-sidebar.md)
+- [Lazy Indexing in the Dashboard Demo](./demo/lazy-indexing-in-the-dashboard-demo.md)
 
 ## Operations
 
