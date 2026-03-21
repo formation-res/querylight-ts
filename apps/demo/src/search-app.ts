@@ -25,6 +25,7 @@ import {
 } from "@tryformation/querylight-ts";
 import MarkdownIt from "markdown-it";
 import packageMeta from "../../../packages/querylight/package.json";
+import { resolveDocLink } from "./doc-routes";
 import {
   SEMANTIC_INDEX_HASH_TABLES,
   SEMANTIC_INDEX_RANDOM_SEED,
@@ -385,6 +386,17 @@ function buildDocHref(doc: DocEntry, chunkId?: string | null): string {
       ? chunkAnchorDomId(chunkId)
     : null;
   return `${doc.url}${chunkAnchor ? `#${chunkAnchor}` : ""}`;
+}
+
+function normalizeDocUrl(pathname: string): string {
+  return pathname.endsWith("/") ? pathname : `${pathname}/`;
+}
+
+function rewriteDocMarkdownLinks(markdownSource: string, sourcePath: string): string {
+  return markdownSource.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text: string, href: string) => {
+    const resolvedHref = resolveDocLink(sourcePath, href);
+    return resolvedHref === href ? match : `[${text}](${resolvedHref})`;
+  });
 }
 
 function formatRelativeBuildTime(timestamp: string): string {
@@ -1412,7 +1424,8 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
 
 function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, doc: DocEntry, current: SearchResult | null): void {
   const topResults = current?.visibleHits.slice(0, 3) ?? [];
-  const renderedMarkdown = context.renderedMarkdown.get(doc.id) ?? markdown.render(doc.markdown);
+  const renderedMarkdown =
+    context.renderedMarkdown.get(doc.id) ?? markdown.render(rewriteDocMarkdownLinks(doc.markdown, doc.path));
   context.renderedMarkdown.set(doc.id, renderedMarkdown);
   const relatedArticlesPanel = renderRelatedArticles(context, doc);
   const activeChunk =
@@ -2045,6 +2058,32 @@ function wireApp(context: RuntimeContext): () => void {
 
   document.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
+    const anchorTarget = target.closest<HTMLAnchorElement>("a[href]");
+    if (
+      anchorTarget &&
+      !anchorTarget.target &&
+      !anchorTarget.hasAttribute("download") &&
+      !event.defaultPrevented &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.shiftKey &&
+      !event.altKey
+    ) {
+      const rawHref = anchorTarget.getAttribute("href") ?? anchorTarget.href;
+      const activeDoc = activeDocId ? context.byId.get(activeDocId) : null;
+      const normalizedHref = activeDoc ? resolveDocLink(activeDoc.path, rawHref) : rawHref;
+      const targetUrl = new URL(normalizedHref, window.location.origin);
+      if (targetUrl.origin === window.location.origin && targetUrl.pathname.startsWith("/docs/")) {
+        const doc = context.byUrl.get(normalizeDocUrl(targetUrl.pathname));
+        if (doc) {
+          event.preventDefault();
+          window.history.pushState({ view: "detail", docId: doc.id }, "", `${normalizeDocUrl(targetUrl.pathname)}${targetUrl.hash}`);
+          syncViewFromLocation();
+          return;
+        }
+      }
+    }
+
     const backToResults = target.closest<HTMLElement>("[data-action='back-to-results']");
     if (backToResults) {
       if (submittedResult) {

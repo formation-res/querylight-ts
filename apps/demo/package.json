@@ -6,10 +6,12 @@
   "scripts": {
     "generate:site": "tsx build/generate-site.ts",
     "build:client": "tsx build/build-client.ts",
-    "dev": "npm run generate:site && npm run build:client && hugo server --source . --disableFastRender --port 4173",
+    "serve:dev": "node scripts/run-hugo-server.mjs 4173",
+    "serve:e2e": "node scripts/run-hugo-server.mjs 4174",
+    "dev": "npm run generate:site && npm run build:client && npm run serve:dev",
     "build": "npm run generate:site && npm run build:client && hugo --source . --gc --minify",
     "check": "npm run generate:site && npm run build:client && hugo --source . --gc --minify --panicOnWarning",
-    "test:e2e": "playwright test"
+    "test:e2e": "PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174 PLAYWRIGHT_WEB_SERVER_COMMAND='npm run generate:site && npm run build:client && npm run serve:e2e' playwright test"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

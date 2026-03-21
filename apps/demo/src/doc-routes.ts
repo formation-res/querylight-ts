@@ -1,4 +1,39 @@
-import path from "node:path";
+function posixDirname(value: string): string {
+  const normalized = value.replace(/\/+$/, "");
+  const slashIndex = normalized.lastIndexOf("/");
+  return slashIndex === -1 ? "." : normalized.slice(0, slashIndex) || "/";
+}
+
+function normalizePosixPath(value: string): string {
+  const isAbsolute = value.startsWith("/");
+  const segments = value.split("/");
+  const normalized: string[] = [];
+
+  for (const segment of segments) {
+    if (!segment || segment === ".") {
+      continue;
+    }
+    if (segment === "..") {
+      if (normalized.length > 0 && normalized[normalized.length - 1] !== "..") {
+        normalized.pop();
+      } else if (!isAbsolute) {
+        normalized.push("..");
+      }
+      continue;
+    }
+    normalized.push(segment);
+  }
+
+  const joined = normalized.join("/");
+  if (isAbsolute) {
+    return `/${joined}`;
+  }
+  return joined || ".";
+}
+
+function joinPosixPath(...parts: string[]): string {
+  return normalizePosixPath(parts.filter(Boolean).join("/"));
+}
 
 export function docSourcePathToRelativePath(sourcePath: string, docId: string): string {
   const normalized = sourcePath.replace(/^docs\//, "");
@@ -26,10 +61,10 @@ export function resolveDocLink(sourcePath: string, targetPath: string): string {
   }
 
   const sourceRelative = sourcePath.replace(/^docs\//, "");
-  const sourceDir = path.posix.dirname(sourceRelative);
+  const sourceDir = posixDirname(sourceRelative);
   const resolved = normalizedPath.startsWith("/")
     ? normalizedPath.replace(/^\//, "")
-    : path.posix.normalize(path.posix.join(sourceDir, normalizedPath));
+    : joinPosixPath(sourceDir, normalizedPath);
 
   const routePath = resolved === "index.md"
     ? "documentation-index"

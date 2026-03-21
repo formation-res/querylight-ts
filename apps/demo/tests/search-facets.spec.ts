@@ -63,6 +63,24 @@ test("deep-linked docs page keeps the search shell after a hard load", async ({ 
   await expect(page.locator("#center-view")).toContainText("Terms Aggregation and Significant Terms");
 });
 
+test("doc links navigate without triggering a hard reload", async ({ page }) => {
+  await page.goto("/docs/overview/what-querylight-ts-covers/");
+
+  await expect(page.locator("#center-view")).toContainText("What Querylight TS Covers");
+  await page.evaluate(() => {
+    window.sessionStorage.removeItem("querylight-hard-nav");
+    window.addEventListener("beforeunload", () => {
+      window.sessionStorage.setItem("querylight-hard-nav", "1");
+    }, { once: true });
+  });
+
+  await page.locator("#center-view").getByRole("link", { name: "How To Build Faceted Navigation" }).click();
+
+  await expect(page).toHaveURL(/\/docs\/guides\/how-to-build-faceted-navigation\/$/);
+  await expect(page.locator("#center-view")).toContainText("How To Build Faceted Navigation");
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem("querylight-hard-nav"))).toBeNull();
+});
+
 test("search results support paging and expose offset metadata", async ({ page }) => {
   await page.goto("/");
 
