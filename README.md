@@ -13,8 +13,8 @@ It is one of the few browser-first TypeScript search toolkits that brings togeth
 
 Project links:
 
-- Documentation index: [`docs/index.md`](docs/index.md)
-- Project introduction: [`docs/overview/introduction.md`](docs/overview/introduction.md)
+- Documentation: [`docs/`](docs/)
+- Demo: [https://querylight.tryformation.com/](https://querylight.tryformation.com/)
 
 ## Use Cases
 
@@ -61,34 +61,7 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 
 ## Documentation
 
-- [Documentation index](docs/index.md)
-- [Introducing Querylight TS](docs/overview/introduction.md)
-- [Comparing Querylight TS to other browser search libraries](docs/overview/browser-search-library-comparison.md)
-- [Getting started with browser search](docs/overview/getting-started-with-browser-search.md)
-- [Documentation overview](docs/overview/what-querylight-ts-covers.md)
-- [Analyzer and tokenization deep dive](docs/analysis/analyzer-and-tokenization-deep-dive.md)
-- [Choosing a schema for search](docs/schema/choosing-a-schema-for-search.md)
-- [How to build autocomplete](docs/guides/how-to-build-autocomplete.md)
-- [How to build faceted navigation](docs/guides/how-to-build-faceted-navigation.md)
-- [Relevance tuning with BM25, TF-IDF, and RRF](docs/ranking/relevance-tuning.md)
-- [DisMaxQuery for best-field scoring](docs/lexical-querying/dis-max-query.md)
-- [BoostingQuery for soft demotion](docs/lexical-querying/boosting-query.md)
-- [WildcardQuery for term-level patterns](docs/lexical-querying/wildcard-query.md)
-- [RegexpQuery for regex term matching](docs/lexical-querying/regexp-query.md)
-- [DistanceFeatureQuery for recency and closeness boosts](docs/ranking/distance-feature-query.md)
-- [RankFeatureQuery for numeric relevance signals](docs/ranking/rank-feature-query.md)
-- [ScriptQuery for custom JavaScript filters](docs/lexical-querying/script-query.md)
-- [ScriptScoreQuery for custom JavaScript scoring](docs/ranking/script-score-query.md)
-- [NumericFieldIndex and DateFieldIndex](docs/indexing/numeric-and-date-fields.md)
-- [Document chunking strategies](docs/features/document-chunking-strategies.md)
-- [Serialization, hydration, and shipping indexes](docs/indexing/serialization-hydration-and-shipping-indexes.md)
-- [Performance and memory tuning](docs/operations/performance-and-memory-tuning.md)
-- [Testing search behavior](docs/operations/testing-search-behavior.md)
-- [Real-world recipes](docs/guides/real-world-recipes.md)
-- [Other work related to Querylight TS](docs/overview/other-work-related-to-querylight-ts.md)
-- [Ask the Docs end to end](docs/demo/ask-the-docs-end-to-end.md)
-- [How the tag aggregations sidebar works](docs/demo/tag-aggregations-sidebar.md)
-- [Highlighting with Querylight TS](docs/features/highlighting-with-querylight-ts.md)
+Browse the documentation in [`docs/`](docs/) and try the live demo at [https://querylight.tryformation.com/](https://querylight.tryformation.com/).
 
 ## Install
 
