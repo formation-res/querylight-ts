@@ -33,7 +33,9 @@ const query = new TermsQuery("tags", ["aggregation", "highlighting"]);
 
 ## PrefixQuery
 
-`PrefixQuery` looks for indexed terms that start with a prefix. It is useful for autocomplete-style retrieval when you want the query intent to be explicit instead of toggling `prefixMatch` on `MatchQuery`.
+`PrefixQuery` looks for analyzed field terms through the field's trie. It expands the prefix against real indexed vocabulary and then returns documents containing those matching terms.
+
+It is useful for autocomplete-style retrieval when you want prefix lookup to be explicit instead of toggling `prefixMatch` on `MatchQuery`.
 
 ```ts
 import { PrefixQuery } from "@tryformation/querylight-ts";
@@ -53,7 +55,7 @@ const query = new ExistsQuery("location");
 
 ## MatchQuery
 
-`MatchQuery` analyzes the input text and supports both `AND` and `OR` logic. It can also use trie-backed prefix expansion.
+`MatchQuery` analyzes the input text and supports both `AND` and `OR` logic. When `prefixMatch` is `true`, each analyzed query term can expand through the field trie before document scoring.
 
 ```ts
 import { MatchQuery, OP } from "@tryformation/querylight-ts";
@@ -80,8 +82,9 @@ const query = new MultiMatchQuery(["title", "body"], "vector search");
 - Use `ExistsQuery` when optional metadata should become a filter.
 - Use `MatchQuery` for full text.
 - Use `MultiMatchQuery` when query terms may be spread across several fields.
-- Turn on `prefixMatch` when you want partial token lookup against known indexed terms.
+- Turn on `prefixMatch` when you want partial token lookup against known indexed terms instead of exact analyzed terms only.
 
 ## Learn more
 
+- [Trie-Backed Prefix Expansion](../indexing/trie-backed-prefix-expansion.md)
 - [Trie on Wikipedia](https://en.wikipedia.org/wiki/Trie)
