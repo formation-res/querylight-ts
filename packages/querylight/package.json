@@ -1,6 +1,6 @@
 {
   "name": "@tryformation/querylight-ts",
-  "version": "0.2.0",
+  "version": "0.9.0",
   "description": "Pure TypeScript in-memory search library for browsers and Node.js.",
   "license": "MIT",
   "homepage": "https://querylight-ts-demo.pages.dev",

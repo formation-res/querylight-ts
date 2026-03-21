@@ -12,7 +12,7 @@
     "@huggingface/transformers": "^3.8.1",
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.2.2",
-    "@tryformation/querylight-ts": "0.2.0",
+    "@tryformation/querylight-ts": "0.9.0",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.0",
     "tailwindcss": "^4.2.2"

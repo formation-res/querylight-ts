@@ -63,7 +63,7 @@ npm pack --workspace @tryformation/querylight-ts --dry-run
 - shared public types/utilities: `packages/querylight/src/shared.ts`
 - beginner helper API: `packages/querylight/src/simple-text-search.ts`
 - browser demo: `apps/demo/src/main.ts`
-- release notes draft for the latest release: `RELEASE_NOTES_0.2.0.md`
+- release notes draft for the latest release: `RELEASE_NOTES_0.9.0.md`
 - release skill guidance: `.codex/skills/release-publish-guardrails/SKILL.md`
 
 ## Testing expectations
