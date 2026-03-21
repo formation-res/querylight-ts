@@ -233,6 +233,14 @@ const DOC_SECTION_ORDER = [
   "Operations"
 ];
 const TOC_SECTION_STORAGE_KEY = "querylight-demo:toc-sections";
+const DOCS_HOME_ICON = `
+  <svg viewBox="0 0 24 24" aria-hidden="true" class="size-4">
+    <path
+      d="M3.75 10.94 12 4.5l8.25 6.44v8.31a.75.75 0 0 1-.75.75H14.25v-5.25a.75.75 0 0 0-.75-.75h-3a.75.75 0 0 0-.75.75V20H4.5a.75.75 0 0 1-.75-.75z"
+      fill="currentColor"
+    />
+  </svg>
+`;
 const PACKAGE_NAME = packageMeta.name;
 const PACKAGE_VERSION = packageMeta.version;
 const REPOSITORY_URL = packageMeta.repository.url.replace(/^git\+/, "").replace(/\.git$/, "");
@@ -261,7 +269,7 @@ let state: SearchState = { ...initialState };
 let activeDocId = "";
 let activeChunkId: string | null = null;
 let currentView: "home" | "results" | "detail" | "ask" = "home";
-let activeExperience: QueryExperience = "search";
+let activeExperience: QueryExperience = "ask";
 let submittedResult: SearchResult | null = null;
 let suggestionResult: SearchResult | null = null;
 let semanticQuestionState: SemanticQuestionState = {
@@ -509,16 +517,16 @@ function createNavSections(context: RuntimeContext): NavSection[] {
     .filter((section) => section.docs.length > 0);
 }
 
-function readCollapsedTocSections(): Set<string> {
+function readCollapsedTocSections(allSectionNames: string[]): Set<string> {
   try {
     const raw = window.localStorage.getItem(TOC_SECTION_STORAGE_KEY);
     if (!raw) {
-      return new Set();
+      return new Set(allSectionNames);
     }
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? new Set(parsed.filter((value): value is string => typeof value === "string")) : new Set();
   } catch {
-    return new Set();
+    return new Set(allSectionNames);
   }
 }
 
@@ -837,8 +845,8 @@ function createShell(context: RuntimeContext): void {
       <div id="demo-shell-content" class="demo-shell-content">
       <section class="surface search-shell p-5 sm:p-6">
         <div class="mb-4 inline-flex rounded-full border border-stone-900/10 bg-white/75 p-1">
-          <button id="experience-search" type="button" class="chip-button">Search</button>
           <button id="experience-ask" type="button" class="chip-button">Ask the docs</button>
+          <button id="experience-search" type="button" class="chip-button">Search</button>
         </div>
         <form id="query-form" class="search-form" autocomplete="off">
           <div class="search-input-wrap">
@@ -858,10 +866,14 @@ function createShell(context: RuntimeContext): void {
 
         <aside class="reader-sidebar">
           <section class="surface reader-mobile-panel-shell p-5">
-            <div class="flex items-end justify-between gap-3">
+            <div class="flex items-start justify-between gap-3">
               <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Table of Contents</p>
                 <h2 class="mt-2 font-serif text-2xl text-stone-950">All Documentation</h2>
+                <button id="go-home" type="button" class="chip-button mt-4" aria-label="Open docs start page">
+                  ${DOCS_HOME_ICON}
+                  <span>Docs start page</span>
+                </button>
               </div>
               <div class="flex items-center gap-3">
                 <p id="toc-status" class="text-right text-xs text-stone-500"></p>
@@ -872,7 +884,7 @@ function createShell(context: RuntimeContext): void {
               ${navSections
                 .map(
                   (section) => `
-                    <details class="toc-section" data-section-shell="${escapeHtml(section.name)}" open>
+                    <details class="toc-section" data-section-shell="${escapeHtml(section.name)}">
                       <summary class="toc-section-summary">
                         <span class="toc-section-title">${escapeHtml(section.name)}</span>
                         <span class="toc-section-count" data-section-count="${escapeHtml(section.name)}">${section.docs.length}/${section.docs.length}</span>
@@ -1502,6 +1514,7 @@ function setSearchModeFromQuery(value: string): void {
 function wireApp(context: RuntimeContext): void {
   const queryForm = document.querySelector<HTMLFormElement>("#query-form");
   const queryInput = document.querySelector<HTMLInputElement>("#query");
+  const homeButton = document.querySelector<HTMLButtonElement>("#go-home");
   const clearQueryButton = document.querySelector<HTMLButtonElement>("#clear-query");
   const experienceSearchButton = document.querySelector<HTMLButtonElement>("#experience-search");
   const experienceAskButton = document.querySelector<HTMLButtonElement>("#experience-ask");
@@ -1522,6 +1535,7 @@ function wireApp(context: RuntimeContext): void {
   if (
     !queryForm ||
     !queryInput ||
+    !homeButton ||
     !clearQueryButton ||
     !experienceSearchButton ||
     !experienceAskButton ||
@@ -1542,7 +1556,30 @@ function wireApp(context: RuntimeContext): void {
     throw new Error("app nodes not found");
   }
 
-  const collapsedSections = readCollapsedTocSections();
+  const sectionNames = createNavSections(context).map((section) => section.name);
+  const collapsedSections = readCollapsedTocSections(sectionNames);
+  const setSectionCollapsed = (sectionName: string, collapsed: boolean) => {
+    const sectionNode = tocNode.querySelector<HTMLDetailsElement>(`[data-section-shell="${CSS.escape(sectionName)}"]`);
+    if (!sectionNode) {
+      return;
+    }
+    sectionNode.open = !collapsed;
+    if (collapsed) {
+      collapsedSections.add(sectionName);
+    } else {
+      collapsedSections.delete(sectionName);
+    }
+    writeCollapsedTocSections(collapsedSections);
+  };
+
+  const expandSectionForDoc = (docId: string) => {
+    const doc = context.byId.get(docId);
+    if (!doc) {
+      return;
+    }
+    setSectionCollapsed(doc.section, false);
+  };
+
   tocNode.querySelectorAll<HTMLDetailsElement>("[data-section-shell]").forEach((sectionNode) => {
     const sectionName = sectionNode.dataset.sectionShell ?? "";
     sectionNode.open = !collapsedSections.has(sectionName);
@@ -1566,6 +1603,25 @@ function wireApp(context: RuntimeContext): void {
 
   const closeMobilePanel = () => {
     setMobilePanel("none");
+  };
+
+  const goHome = () => {
+    state = { ...initialState };
+    activeExperience = "search";
+    submittedResult = null;
+    suggestionResult = null;
+    semanticQuestionState = {
+      query: "",
+      status: "idle",
+      results: [],
+      error: null
+    };
+    currentView = "home";
+    activeDocId = "";
+    activeChunkId = null;
+    clearDetailHash();
+    hideSuggestions();
+    renderApp();
   };
 
   const syncViewportState = () => {
@@ -1627,6 +1683,7 @@ function wireApp(context: RuntimeContext): void {
     }
 
     activeDocId = detailHash.docId;
+    expandSectionForDoc(activeDocId);
     activeChunkId =
       detailHash.chunkId && context.semantic.chunkEmbeddingsById.get(detailHash.chunkId)?.docId === detailHash.docId
         ? detailHash.chunkId
@@ -1785,6 +1842,11 @@ function wireApp(context: RuntimeContext): void {
     renderApp();
   });
 
+  homeButton.addEventListener("click", () => {
+    closeMobilePanel();
+    goHome();
+  });
+
   experienceSearchButton.addEventListener("click", () => {
     activeExperience = "search";
     if (!submittedResult && !state.query.trim()) {
@@ -1860,6 +1922,7 @@ function wireApp(context: RuntimeContext): void {
     if (docId) {
       activeDocId = docId;
       activeChunkId = docTarget?.dataset.chunkId ?? null;
+      expandSectionForDoc(activeDocId);
       closeMobilePanel();
       if (docTarget?.dataset.openDoc === "true" || docTarget?.dataset.suggestion === "true") {
         if (!submittedResult && state.query.trim()) {
