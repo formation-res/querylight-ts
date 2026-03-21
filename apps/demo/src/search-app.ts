@@ -71,6 +71,7 @@ type SearchState = {
   operation: OP;
   prefix: boolean;
   ranking: RankingAlgorithm;
+  offset: number;
   api: string | null;
   tag: string | null;
   section: string | null;
@@ -85,7 +86,11 @@ type SearchResult = {
   fuzzyHits: Hits;
   vectorHits: Hits;
   finalHits: Hits;
+  visibleHits: Hits;
   totalHits: number;
+  offset: number;
+  pageSize: number;
+  responseTimeMs: number;
   highlightsById: Map<string, HighlightResult>;
   selectedIds: Set<string>;
   tagFacets: Record<string, number>;
@@ -174,6 +179,7 @@ const tagAnalyzer = new Analyzer([], new KeywordTokenizer());
 const fuzzyAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3)]);
 const edgeAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilter(2, 6)]);
 const SEARCH_INPUT_DEBOUNCE_MS = 150;
+const SEARCH_RESULTS_PAGE_SIZE = 20;
 const WORD_COUNT_FACETS: WordCountFacet[] = [
   { key: "short", label: "Under 400", to: 400 },
   { key: "medium", label: "400-800", from: 400, to: 800 },
@@ -221,6 +227,7 @@ const initialState: SearchState = {
   operation: OP.OR,
   prefix: false,
   ranking: RankingAlgorithm.BM25,
+  offset: 0,
   api: null,
   tag: null,
   section: null,
@@ -682,6 +689,7 @@ function wordCountFacetByKey(key: string | null): WordCountFacet | null {
 }
 
 function searchForState(context: RuntimeContext, current: SearchState): SearchResult {
+  const startedAt = performance.now();
   // One search pass produces both the visible result list and the derived facet
   // data so the sidebar always reflects the currently selected result set.
   const active = context.indexes[current.ranking];
@@ -691,7 +699,6 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   const sectionIndex = index.getFieldIndex("section") as TextFieldIndex;
   const apiIndex = index.getFieldIndex("api") as TextFieldIndex;
   const wordCountIndex = index.getFieldIndex("wordCount") as NumericFieldIndex;
-  const VISIBLE_LIMIT = 20;
   const { queryText, quotedPhrase } = parseQueryInput(current.query);
   const trimmed = queryText.trim();
   const allowPrefixSuggestions = trimmed.length >= 2;
@@ -767,8 +774,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   const filterOnlySet = new Set(allowedIds ?? context.docs.map((doc) => doc.id));
   const filterOnlyHits: Hits = context.docs
     .filter((doc) => filterOnlySet.has(doc.id))
-    .map((doc) => [doc.id, 1] as const)
-    .slice(0, 20);
+    .map((doc) => [doc.id, 1] as const);
 
   const phraseHits =
     trimmed.length === 0
@@ -809,10 +815,11 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
       highlightQuery = hybridLexicalQuery;
       break;
   }
-  const finalHits = fullFinalHits.slice(0, VISIBLE_LIMIT);
+  const normalizedOffset = Math.max(0, Math.min(current.offset, Math.max(fullFinalHits.length - 1, 0)));
+  const visibleHits = fullFinalHits.slice(normalizedOffset, normalizedOffset + SEARCH_RESULTS_PAGE_SIZE);
 
   const highlightsById = new Map(
-    (highlightQuery && trimmed.length > 0 ? finalHits : [])
+    (highlightQuery && trimmed.length > 0 ? visibleHits : [])
       .map(([id]) => [
         id,
         index.highlight(id, highlightQuery!, {
@@ -844,13 +851,18 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
     10,
     selectedIds.size > 0 ? selectedIds : new Set(context.docs.map((doc) => doc.id))
   );
+  const responseTimeMs = Math.max(1, Math.round(performance.now() - startedAt));
 
   return {
     lexicalHits,
     fuzzyHits,
     vectorHits: [],
-    finalHits,
+    finalHits: fullFinalHits,
+    visibleHits,
     totalHits: fullFinalHits.length,
+    offset: normalizedOffset,
+    pageSize: SEARCH_RESULTS_PAGE_SIZE,
+    responseTimeMs,
     highlightsById,
     selectedIds,
     tagFacets,
@@ -1144,7 +1156,7 @@ function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNo
 }
 
 function renderSuggestions(context: RuntimeContext, suggestionsNode: HTMLDivElement, current: SearchResult | null): void {
-  if (activeExperience !== "search" || !state.query.trim() || !current || current.finalHits.length === 0) {
+  if (currentView !== "home" || activeExperience !== "search" || !state.query.trim() || !current || current.finalHits.length === 0) {
     suggestionsNode.classList.add("hidden");
     suggestionsNode.innerHTML = "";
     return;
@@ -1345,18 +1357,32 @@ function renderHome(context: RuntimeContext, centerNode: HTMLDivElement): void {
 }
 
 function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, current: SearchResult): void {
+  const pageStart = current.totalHits === 0 ? 0 : current.offset + 1;
+  const pageEnd = current.offset + current.visibleHits.length;
+  const showPrevious = current.offset > 0;
+  const showNext = pageEnd < current.totalHits;
   centerNode.innerHTML = `
     <article class="surface reader-page px-6 py-8 sm:px-8 sm:py-10">
       <header>
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Search Results</p>
         <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${state.query.trim() || "All documentation"}</h1>
-        <p id="result-count" class="mt-3 text-sm text-stone-600">${current.totalHits} matches${current.totalHits > current.finalHits.length ? ` · showing top ${current.finalHits.length}` : ""}</p>
+        <p id="result-count" class="mt-3 text-sm text-stone-600">${current.totalHits} matches · ${current.responseTimeMs} ms${current.offset > 0 ? ` · offset ${current.offset}` : ""}${current.totalHits > 0 ? ` · showing ${pageStart}-${pageEnd}` : ""}</p>
+        ${
+          current.totalHits > current.pageSize
+            ? `
+              <div class="mt-4 flex flex-wrap gap-2">
+                <button type="button" class="chip-button" data-action="page-previous" ${showPrevious ? "" : "disabled"}>Previous</button>
+                <button type="button" class="chip-button" data-action="page-next" ${showNext ? "" : "disabled"}>Next</button>
+              </div>
+            `
+            : ""
+        }
       </header>
       <div class="mt-8 grid gap-3">
         ${
           current.totalHits === 0
             ? `<div class="rounded-3xl border border-dashed border-stone-900/10 bg-stone-50/80 px-5 py-4 text-sm text-stone-600">No matches found. Try a broader query or remove some facets.</div>`
-            : current.finalHits
+            : current.visibleHits
                 .map(([id, score], index) => {
                   const doc = context.byId.get(id);
                   if (!doc) {
@@ -1368,7 +1394,7 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
                   return `
                     <button class="nav-result" data-doc="${escapeHtml(id)}" data-open-doc="true">
                       <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
-                        <span>${index + 1}. ${escapeHtml(doc.section)}</span>
+                        <span>${current.offset + index + 1}. ${escapeHtml(doc.section)}</span>
                         <span>${score.toFixed(2)}</span>
                       </div>
                       <h2 class="result-title">${title ? renderHighlightFragment(title) : renderLiteralHighlight(doc.title, state.query)}</h2>
@@ -1385,7 +1411,7 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
 }
 
 function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, doc: DocEntry, current: SearchResult | null): void {
-  const topResults = current?.finalHits.slice(0, 3) ?? [];
+  const topResults = current?.visibleHits.slice(0, 3) ?? [];
   const renderedMarkdown = context.renderedMarkdown.get(doc.id) ?? markdown.render(doc.markdown);
   context.renderedMarkdown.set(doc.id, renderedMarkdown);
   const relatedArticlesPanel = renderRelatedArticles(context, doc);
@@ -1565,6 +1591,13 @@ function setSearchModeFromQuery(value: string): void {
   } else if (/[a-z]{4,}\s[a-z]{4,}/i.test(value)) {
     state.mode = "hybrid";
   }
+}
+
+function normalizeResultOffset(result: SearchResult): number {
+  if (result.totalHits === 0) {
+    return 0;
+  }
+  return Math.min(result.offset, Math.max(result.totalHits - 1, 0));
 }
 
 function wireApp(context: RuntimeContext): () => void {
@@ -1813,6 +1846,11 @@ function wireApp(context: RuntimeContext): () => void {
   const runSubmittedSearch = (nextView: "results" | "detail" = "results") => {
     suggestionResult = null;
     submittedResult = searchContext.resultFor(state);
+    const normalizedOffset = normalizeResultOffset(submittedResult);
+    if (normalizedOffset !== state.offset) {
+      state = searchContext.patch({ offset: normalizedOffset });
+      submittedResult = searchContext.resultFor(state);
+    }
     if (submittedResult.finalHits.length > 0 && !submittedResult.selectedIds.has(activeDocId)) {
       activeDocId = submittedResult.finalHits[0]?.[0] ?? "";
     }
@@ -1844,6 +1882,7 @@ function wireApp(context: RuntimeContext): () => void {
     activeExperience = "search";
     state = searchContext.patch({
       query: nextQuery,
+      offset: 0,
       api: nextApi,
       tag: nextTag
     });
@@ -1906,7 +1945,7 @@ function wireApp(context: RuntimeContext): () => void {
         ...(queryInput.value.trim() ? {} : { results: [] })
       };
     } else {
-      state = searchContext.patch({ query: queryInput.value });
+      state = searchContext.patch({ query: queryInput.value, offset: 0 });
     }
     syncControls();
     scheduleSuggestions();
@@ -1946,7 +1985,7 @@ function wireApp(context: RuntimeContext): () => void {
       };
       currentView = "home";
     } else {
-      state = searchContext.patch({ query: "" });
+      state = searchContext.patch({ query: "", offset: 0 });
     }
     resetToHomeIfEmpty();
     queryInput.focus();
@@ -1984,23 +2023,23 @@ function wireApp(context: RuntimeContext): () => void {
   };
 
   modeSelect.addEventListener("change", () => {
-    state = searchContext.patch({ mode: modeSelect.value as SearchMode });
+    state = searchContext.patch({ mode: modeSelect.value as SearchMode, offset: 0 });
     applySearchOptions();
   }, { signal });
   rankingSelect.addEventListener("change", () => {
-    state = searchContext.patch({ ranking: rankingSelect.value as RankingAlgorithm });
+    state = searchContext.patch({ ranking: rankingSelect.value as RankingAlgorithm, offset: 0 });
     applySearchOptions();
   }, { signal });
   operationSelect.addEventListener("change", () => {
-    state = searchContext.patch({ operation: operationSelect.value as OP });
+    state = searchContext.patch({ operation: operationSelect.value as OP, offset: 0 });
     applySearchOptions();
   }, { signal });
   prefixInput.addEventListener("change", () => {
-    state = searchContext.patch({ prefix: prefixInput.checked });
+    state = searchContext.patch({ prefix: prefixInput.checked, offset: 0 });
     applySearchOptions();
   }, { signal });
   excludeAdvancedInput.addEventListener("change", () => {
-    state = searchContext.patch({ excludeAdvanced: excludeAdvancedInput.checked });
+    state = searchContext.patch({ excludeAdvanced: excludeAdvancedInput.checked, offset: 0 });
     applySearchOptions();
   }, { signal });
 
@@ -2023,9 +2062,24 @@ function wireApp(context: RuntimeContext): () => void {
       return;
     }
 
+    const pageAction = target.closest<HTMLElement>("[data-action='page-previous'], [data-action='page-next']")?.dataset.action;
+    if (pageAction && submittedResult) {
+      const nextOffset =
+        pageAction === "page-previous"
+          ? Math.max(0, submittedResult.offset - submittedResult.pageSize)
+          : submittedResult.offset + submittedResult.pageSize;
+      state = searchContext.patch({ offset: nextOffset });
+      submittedResult = searchContext.resultFor(state);
+      currentView = "results";
+      hideSuggestions();
+      renderApp();
+      return;
+    }
+
     const example = target.closest<HTMLElement>("[data-example]")?.dataset.example;
     if (example) {
       state.query = example;
+      state.offset = 0;
       setSearchModeFromQuery(example);
       closeMobilePanel();
       activeExperience = "search";
@@ -2077,6 +2131,7 @@ function wireApp(context: RuntimeContext): () => void {
     const value = facetTarget.dataset.value ?? "";
     if (facet === "tag" || facet === "api" || facet === "section" || facet === "word-count") {
       state = searchContext.toggleFacet(facet, value);
+      state = searchContext.patch({ offset: 0 });
     }
     closeMobilePanel();
     activeExperience = "search";

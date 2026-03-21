@@ -53,3 +53,45 @@ test("tag facet without a text query still returns results", async ({ page }) =>
   await expect(page.locator("#center-view")).toContainText("Terms Aggregation and Significant Terms");
   await expect(page.locator("#center-view")).not.toContainText("No matches found");
 });
+
+test("search results support paging and expose offset metadata", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator("#query").fill("search");
+  await page.locator("#submit-query").click();
+
+  const resultCount = page.locator("#result-count");
+  await expect(resultCount).toContainText(/\d+ matches · \d+ ms · showing 1-20/);
+
+  const nextButton = page.getByRole("button", { name: "Next" });
+  await expect(nextButton).toBeEnabled();
+  await nextButton.click();
+
+  await expect(resultCount).toContainText(/offset 20/);
+  await expect(resultCount).toContainText(/showing 21-/);
+  await expect(page.locator("#center-view .nav-result").first()).toContainText(/21\./);
+
+  const previousButton = page.getByRole("button", { name: "Previous" });
+  await expect(previousButton).toBeEnabled();
+  await previousButton.click();
+
+  await expect(resultCount).not.toContainText("offset 20");
+  await expect(resultCount).toContainText(/showing 1-20/);
+  await expect(page.locator("#center-view .nav-result").first()).toContainText(/1\./);
+});
+
+test("all documentation view paginates beyond the first 20 docs", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator("#submit-query").click();
+
+  const resultCount = page.locator("#result-count");
+  await expect(resultCount).toContainText(/62 matches · \d+ ms · showing 1-20/);
+
+  const nextButton = page.getByRole("button", { name: "Next" });
+  await expect(nextButton).toBeEnabled();
+  await nextButton.click();
+
+  await expect(resultCount).toContainText(/offset 20/);
+  await expect(resultCount).toContainText(/showing 21-40/);
+});
