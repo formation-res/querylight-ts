@@ -236,6 +236,16 @@ let semanticQuestionState: SemanticQuestionState = {
   error: null
 };
 
+function isSemanticSearchBusy(): boolean {
+  return semanticQuestionState.status === "loading-model" || semanticQuestionState.status === "searching";
+}
+
+function getSemanticOverlayMessage(): string {
+  return semanticQuestionState.status === "loading-model"
+    ? "Loading the embedding model for the first semantic query."
+    : "Thinking through the docs...";
+}
+
 function renderLoading(message: string): void {
   app.innerHTML = `
     <main class="mx-auto min-h-screen w-[min(1200px,calc(100vw-32px))] px-0 py-8">
@@ -737,7 +747,8 @@ function createShell(context: RuntimeContext): void {
   const buildTimeLabel = formatRelativeBuildTime(BUILD_TIMESTAMP);
 
   app.innerHTML = `
-    <main class="mx-auto w-[min(1560px,calc(100vw-24px))] py-6 lg:py-8">
+    <main id="demo-shell" class="demo-shell mx-auto w-[min(1560px,calc(100vw-24px))] py-6 lg:py-8" data-busy="false">
+      <div id="demo-shell-content" class="demo-shell-content">
       <section class="surface search-shell p-5 sm:p-6">
         <div class="mb-4 inline-flex rounded-full border border-stone-900/10 bg-white/75 p-1">
           <button id="experience-search" type="button" class="chip-button">Search</button>
@@ -891,10 +902,37 @@ function createShell(context: RuntimeContext): void {
           </div>
         </div>
       </footer>
+      </div>
+
+      <div id="semantic-busy-overlay" class="semantic-busy-overlay" aria-hidden="true">
+        <div class="semantic-busy-panel">
+          <span class="semantic-busy-pulse" aria-hidden="true"></span>
+          <p class="semantic-busy-label">Thinking</p>
+          <p id="semantic-busy-message" class="semantic-busy-message">Thinking through the docs...</p>
+        </div>
+      </div>
     </main>
   `;
 
   wireApp(context);
+}
+
+function syncSemanticBusyOverlay(): void {
+  const shell = document.querySelector<HTMLElement>("#demo-shell");
+  const shellContent = document.querySelector<HTMLElement>("#demo-shell-content");
+  const overlay = document.querySelector<HTMLElement>("#semantic-busy-overlay");
+  const overlayMessage = document.querySelector<HTMLElement>("#semantic-busy-message");
+  const busy = isSemanticSearchBusy();
+
+  if (!shell || !shellContent || !overlay || !overlayMessage) {
+    return;
+  }
+
+  shell.dataset.busy = busy ? "true" : "false";
+  shellContent.inert = busy;
+  shellContent.setAttribute("aria-hidden", busy ? "true" : "false");
+  overlay.setAttribute("aria-hidden", busy ? "false" : "true");
+  overlayMessage.textContent = getSemanticOverlayMessage();
 }
 
 function updateSummary(summaryNode: HTMLParagraphElement, current: SearchResult | null): void {
@@ -1405,6 +1443,7 @@ function wireApp(context: RuntimeContext): void {
 
   const renderShell = () => {
     syncControls();
+    syncSemanticBusyOverlay();
     updateSummary(summaryNode, submittedResult);
     renderToc(context, tocNode, tocStatusNode, submittedResult);
     renderFacets(context, activeFiltersNode, facetSectionsNode, submittedResult);
