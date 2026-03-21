@@ -2,10 +2,17 @@ import { type PolygonCoordinates } from "./geo";
 import { DocumentIndex, GeoFieldIndex, TextFieldIndex } from "./document-index";
 import { type Hit, type Hits, QueryContext, andHits, applyBoost, geoFieldHits, ids, normalizedBoost, orHits, textFieldHits } from "./query-support";
 import { type Query } from "./shared";
+import { type Vector, VectorFieldIndex } from "./vector";
 
 export enum OP {
   AND = "AND",
   OR = "OR"
+}
+
+export interface VectorRescoreOptions {
+  windowSize?: number;
+  queryWeight?: number;
+  rescoreQueryWeight?: number;
 }
 
 export class BoolQuery implements Query {
@@ -395,5 +402,72 @@ export class GeoPolygonQuery implements Query {
 
   highlightClauses(): [] {
     return [];
+  }
+}
+
+export class VectorRescoreQuery implements Query {
+  private readonly windowSize: number;
+  private readonly queryWeight: number;
+  private readonly rescoreQueryWeight: number;
+
+  constructor(
+    private readonly field: string,
+    private readonly vector: Vector,
+    private readonly query: Query,
+    {
+      windowSize = 50,
+      queryWeight = 1.0,
+      rescoreQueryWeight = 1.0
+    }: VectorRescoreOptions = {},
+    public readonly boost: number | undefined = undefined
+  ) {
+    if (!Number.isInteger(windowSize) || windowSize < 0) {
+      throw new Error("windowSize should be an integer >= 0");
+    }
+    if (!Number.isFinite(queryWeight) || queryWeight < 0) {
+      throw new Error("queryWeight should be a finite number >= 0");
+    }
+    if (!Number.isFinite(rescoreQueryWeight) || rescoreQueryWeight < 0) {
+      throw new Error("rescoreQueryWeight should be a finite number >= 0");
+    }
+
+    this.windowSize = windowSize;
+    this.queryWeight = queryWeight;
+    this.rescoreQueryWeight = rescoreQueryWeight;
+  }
+
+  hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
+    const baseHits = this.query.hits(documentIndex, context);
+    const vectorIndex = documentIndex.getFieldIndex(this.field);
+
+    if (!(vectorIndex instanceof VectorFieldIndex) || this.windowSize === 0 || baseHits.length === 0) {
+      return applyBoost(baseHits.map(([id, score]): Hit => [id, score * this.queryWeight]), normalizedBoost(this));
+    }
+
+    const windowHits = baseHits.slice(0, this.windowSize);
+    const rescoredHits = vectorIndex.rerank(this.vector, ids(windowHits));
+    const rescoredMap = new Map(rescoredHits);
+
+    const rescoredWindow = windowHits
+      .map(([id, score], rank) => ({
+        id,
+        score: score * this.queryWeight + (rescoredMap.get(id) ?? 0) * this.rescoreQueryWeight,
+        rank
+      }))
+      .sort((a, b) => {
+        const scoreDelta = b.score - a.score;
+        return scoreDelta !== 0 ? scoreDelta : a.rank - b.rank;
+      })
+      .map(({ id, score }): Hit => [id, score]);
+
+    const tailHits = baseHits
+      .slice(this.windowSize)
+      .map(([id, score]): Hit => [id, score * this.queryWeight]);
+
+    return applyBoost([...rescoredWindow, ...tailHits], normalizedBoost(this));
+  }
+
+  highlightClauses(documentIndex: DocumentIndex) {
+    return this.query.highlightClauses?.(documentIndex) ?? [];
   }
 }

@@ -46,6 +46,15 @@ describe("aknn", () => {
     expect(index.query([1.0, 2.0, 3.0], 1)[0]?.[0]).toBe("id1");
   });
 
+  it("reranks an explicit candidate window exactly", () => {
+    const index = new VectorFieldIndex(2, 3, createSeededRandom(42));
+    index.insert("id1", [[1.0, 2.0, 3.0]]);
+    index.insert("id2", [[4.0, 5.0, 6.0]]);
+    index.insert("id3", [[1.1, 2.1, 3.1]]);
+
+    expect(index.rerank([1.0, 2.0, 3.0], ["id2", "id3", "missing"]).map(([id]) => id)).toEqual(["id3", "id2"]);
+  });
+
   it("vector field index state round trip", () => {
     const index = new VectorFieldIndex(2, 3, createSeededRandom(42));
     index.insert("id1", [[1.0, 2.0, 3.0]]);

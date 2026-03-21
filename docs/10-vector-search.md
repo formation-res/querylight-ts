@@ -4,7 +4,7 @@ section: Advanced
 title: Approximate Nearest Neighbor Vector Search
 summary: Use VectorFieldIndex and bigramVector for lightweight semantic-ish lookup.
 tags: [vector, aknn, lsh, bigram, fuzzy]
-apis: [VectorFieldIndex, bigramVector, cosineSimilarity, hashFunction]
+apis: [VectorFieldIndex, VectorRescoreQuery, bigramVector, cosineSimilarity, hashFunction]
 level: advanced
 order: "10"
 ---
@@ -50,6 +50,18 @@ Use vector search when:
 
 Do not use it as the only retrieval strategy unless you are sure that is what you want. In practice, vector search is often strongest when combined with lexical ranking, filters, or both.
 
+## Use rescoring when lexical search already narrowed things down
+
+If a lexical query or filtered `BoolQuery` still returns hundreds of document hits, full vector retrieval can be more work than you need.
+
+In that case, use [`VectorRescoreQuery`](./32-vector-rescoring.md) to:
+
+- run the lexical or filtered query first
+- keep the top `N` candidates
+- rerank only that window with vector similarity
+
+This follows the same basic pattern as Elasticsearch rescoring: use normal retrieval to define the candidate set, then spend vector work only where it can improve the top of the ranking.
+
 ## Why the demo uses it
 
 The demo uses vector search in two different ways:
@@ -59,8 +71,26 @@ The demo uses vector search in two different ways:
 
 For the full end-to-end walkthrough, see [Ask the Docs End to End](./18-ask-the-docs.md).
 
+## Current limitations
+
+The current vector implementation is intentionally lightweight.
+
+That keeps it easy to understand and practical for browser and small in-process use cases, but it also means it does not try to match the full vector-search feature set of engines such as OpenSearch or Elasticsearch.
+
+Current limitations include:
+
+- approximate retrieval is based on a simple locality-sensitive hashing approach
+- there is no HNSW or IVF-style ANN index yet
+- there is no vector quantization or compressed vector storage yet
+- filtering and rescoring patterns exist, but the integrated vector feature set is still smaller than what larger search engines provide
+
+For many browser, static-site, and embedded search scenarios that tradeoff is acceptable. If you need a small pure TypeScript toolkit with vector support, this can already be useful. If you need a larger algorithmic feature set, there is room to grow.
+
+Pull requests are welcome.
+
 ## Learn more
 
+- [Vector Rescoring for Faster Hybrid Search](./32-vector-rescoring.md)
 - [Nearest neighbor search on Wikipedia](https://en.wikipedia.org/wiki/Nearest_neighbor_search)
 - [Locality-sensitive hashing on Wikipedia](https://en.wikipedia.org/wiki/Locality-sensitive_hashing)
 - [Approximate Nearest Neighbor: Towards Removing the Curse of Dimensionality](https://www.theoryofcomputing.org/articles/v008a014/v008a014.pdf)

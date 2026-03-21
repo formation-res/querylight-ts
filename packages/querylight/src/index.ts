@@ -78,8 +78,10 @@ export {
   PrefixQuery,
   RangeQuery,
   TermQuery,
-  TermsQuery
+  TermsQuery,
+  VectorRescoreQuery
 } from "./query";
+export type { VectorRescoreOptions } from "./query";
 export type { Query } from "./shared";
 
 export {

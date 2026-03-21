@@ -13,6 +13,16 @@ order: "01"
 
 Querylight TS is a pure TypeScript search toolkit for browsers and Node.js. It combines text retrieval, structured boolean queries, multi-field search, phrase search, prefix expansion, aggregations, vector search, geo search, and portable index state under one API.
 
+In practical terms, that means you can use one local library to power very different kinds of search experiences:
+
+- a docs search box with highlighting and BM25 ranking
+- faceted or filtered discovery over structured metadata
+- "Ask the Docs" style semantic search over chunked content
+- related-article or recommendation features using vector similarity
+- geo-aware retrieval for map or region-based content
+
+That breadth is the main reason to use Querylight TS instead of a narrower fuzzy-only library.
+
 If you are new to search tooling, the easiest mental model is:
 
 - A `DocumentIndex` stores your documents.
@@ -28,6 +38,23 @@ If you are new to search tooling, the easiest mental model is:
 - It includes dedicated `PrefixQuery`, `TermsQuery`, `ExistsQuery`, and `MultiMatchQuery` building blocks.
 - It supports terms aggregations and significant terms for discovery.
 - It includes `VectorFieldIndex` and `GeoFieldIndex` for non-lexical retrieval.
+
+## Common problems it can solve
+
+If you are evaluating fit, these are the most common "jobs" Querylight TS can cover:
+
+- Site search and docs search:
+  `TextFieldIndex`, `MatchQuery`, `MultiMatchQuery`, BM25, and highlighting.
+- Semantic search for help centers or docs:
+  `VectorFieldIndex`, chunking, and `VectorRescoreQuery`.
+- Related content and recommendations:
+  vector similarity over articles, pages, or chunks.
+- Faceted navigation:
+  `BoolQuery`, terms aggregations, and metadata fields such as tags, section, or product.
+- Typo-tolerant discovery:
+  prefix queries, ngram analyzers, and `bigramVector`.
+- Geo-filtered search:
+  `GeoFieldIndex`, `GeoPointQuery`, and `GeoPolygonQuery`.
 
 ## Minimal setup
 
@@ -95,6 +122,7 @@ Expected result:
 - Add more fields such as `summary`, `tags`, or `api`.
 - Replace `MatchAll` with `MatchQuery`, `MatchPhrase`, or `BoolQuery`.
 - Use aggregations to build facets from the current result set.
+- Add vectors for semantic search or related-content features.
 - Serialize the index at build time and load it in the browser.
 
 ## More guides

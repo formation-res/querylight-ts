@@ -2,7 +2,25 @@
 
 Lightweight in-memory search for TypeScript applications.
 
-`@tryformation/querylight-ts` combines structured indexing, lexical ranking, boolean queries, aggregations, vector search, geo search, and offset-based highlighting in one small API for browser and Node.js projects.
+`@tryformation/querylight-ts` combines structured indexing, BM25/TF-IDF ranking, boolean queries, aggregations, vector search, hybrid reranking, geo search, and offset-based highlighting in one small API for browser and Node.js projects.
+
+In practice, this is an easy way to add semantic-search features locally without introducing a separate search server or vector database. You can use it for "Ask the Docs" search, related articles, semantic reranking, typo-tolerant content discovery, faceted navigation, and geo-aware retrieval.
+
+It is one of the few browser-first TypeScript search toolkits that combines structured search-engine-style querying and lightweight vector search in the same local package.
+
+For the full project README, examples, and all documentation, see:
+
+- Full project README: [https://github.com/formation-res/querylight-ts/blob/main/README.md](https://github.com/formation-res/querylight-ts/blob/main/README.md)
+
+## Use Cases
+
+- Docs and site search: BM25 ranking, `MatchQuery`, `MultiMatchQuery`, highlighting, and serialized indexes.
+- Semantic "Ask the Docs": vector indexing, chunk retrieval, and lexical-first vector reranking.
+- Related articles and recommendations: vector similarity over documents or chunks.
+- Faceted discovery and filtered search: `BoolQuery`, aggregations, terms filters, and significant terms.
+- Product or catalog search: fielded search, hard filters, prefixes, and hybrid retrieval patterns.
+- Typo-tolerant search: ngram analyzers, prefix search, and `bigramVector`.
+- Geo-aware search: point and polygon queries over GeoJSON fields.
 
 ## Install
 
@@ -19,6 +37,7 @@ The demo site also includes the most comprehensive documentation set for the pro
 ## Repository
 
 - Source: [https://github.com/formation-res/querylight-ts](https://github.com/formation-res/querylight-ts)
+- Full README: [https://github.com/formation-res/querylight-ts/blob/main/README.md](https://github.com/formation-res/querylight-ts/blob/main/README.md)
 
 ## Documentation
 
@@ -26,4 +45,6 @@ The demo site also includes the most comprehensive documentation set for the pro
 - Overview: [https://github.com/formation-res/querylight-ts/blob/main/docs/01-overview.md](https://github.com/formation-res/querylight-ts/blob/main/docs/01-overview.md)
 - Getting started: [https://github.com/formation-res/querylight-ts/blob/main/docs/16-getting-started.md](https://github.com/formation-res/querylight-ts/blob/main/docs/16-getting-started.md)
 - Highlighting: [https://github.com/formation-res/querylight-ts/blob/main/docs/17-highlighting.md](https://github.com/formation-res/querylight-ts/blob/main/docs/17-highlighting.md)
+- Vector search: [https://github.com/formation-res/querylight-ts/blob/main/docs/10-vector-search.md](https://github.com/formation-res/querylight-ts/blob/main/docs/10-vector-search.md)
+- Vector rescoring: [https://github.com/formation-res/querylight-ts/blob/main/docs/32-vector-rescoring.md](https://github.com/formation-res/querylight-ts/blob/main/docs/32-vector-rescoring.md)
 - Comparison with other browser search libraries: [https://github.com/formation-res/querylight-ts/blob/main/docs/31-browser-search-library-comparison.md](https://github.com/formation-res/querylight-ts/blob/main/docs/31-browser-search-library-comparison.md)

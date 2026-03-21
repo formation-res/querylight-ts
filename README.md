@@ -5,7 +5,25 @@
 
 Pure TypeScript port of the Kotlin `querylight` library, packaged for browsers and Node.js.
 
-Querylight TS is a lightweight in-process search toolkit for static sites, browser apps, and Node.js projects that need more than fuzzy matching but less than a full search server. It combines structured indexing, lexical ranking, boolean queries, aggregations, vector search, and geo search behind one small API. Read the full introduction in [`docs/00-introducing-querylight-ts.md`](docs/00-introducing-querylight-ts.md).
+Querylight TS is a lightweight in-process search toolkit for static sites, browser apps, and Node.js projects that need more than fuzzy matching but less than a full search server. It combines structured indexing, BM25/TF-IDF ranking, boolean queries, aggregations, vector search, hybrid reranking, highlighting, and geo search behind one small API.
+
+In practice, that means it is an easy way to build semantic-search features locally without introducing a separate vector database or search service. You can use it to power search experiences such as "Ask the Docs", related-article suggestions, semantic reranking on top of lexical results, typo-tolerant content discovery, faceted navigation, and map- or region-aware retrieval.
+
+It is one of the few browser-first TypeScript search toolkits that brings together structured search-engine-style querying and lightweight vector search in the same local package. Read the full introduction in [`docs/00-introducing-querylight-ts.md`](docs/00-introducing-querylight-ts.md).
+
+## Use Cases
+
+Querylight TS can cover a wide range of local search problems without forcing you into a backend search stack.
+
+- Docs search and site search: `TextFieldIndex`, `MatchQuery`, `MultiMatchQuery`, BM25 ranking, highlighting, and serialized indexes.
+- Semantic "Ask the Docs" experiences: `VectorFieldIndex`, chunked content, vector retrieval, and `VectorRescoreQuery` for lexical-first reranking.
+- Related articles and recommendations: document or chunk embeddings with vector similarity.
+- Faceted navigation and filtered discovery: `BoolQuery`, `TermsQuery`, aggregations, and significant terms.
+- Product or catalog search: BM25 ranking, fielded search, hard filters, prefixes, and optional hybrid reranking.
+- Typo-tolerant search boxes: `bigramVector`, ngram analyzers, prefix queries, and hybrid lexical plus vector patterns.
+- Geo-aware search: `GeoFieldIndex`, `GeoPointQuery`, and `GeoPolygonQuery`.
+- Browser-shipped search for static content: JSON-serializable index state and build-time precomputation.
+- Search behavior testing and tuning: stable query objects, ranking controls, and a testable in-memory model.
 
 ## Try The Demo
 

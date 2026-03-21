@@ -15,6 +15,8 @@ Querylight TS is a [TypeScript](https://www.typescriptlang.org/) port of the ori
 
 The project focuses on a practical middle ground: more capable than simple fuzzy matching libraries such as [`fuse.js`](https://github.com/krisk/Fuse), much smaller in scope than a full Lucene-based search stack. You can use it to add fast, local, explainable search to static sites, browser apps, demos, documentation portals, and other small to medium datasets.
 
+The practical benefit is that one library can cover both classic lexical search and newer semantic-search patterns. You can start with a search box and later grow into "Ask the Docs", related articles, hybrid lexical-plus-vector ranking, faceted navigation, or geo-aware retrieval without switching to a different local search stack.
+
 ## Who it is for
 
 Querylight TS is a good fit if you have a static website or browser application and want search features without depending on a remote backend for every query.
@@ -26,6 +28,8 @@ Typical use cases include:
 - Faceting and filtering over structured metadata
 - Geo search for location-aware content
 - Lightweight vector search for similarity and recommendation features
+- Semantic search over chunked content
+- Related-article and "read next" suggestions
 - Offline or local-first retrieval experiments in the browser
 
 If you want to get ambitious, you can even pair it with in-browser or [WASM](https://webassembly.org/)-based embedding models and keep the entire retrieval pipeline client-side.

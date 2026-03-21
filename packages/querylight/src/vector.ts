@@ -1,6 +1,6 @@
 import { Analyzer } from "./analysis";
 import { type RandomSource } from "./random";
-import { type FieldIndex, type Hit, type Hits, type IndexState, type IndexStateBase } from "./index";
+import { type FieldIndex, type Hit, type Hits, type IndexState, type IndexStateBase } from "./shared";
 
 export type Vector = number[];
 
@@ -79,19 +79,35 @@ export class VectorFieldIndex implements FieldIndex {
   }
 
   query(vector: Vector, k: number, filterIds?: string[]): Hits {
-    const candidates = new Map<string, [string, Vector]>();
+    const candidates = new Map<string, Vector[]>();
     const allowed = filterIds ? new Set(filterIds) : null;
     for (let i = 0; i < this.numHashTables; i += 1) {
       const hash = hashFunction(vector, this.randomVectorsList[i]!);
       const bucket = this.allBuckets[i]!.get(hash) ?? [];
       for (const [id, candidate] of bucket) {
         if (!allowed || allowed.has(id)) {
-          candidates.set(`${id}:${candidate.join(",")}`, [id, candidate]);
+          const values = candidates.get(id) ?? [];
+          values.push(candidate);
+          candidates.set(id, values);
         }
       }
     }
-    return [...candidates.values()]
-      .map(([id, candidate]) => [id, cosineSimilarity(vector, candidate)] as Hit)
+    return [...candidates.entries()]
+      .map(([id, candidatesForId]) => [id, Math.max(...candidatesForId.map((candidate) => cosineSimilarity(vector, candidate)))] as Hit)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, k);
+  }
+
+  rerank(vector: Vector, candidateIds: string[], k = candidateIds.length): Hits {
+    return candidateIds
+      .map((id) => {
+        const candidates = this.vectors.get(id) ?? [];
+        if (candidates.length === 0) {
+          return null;
+        }
+        return [id, Math.max(...candidates.map((candidate) => cosineSimilarity(vector, candidate)))] as Hit;
+      })
+      .filter((hit): hit is Hit => hit !== null)
       .sort((a, b) => b[1] - a[1])
       .slice(0, k);
   }

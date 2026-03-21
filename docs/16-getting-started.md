@@ -13,6 +13,16 @@ order: "16"
 
 This guide is for somebody who has never used a search library before and wants a usable search box quickly.
 
+It is also the quickest way to understand what Querylight TS is good at in practice. Even if you start with a simple search box, the same library can later grow into:
+
+- docs or site search with highlighting
+- semantic "Ask the Docs" retrieval over chunked content
+- related-article suggestions
+- faceted or filtered discovery
+- geo-aware search
+
+That matters because beginner-friendly search tooling often becomes a dead end as soon as your requirements grow. Querylight TS is designed so the beginner path and the more advanced path stay connected.
+
 There are two paths:
 
 - Use the beginner helper and get something working fast.
@@ -27,6 +37,12 @@ For most people, the right architecture is:
 5. Load the prebuilt index in the browser and use it to power a search field.
 
 That avoids indexing work in the browser and gives you a fast startup path.
+
+## Pick the path that matches your use case
+
+- If you want a practical docs or content search box fast, start with `createSimpleTextSearchIndex`.
+- If you know you need filters, facets, semantic retrieval, or custom ranking, use the lower-level query API directly.
+- If you are unsure, start simple. You can keep the same document model and move to manual queries later.
 
 ## Fastest path: beginner helper
 
@@ -70,6 +86,13 @@ What this gives you:
 If you stop here, you already have a practical site-search baseline.
 
 If you also want result highlighting, treat it as a second step after retrieval. Querylight TS now exposes `documentIndex.highlight(...)` for exact and phrase highlighting against stored source text.
+
+This beginner path is a strong fit for:
+
+- docs and marketing sites
+- blogs and magazines
+- product help centers
+- static app content bundled with a browser build
 
 ## Equivalent manual setup
 
@@ -161,6 +184,14 @@ The manual version is useful when:
 - you need filters or faceting
 - you want to mix in vector or geo search later
 
+It is also the path to take when your product requirements sound more like:
+
+- "search only within this section"
+- "show related articles"
+- "use embeddings for semantic reranking"
+- "limit results to the visible map area"
+- "support strict metadata filters"
+
 ## Recommended browser architecture
 
 For a production static site or browser app, do the indexing at build time.
@@ -244,6 +275,13 @@ Move to manual queries when you need:
 - custom analyzers for tags, IDs, or code snippets
 - hybrid lexical plus vector retrieval
 - geo queries
+
+That transition is normal. Many teams start with a plain site-search box and only later add:
+
+- semantic search over chunked docs
+- recommendations or related content
+- faceted navigation
+- geo or region-based filtering
 
 The important point is that the beginner path is not a dead end. It gets you to a useful search box quickly, and the same library lets you grow from there.
 

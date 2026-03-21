@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Analyzer, BoolQuery, DocumentIndex, ExistsQuery, MatchAll, MatchPhrase, MatchQuery, MultiMatchQuery, NgramTokenFilter, OP, PrefixQuery, RankingAlgorithm, TermsQuery, TextFieldIndex } from "../src/index";
+import { Analyzer, BoolQuery, DocumentIndex, ExistsQuery, MatchAll, MatchPhrase, MatchQuery, MultiMatchQuery, NgramTokenFilter, OP, PrefixQuery, RankingAlgorithm, TermsQuery, TextFieldIndex, VectorFieldIndex, VectorRescoreQuery, bigramVector, createSeededRandom } from "../src/index";
 import { quotesIndex } from "./testfixture";
 
 describe("queries", () => {
@@ -125,5 +125,32 @@ describe("queries", () => {
 
     expect(result.fields[0]?.fragments[0]?.parts.some((part) => part.highlighted && part.text.includes("vector"))).toBe(true);
     expect(result.fields[0]?.fragments[0]?.spans[0]?.kind).toBe("fuzzy");
+  });
+
+  it("should rescore only the top window similar to elasticsearch", () => {
+    const index = new DocumentIndex({
+      title: new TextFieldIndex(),
+      embedding: new VectorFieldIndex(8, 36 * 36, createSeededRandom(42))
+    });
+
+    index.index({ id: "1", fields: { title: ["coffee guide guide guide"] } });
+    index.index({ id: "2", fields: { title: ["coffee guide"] } });
+    index.index({ id: "3", fields: { title: ["coffee guide"] } });
+
+    (index.getFieldIndex("embedding") as VectorFieldIndex).insert("1", [bigramVector("coffee catalog archive")]);
+    (index.getFieldIndex("embedding") as VectorFieldIndex).insert("2", [bigramVector("espresso brewing tutorial")]);
+    (index.getFieldIndex("embedding") as VectorFieldIndex).insert("3", [bigramVector("espresso brewing tutorial")]);
+
+    const baseQuery = new MatchQuery("title", "coffee guide");
+    expect(index.search(baseQuery).map(([id]) => id)).toEqual(["1", "2", "3"]);
+
+    const rescored = index.search(new VectorRescoreQuery(
+      "embedding",
+      bigramVector("espresso brewing tutorial"),
+      baseQuery,
+      { windowSize: 2 }
+    ));
+
+    expect(rescored.map(([id]) => id)).toEqual(["2", "1", "3"]);
   });
 });
