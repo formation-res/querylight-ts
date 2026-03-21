@@ -47,11 +47,20 @@ test("facet count matches the current-query result count after applying it", asy
 test("tag facet without a text query still returns results", async ({ page }) => {
   await page.goto("/docs/discovery/terms-aggregation-and-significant-terms/");
 
-  await page.getByRole("link", { name: "discovery" }).click();
+  await page.getByRole("button", { name: "discovery", exact: true }).click();
 
   await expect(page.locator("#active-filters-inline")).toContainText("Tag: discovery");
   await expect(page.locator("#center-view")).toContainText("Terms Aggregation and Significant Terms");
   await expect(page.locator("#center-view")).not.toContainText("No matches found");
+});
+
+test("deep-linked docs page keeps the search shell after a hard load", async ({ page }) => {
+  await page.goto("/docs/discovery/terms-aggregation-and-significant-terms/");
+
+  await expect(page.locator("#query")).toBeVisible();
+  await expect(page.locator(".reader-sidebar")).toBeVisible();
+  await expect(page.locator(".reader-facets")).toBeVisible();
+  await expect(page.locator("#center-view")).toContainText("Terms Aggregation and Significant Terms");
 });
 
 test("search results support paging and expose offset metadata", async ({ page }) => {

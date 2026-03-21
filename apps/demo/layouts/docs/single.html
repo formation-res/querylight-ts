@@ -1,40 +1,43 @@
 {{ define "main" }}
-  {{ partial "site-header.html" . }}
-  <main class="mx-auto w-[min(1560px,calc(100vw-24px))]">
-    <div class="reader-page-wrap">
-      <article class="surface reader-page overflow-hidden">
-        <header class="border-b border-stone-900/8 px-6 py-6 sm:px-8">
-          <a class="chip-button" href="/">Back to docs search</a>
-          <p class="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Reference Entry</p>
-          <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">{{ .Title }}</h1>
-          <p class="mt-3 text-sm text-stone-600">{{ .Params.doc_section }} · {{ .Params.doc_level }} · order {{ .Params.doc_order }}</p>
-        </header>
-        <div id="chunk-anchor-intro" class="px-6 py-8 sm:px-8 sm:py-10">
-          <p class="text-lg text-stone-600">{{ .Params.description }}</p>
-          {{ with .Params.apis }}
-            <div class="mt-5">
-              <h2 class="font-serif text-xl text-stone-950">Relevant APIs</h2>
-              <div class="mt-3 flex flex-wrap gap-2">
-                {{ range . }}
-                  <a class="chip-button" href="/?api={{ . | urlquery }}">{{ . }}</a>
-                {{ end }}
+  <div id="app">
+    {{ partial "site-header.html" . }}
+    <main class="mx-auto w-[min(1560px,calc(100vw-24px))]">
+      <div class="reader-page-wrap">
+        <article class="surface reader-page overflow-hidden">
+          <header class="border-b border-stone-900/8 px-6 py-6 sm:px-8">
+            <a class="chip-button" href="/">Back to docs search</a>
+            <p class="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Reference Entry</p>
+            <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">{{ .Title }}</h1>
+            <p class="mt-3 text-sm text-stone-600">{{ .Params.doc_section }} · {{ .Params.doc_level }} · order {{ .Params.doc_order }}</p>
+          </header>
+          <div id="chunk-anchor-intro" class="px-6 py-8 sm:px-8 sm:py-10">
+            <p class="text-lg text-stone-600">{{ .Params.description }}</p>
+            {{ with .Params.apis }}
+              <div class="mt-5">
+                <h2 class="font-serif text-xl text-stone-950">Relevant APIs</h2>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  {{ range . }}
+                    <a class="chip-button" href="/?api={{ . | urlquery }}">{{ . }}</a>
+                  {{ end }}
+                </div>
               </div>
-            </div>
-          {{ end }}
-          {{ with .Params.tags }}
-            <div class="mt-5">
-              <h2 class="font-serif text-xl text-stone-950">Tags</h2>
-              <div class="mt-3 flex flex-wrap gap-2">
-                {{ range . }}
-                  <a class="chip-button" href="/?tag={{ . | urlquery }}">{{ . }}</a>
-                {{ end }}
+            {{ end }}
+            {{ with .Params.tags }}
+              <div class="mt-5">
+                <h2 class="font-serif text-xl text-stone-950">Tags</h2>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  {{ range . }}
+                    <a class="chip-button" href="/?tag={{ . | urlquery }}">{{ . }}</a>
+                  {{ end }}
+                </div>
               </div>
-            </div>
-          {{ end }}
-          <article class="prose-docs mt-8">{{ .Content }}</article>
-        </div>
-      </article>
-    </div>
-  </main>
-  {{ partial "site-footer.html" . }}
+            {{ end }}
+            <article class="prose-docs mt-8">{{ .Content }}</article>
+          </div>
+        </article>
+      </div>
+    </main>
+    {{ partial "site-footer.html" . }}
+  </div>
+  <script type="module" src="/js/site-search.js"></script>
 {{ end }}
