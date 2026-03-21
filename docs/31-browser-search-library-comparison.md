@@ -182,7 +182,6 @@ Relative to these libraries, Querylight TS sits in a fairly clear place:
 
 - more complex to use, but also more feature rich
 - probably not the thing you would choose for the very largest browser-side corpora, but it should work well with a small corpus
-- easier to use than OpenSearch, Elasticsearch, or Solr because there is no backend to operate
 - an easy way to experiment with semantic and vector search on small sets of documents
 - a strong fit for documentation sites, blogs, magazines, and similar content-heavy websites with a limited amount of material
 
@@ -195,3 +194,7 @@ Relative to FlexSearch, it is less centered on raw lookup speed and more centere
 Relative to Pagefind, it is less specialized for generated static sites and more flexible as an application-level search toolkit.
 
 Relative to Orama, it is narrower in scope but easier to reason about if your focus is local structured retrieval instead of a broader search platform story.
+
+Relative to Solr, Elasticsearch, and OpenSearch, Querylight TS is intentionally much smaller in scope. That comparison does not just apply to Querylight TS; it applies to all of the browser- and local-first options discussed on this page. Full server-side search engines are far more sophisticated in terms of features, algorithms, optimization, and scalability. Querylight TS probably comes the closest to that style of search toolkit among the libraries covered here, but it is still aimed at a very different problem size.
+
+Those systems are the right tools when you need serious search infrastructure at scale. Querylight TS is for the opposite end of the spectrum: situations where a small local corpus needs capable search features without the operational weight of running a full search server, and where those larger systems would be overkill. And beyond Solr, Elasticsearch, and OpenSearch, there are many server-side alternatives that are also designed for far greater scale than anything in this article is targeting.
