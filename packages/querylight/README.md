@@ -31,7 +31,7 @@ npm install @tryformation/querylight-ts
 
 ## Demo
 
-- Cloudflare demo: [https://querylight-ts-demo.pages.dev](https://querylight-ts-demo.pages.dev)
+- Cloudflare demo: [https://querylight.tryformation.com/](https://querylight.tryformation.com/)
 
 The demo site also includes the most comprehensive documentation set for the project and showcases the "Ask the Docs" vector-search experience over that documentation corpus.
 

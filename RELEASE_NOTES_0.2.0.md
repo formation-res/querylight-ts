@@ -475,6 +475,6 @@ Additional commits in the range cover supporting docs, metadata, and release-pre
 
 ## Links
 
-- Demo: https://querylight-ts-demo.pages.dev
+- Demo: https://querylight.tryformation.com/
 - npm package: https://www.npmjs.com/package/@tryformation/querylight-ts
 - Repository: https://github.com/formation-res/querylight-ts

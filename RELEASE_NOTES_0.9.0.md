@@ -4,7 +4,7 @@ Querylight TS is a pure TypeScript in-memory search toolkit for browser and Node
 
 Links:
 
-- Demo: [https://querylight-ts-demo.pages.dev](https://querylight-ts-demo.pages.dev)
+- Demo: [https://querylight.tryformation.com/](https://querylight.tryformation.com/)
 - npm package: [https://www.npmjs.com/package/@tryformation/querylight-ts](https://www.npmjs.com/package/@tryformation/querylight-ts)
 - Repository: [https://github.com/formation-res/querylight-ts](https://github.com/formation-res/querylight-ts)
 

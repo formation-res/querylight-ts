@@ -3,7 +3,7 @@
   "version": "0.9.0",
   "description": "Pure TypeScript in-memory search library for browsers and Node.js.",
   "license": "MIT",
-  "homepage": "https://querylight-ts-demo.pages.dev",
+  "homepage": "https://querylight.tryformation.com/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/formation-res/querylight-ts.git"

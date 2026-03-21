@@ -34,7 +34,7 @@ Querylight TS can cover a wide range of local search problems without forcing yo
 
 Play with the live search demo on Cloudflare Pages:
 
-- [https://querylight-ts-demo.pages.dev](https://querylight-ts-demo.pages.dev)
+- [https://querylight.tryformation.com/](https://querylight.tryformation.com/)
 
 Use it to try the search experience, inspect the indexed documentation, and get a feel for lexical, vector, and structured search behavior in the browser.
 
@@ -156,4 +156,4 @@ This is intended as a broader client-side search toolkit than fuzzy-match-only l
 
 Parts of this project were developed with AI-assisted agentic coding tools, with design, review, and release decisions still made manually.
 
-Most of the documentation was also AI-generated. That serves two practical purposes: it makes it possible to provide comprehensive coverage of the library's broad feature set without spending disproportionate time writing docs by hand, and it provides a large enough corpus for the [demo application](https://querylight-ts-demo.pages.dev) to showcase vector search through the "Ask the Docs" feature.
+Most of the documentation was also AI-generated. That serves two practical purposes: it makes it possible to provide comprehensive coverage of the library's broad feature set without spending disproportionate time writing docs by hand, and it provides a large enough corpus for the [demo application](https://querylight.tryformation.com/) to showcase vector search through the "Ask the Docs" feature.
