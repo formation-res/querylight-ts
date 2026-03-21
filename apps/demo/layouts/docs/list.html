@@ -1,0 +1,20 @@
+{{ define "main" }}
+  {{ partial "site-header.html" (dict "Title" "Documentation" "Params" (dict "description" "Browse the static Querylight TS documentation pages or use the interactive search experience." ) "RelPermalink" "/docs/") }}
+  <main class="mx-auto w-[min(1560px,calc(100vw-24px))]">
+    <section class="surface p-8">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Documentation</p>
+      <h2 class="mt-3 font-serif text-4xl text-stone-950">Static article pages</h2>
+      <p class="mt-4 text-sm leading-7 text-stone-600">Use the interactive search on the home page, or browse documentation entries directly below.</p>
+      <div class="mt-6 grid gap-3">
+        {{ range .Pages.ByTitle }}
+          <a class="doc-card" href="{{ .RelPermalink }}">
+            <span class="text-xs uppercase tracking-[0.12em] text-stone-500">{{ .Params.doc_section }}</span>
+            <h3 class="card-title">{{ .Title }}</h3>
+            <p class="card-summary">{{ .Params.description }}</p>
+          </a>
+        {{ end }}
+      </div>
+    </section>
+  </main>
+  {{ partial "site-footer.html" . }}
+{{ end }}

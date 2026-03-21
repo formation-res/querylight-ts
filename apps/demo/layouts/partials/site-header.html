@@ -1,0 +1,16 @@
+{{ $current := .RelPermalink }}
+<header class="mx-auto w-[min(1560px,calc(100vw-24px))] py-6 lg:py-8">
+  <section class="surface px-5 py-5 sm:px-6">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div class="max-w-3xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-orange-700">Querylight TS Demo</p>
+        <h1 class="mt-3 font-serif text-4xl leading-tight text-stone-950 sm:text-5xl">{{ .Title }}</h1>
+        <p class="mt-3 max-w-2xl text-sm leading-7 text-stone-600 sm:text-base">{{ .Params.description }}</p>
+      </div>
+      <nav class="flex flex-wrap gap-2">
+        <a href="/" class="chip-button {{ if eq $current "/" }}nav-result-active{{ end }}">Docs Search</a>
+        <a href="/dashboard/" class="chip-button {{ if hasPrefix $current "/dashboard/" }}nav-result-active{{ end }}">Dashboard</a>
+      </nav>
+    </div>
+  </section>
+</header>

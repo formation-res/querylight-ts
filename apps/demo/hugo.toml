@@ -1,0 +1,42 @@
+baseURL = "https://querylight.tryformation.com/"
+title = "Querylight TS Demo"
+timeZone = "Europe/Berlin"
+enableRobotsTXT = true
+disableKinds = ["taxonomy", "term"]
+
+[build]
+useResourceCacheWhen = "fallback"
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+  [markup.highlight]
+    codeFences = false
+
+[outputs]
+home = ["HTML", "SearchIndex"]
+
+[outputFormats]
+  [outputFormats.SearchIndex]
+  mediaType = "application/json"
+  baseName = "searchindex"
+  isPlainText = true
+  notAlternative = true
+
+[permalinks]
+docs = "/docs/:sections/:slug/"
+
+[module]
+  [[module.mounts]]
+    source = "content"
+    target = "content"
+  [[module.mounts]]
+    source = "layouts"
+    target = "layouts"
+  [[module.mounts]]
+    source = "static"
+    target = "static"
+  [[module.mounts]]
+    source = "src"
+    target = "assets/src"

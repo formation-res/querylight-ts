@@ -1,0 +1,7 @@
+/content/docs/
+/static/data/
+/static/js/
+/\.hugo_build.lock
+/test-results/
+/public/
+/resources/

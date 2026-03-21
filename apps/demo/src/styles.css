@@ -86,6 +86,10 @@
     @apply prose prose-stone max-w-none prose-headings:font-serif prose-headings:text-stone-950 prose-p:text-stone-700 prose-li:text-stone-700 prose-strong:text-stone-950 prose-code:text-stone-900 prose-code:before:content-none prose-code:after:content-none prose-pre:rounded-3xl prose-pre:border prose-pre:border-stone-900/10 prose-pre:bg-stone-950 prose-pre:shadow-none;
   }
 
+  .prose-docs pre code {
+    @apply text-stone-100;
+  }
+
   .reader-layout {
     @apply grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)_320px] xl:items-start;
   }

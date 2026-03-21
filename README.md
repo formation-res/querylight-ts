@@ -41,7 +41,7 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 ## Workspace Layout
 
 - `packages/querylight`: the library package (`@tryformation/querylight-ts`)
-- `apps/demo`: a browser demo built with Vite
+- `apps/demo`: a Hugo-based static demo site with generated docs content and bundled client-side enhancements
 
 ## Features
 
