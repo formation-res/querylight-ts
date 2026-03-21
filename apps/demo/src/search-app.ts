@@ -879,10 +879,21 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
     WORD_COUNT_HISTOGRAM_INTERVAL,
     selectedIds.size > 0 ? selectedIds : undefined
   );
-  const significantTerms = bodyIndex.getTopSignificantTerms(
-    10,
-    selectedIds.size > 0 ? selectedIds : new Set(context.docs.map((doc) => doc.id))
-  );
+  const hasScopedSearch = trimmed.length > 0 || filters.length > 0 || mustNot.length > 0;
+  const significantTermsSubset =
+    !hasScopedSearch
+      ? null
+      : selectedIds.size > 0 && selectedIds.size <= Math.floor(context.docs.length * 0.9)
+        ? selectedIds
+        : new Set(visibleHits.map(([id]) => id));
+  const significantTerms =
+    significantTermsSubset && significantTermsSubset.size > 0
+      ? Object.fromEntries(
+          Object.entries(bodyIndex.getTopSignificantTerms(20, significantTermsSubset))
+            .filter(([term, [score, docCount]]) => !/^\d+$/.test(term) && score > 1.05 && docCount > 1)
+            .slice(0, 10)
+        )
+      : {};
   const responseTimeMs = Math.max(1, Math.round(performance.now() - startedAt));
 
   return {

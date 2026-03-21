@@ -158,3 +158,20 @@ test("all documentation view paginates beyond the first 20 docs", async ({ page 
   await expect(resultCount).toContainText(/offset 20/);
   await expect(resultCount).toContainText(/showing 21-40/);
 });
+
+test("all documentation view does not show significant term suggestions", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.locator("#facet-sections")).toContainText("No term suggestions.");
+  await expect(page.locator('#facet-sections [data-example]')).toHaveCount(0);
+});
+
+test("narrower text queries still show significant term suggestions", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator("#query").fill("semantic");
+  await page.locator("#submit-query").click();
+
+  await expect(page.locator("#result-count")).toContainText(/matches/);
+  await expect.poll(async () => page.locator('#facet-sections [data-example]').count()).toBeGreaterThan(0);
+});
