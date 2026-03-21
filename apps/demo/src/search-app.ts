@@ -392,6 +392,10 @@ function normalizeDocUrl(pathname: string): string {
   return pathname.endsWith("/") ? pathname : `${pathname}/`;
 }
 
+function isSearchRoute(pathname: string): boolean {
+  return pathname === "/" || pathname.startsWith("/docs/");
+}
+
 function rewriteDocMarkdownLinks(markdownSource: string, sourcePath: string): string {
   return markdownSource.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text: string, href: string) => {
     const resolvedHref = resolveDocLink(sourcePath, href);
@@ -2073,9 +2077,16 @@ function wireApp(context: RuntimeContext): () => void {
       const activeDoc = activeDocId ? context.byId.get(activeDocId) : null;
       const normalizedHref = activeDoc ? resolveDocLink(activeDoc.path, rawHref) : rawHref;
       const targetUrl = new URL(normalizedHref, window.location.origin);
-      if (targetUrl.origin === window.location.origin && targetUrl.pathname.startsWith("/docs/")) {
+      if (targetUrl.origin === window.location.origin && isSearchRoute(targetUrl.pathname)) {
+        if (targetUrl.pathname === "/") {
+          event.preventDefault();
+          window.history.pushState({ view: "search" }, "", `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`);
+          syncViewFromLocation();
+          return;
+        }
+
         const doc = context.byUrl.get(normalizeDocUrl(targetUrl.pathname));
-        if (doc) {
+        if (doc && targetUrl.pathname.startsWith("/docs/")) {
           event.preventDefault();
           window.history.pushState({ view: "detail", docId: doc.id }, "", `${normalizeDocUrl(targetUrl.pathname)}${targetUrl.hash}`);
           syncViewFromLocation();

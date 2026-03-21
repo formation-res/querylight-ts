@@ -26,8 +26,7 @@ const baseConfig = {
 await build({
   ...baseConfig,
   entryPoints: [
-    path.resolve(appDir, "src/site-search.ts"),
-    path.resolve(appDir, "src/site-dashboard.ts")
+    path.resolve(appDir, "src/site-app.ts")
   ],
   outdir: path.resolve(appDir, "static/js")
 });

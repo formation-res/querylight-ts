@@ -81,6 +81,42 @@ test("doc links navigate without triggering a hard reload", async ({ page }) => 
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem("querylight-hard-nav"))).toBeNull();
 });
 
+test("docs search header link navigates home without triggering a hard reload", async ({ page }) => {
+  await page.goto("/docs/overview/what-querylight-ts-covers/");
+
+  await expect(page.locator("#center-view")).toContainText("What Querylight TS Covers");
+  await page.evaluate(() => {
+    window.sessionStorage.removeItem("querylight-hard-nav");
+    window.addEventListener("beforeunload", () => {
+      window.sessionStorage.setItem("querylight-hard-nav", "1");
+    }, { once: true });
+  });
+
+  await page.locator("#demo-shell").getByRole("link", { name: "Docs Search" }).click();
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator("#center-view")).toContainText("Explore the docs");
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem("querylight-hard-nav"))).toBeNull();
+});
+
+test("dashboard header link navigates to docs search without triggering a hard reload", async ({ page }) => {
+  await page.goto("/dashboard/");
+
+  await expect(page.locator("#app")).toContainText("Querylight TS Dashboard Demo");
+  await page.evaluate(() => {
+    window.sessionStorage.removeItem("querylight-hard-nav");
+    window.addEventListener("beforeunload", () => {
+      window.sessionStorage.setItem("querylight-hard-nav", "1");
+    }, { once: true });
+  });
+
+  await page.locator("#app").getByRole("link", { name: "Docs Search" }).click();
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator("#center-view")).toContainText("Explore the docs");
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem("querylight-hard-nav"))).toBeNull();
+});
+
 test("search results support paging and expose offset metadata", async ({ page }) => {
   await page.goto("/");
 
