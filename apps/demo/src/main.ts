@@ -54,7 +54,7 @@ type DocEntry = {
   tags: string[];
   apis: string[];
   level: "foundation" | "querying" | "indexing" | "advanced";
-  order: string;
+  order: number;
   markdown: string;
   body: string;
   examples: string[];
@@ -198,7 +198,20 @@ const tagAnalyzer = new Analyzer([], new KeywordTokenizer());
 const fuzzyAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3)]);
 const edgeAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilter(2, 6)]);
 const SEARCH_INPUT_DEBOUNCE_MS = 150;
-const DOC_SECTION_ORDER = ["Overview", "Analysis", "Queries", "Discovery", "Ranking", "Indexing", "Advanced", "Operations"];
+const DOC_SECTION_ORDER = [
+  "Overview",
+  "Schema",
+  "Analysis",
+  "Lexical Querying",
+  "Ranking",
+  "Discovery",
+  "Indexing",
+  "Other Features",
+  "Guides",
+  "Demo Internals",
+  "Operations"
+];
+const TOC_SECTION_STORAGE_KEY = "querylight-demo:toc-sections";
 const PACKAGE_NAME = packageMeta.name;
 const PACKAGE_VERSION = packageMeta.version;
 const REPOSITORY_URL = packageMeta.repository.url.replace(/^git\+/, "").replace(/\.git$/, "");
@@ -438,7 +451,13 @@ function createSemanticRuntime(semanticPayload: SemanticPayload): SemanticRuntim
 }
 
 function createRuntimeContext(demoData: DemoDataPayload): RuntimeContext {
-  const docs = demoData.docs;
+  const docs = [...demoData.docs].sort((left, right) => {
+    const leftSectionIndex = DOC_SECTION_ORDER.indexOf(left.section);
+    const rightSectionIndex = DOC_SECTION_ORDER.indexOf(right.section);
+    const normalizedLeftSectionIndex = leftSectionIndex === -1 ? DOC_SECTION_ORDER.length : leftSectionIndex;
+    const normalizedRightSectionIndex = rightSectionIndex === -1 ? DOC_SECTION_ORDER.length : rightSectionIndex;
+    return normalizedLeftSectionIndex - normalizedRightSectionIndex || left.order - right.order || left.title.localeCompare(right.title);
+  });
   const sectionSet = new Set(docs.map((doc) => doc.section));
   const sections = DOC_SECTION_ORDER.filter((section) => sectionSet.has(section)).concat(
     [...sectionSet].filter((section) => !DOC_SECTION_ORDER.includes(section))
@@ -462,9 +481,26 @@ function createNavSections(context: RuntimeContext): NavSection[] {
   return context.sections
     .map((section) => ({
       name: section,
-      docs: context.docs.filter((doc) => doc.section === section)
+      docs: context.docs.filter((doc) => doc.section === section).sort((left, right) => left.order - right.order || left.title.localeCompare(right.title))
     }))
     .filter((section) => section.docs.length > 0);
+}
+
+function readCollapsedTocSections(): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(TOC_SECTION_STORAGE_KEY);
+    if (!raw) {
+      return new Set();
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed.filter((value): value is string => typeof value === "string")) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function writeCollapsedTocSections(sections: Set<string>): void {
+  window.localStorage.setItem(TOC_SECTION_STORAGE_KEY, JSON.stringify([...sections]));
 }
 
 let browserEmbeddingExtractorPromise: Promise<(value: string) => Promise<number[]>> | null = null;
@@ -786,10 +822,13 @@ function createShell(context: RuntimeContext): void {
               ${navSections
                 .map(
                   (section) => `
-                    <section>
-                      <h3 class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">${escapeHtml(section.name)}</h3>
-                      <div class="mt-3 grid gap-2" data-section="${escapeHtml(section.name)}"></div>
-                    </section>
+                    <details class="toc-section" data-section-shell="${escapeHtml(section.name)}" open>
+                      <summary class="toc-section-summary">
+                        <span class="toc-section-title">${escapeHtml(section.name)}</span>
+                        <span class="toc-section-count" data-section-count="${escapeHtml(section.name)}">${section.docs.length}/${section.docs.length}</span>
+                      </summary>
+                      <div class="mt-3 grid gap-2" data-section-content="${escapeHtml(section.name)}"></div>
+                    </details>
                   `
                 )
                 .join("")}
@@ -964,25 +1003,30 @@ function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNo
     : `${context.docs.length} pages available`;
 
   createNavSections(context).forEach((section) => {
-    const sectionNode = tocNode.querySelector<HTMLDivElement>(`[data-section="${CSS.escape(section.name)}"]`);
-    if (!sectionNode) {
+    const sectionShell = tocNode.querySelector<HTMLElement>(`[data-section-shell="${CSS.escape(section.name)}"]`);
+    const sectionNode = tocNode.querySelector<HTMLDivElement>(`[data-section-content="${CSS.escape(section.name)}"]`);
+    const countNode = tocNode.querySelector<HTMLElement>(`[data-section-count="${CSS.escape(section.name)}"]`);
+    if (!sectionShell || !sectionNode || !countNode) {
       return;
     }
+    const activeCount = section.docs.filter((doc) => enabledIds.has(doc.id)).length;
+    sectionShell.dataset.hasActive = activeCount > 0 ? "true" : "false";
+    countNode.textContent = `${activeCount}/${section.docs.length}`;
 
     sectionNode.innerHTML = section.docs
       .map((doc) => {
         const isActive = doc.id === activeDocId;
         const isEnabled = enabledIds.has(doc.id) || isActive;
+        const meta = [doc.level, ...doc.tags.slice(0, 2)].join(" · ");
         return `
           <button
             class="toc-link ${isActive ? "toc-link-active" : ""} ${!isEnabled ? "toc-link-disabled" : ""}"
             data-doc="${escapeHtml(doc.id)}"
             ${isEnabled ? "" : "disabled"}
           >
-            <span class="toc-link-order">${escapeHtml(doc.order)}</span>
             <span class="min-w-0 toc-link-body">
               <span class="toc-link-title">${escapeHtml(doc.title)}</span>
-              <span class="toc-link-meta">${escapeHtml(doc.level)}</span>
+              <span class="toc-link-meta">${escapeHtml(meta)}</span>
             </span>
           </button>
         `;
@@ -1403,6 +1447,23 @@ function wireApp(context: RuntimeContext): void {
   ) {
     throw new Error("app nodes not found");
   }
+
+  const collapsedSections = readCollapsedTocSections();
+  tocNode.querySelectorAll<HTMLDetailsElement>("[data-section-shell]").forEach((sectionNode) => {
+    const sectionName = sectionNode.dataset.sectionShell ?? "";
+    sectionNode.open = !collapsedSections.has(sectionName);
+    sectionNode.addEventListener("toggle", () => {
+      if (!sectionName) {
+        return;
+      }
+      if (sectionNode.open) {
+        collapsedSections.delete(sectionName);
+      } else {
+        collapsedSections.add(sectionName);
+      }
+      writeCollapsedTocSections(collapsedSections);
+    });
+  });
 
   const setMobilePanel = (panel: "none" | "toc" | "filters") => {
     readerLayout.dataset.mobilePanel = panel;

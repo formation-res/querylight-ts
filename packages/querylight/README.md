@@ -11,6 +11,7 @@ It is one of the few browser-first TypeScript search toolkits that combines stru
 For the full project README, examples, and all documentation, see:
 
 - Full project README: [https://github.com/formation-res/querylight-ts/blob/main/README.md](https://github.com/formation-res/querylight-ts/blob/main/README.md)
+- Documentation index: [https://github.com/formation-res/querylight-ts/blob/main/docs/index.md](https://github.com/formation-res/querylight-ts/blob/main/docs/index.md)
 
 ## Use Cases
 
@@ -41,10 +42,11 @@ The demo site also includes the most comprehensive documentation set for the pro
 
 ## Documentation
 
-- Introduction: [https://github.com/formation-res/querylight-ts/blob/main/docs/00-introducing-querylight-ts.md](https://github.com/formation-res/querylight-ts/blob/main/docs/00-introducing-querylight-ts.md)
-- Overview: [https://github.com/formation-res/querylight-ts/blob/main/docs/01-overview.md](https://github.com/formation-res/querylight-ts/blob/main/docs/01-overview.md)
-- Getting started: [https://github.com/formation-res/querylight-ts/blob/main/docs/16-getting-started.md](https://github.com/formation-res/querylight-ts/blob/main/docs/16-getting-started.md)
-- Highlighting: [https://github.com/formation-res/querylight-ts/blob/main/docs/17-highlighting.md](https://github.com/formation-res/querylight-ts/blob/main/docs/17-highlighting.md)
-- Vector search: [https://github.com/formation-res/querylight-ts/blob/main/docs/10-vector-search.md](https://github.com/formation-res/querylight-ts/blob/main/docs/10-vector-search.md)
-- Vector rescoring: [https://github.com/formation-res/querylight-ts/blob/main/docs/32-vector-rescoring.md](https://github.com/formation-res/querylight-ts/blob/main/docs/32-vector-rescoring.md)
-- Comparison with other browser search libraries: [https://github.com/formation-res/querylight-ts/blob/main/docs/31-browser-search-library-comparison.md](https://github.com/formation-res/querylight-ts/blob/main/docs/31-browser-search-library-comparison.md)
+- Documentation index: [https://github.com/formation-res/querylight-ts/blob/main/docs/index.md](https://github.com/formation-res/querylight-ts/blob/main/docs/index.md)
+- Introduction: [https://github.com/formation-res/querylight-ts/blob/main/docs/overview/introduction.md](https://github.com/formation-res/querylight-ts/blob/main/docs/overview/introduction.md)
+- Overview: [https://github.com/formation-res/querylight-ts/blob/main/docs/overview/what-querylight-ts-covers.md](https://github.com/formation-res/querylight-ts/blob/main/docs/overview/what-querylight-ts-covers.md)
+- Getting started: [https://github.com/formation-res/querylight-ts/blob/main/docs/overview/getting-started-with-browser-search.md](https://github.com/formation-res/querylight-ts/blob/main/docs/overview/getting-started-with-browser-search.md)
+- Highlighting: [https://github.com/formation-res/querylight-ts/blob/main/docs/features/highlighting-with-querylight-ts.md](https://github.com/formation-res/querylight-ts/blob/main/docs/features/highlighting-with-querylight-ts.md)
+- Vector search: [https://github.com/formation-res/querylight-ts/blob/main/docs/features/approximate-nearest-neighbor-vector-search.md](https://github.com/formation-res/querylight-ts/blob/main/docs/features/approximate-nearest-neighbor-vector-search.md)
+- Vector rescoring: [https://github.com/formation-res/querylight-ts/blob/main/docs/features/vector-rescoring-for-faster-hybrid-search.md](https://github.com/formation-res/querylight-ts/blob/main/docs/features/vector-rescoring-for-faster-hybrid-search.md)
+- Comparison with other browser search libraries: [https://github.com/formation-res/querylight-ts/blob/main/docs/overview/browser-search-library-comparison.md](https://github.com/formation-res/querylight-ts/blob/main/docs/overview/browser-search-library-comparison.md)

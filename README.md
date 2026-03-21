@@ -9,7 +9,12 @@ Querylight TS is a lightweight in-process search toolkit for static sites, brows
 
 In practice, that means it is an easy way to build semantic-search features locally without introducing a separate vector database or search service. You can use it to power search experiences such as "Ask the Docs", related-article suggestions, semantic reranking on top of lexical results, typo-tolerant content discovery, faceted navigation, and map- or region-aware retrieval.
 
-It is one of the few browser-first TypeScript search toolkits that brings together structured search-engine-style querying and lightweight vector search in the same local package. Read the full introduction in [`docs/00-introducing-querylight-ts.md`](docs/00-introducing-querylight-ts.md).
+It is one of the few browser-first TypeScript search toolkits that brings together structured search-engine-style querying and lightweight vector search in the same local package.
+
+Project links:
+
+- Documentation index: [`docs/index.md`](docs/index.md)
+- Project introduction: [`docs/overview/introduction.md`](docs/overview/introduction.md)
 
 ## Use Cases
 
@@ -56,33 +61,34 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 
 ## Documentation
 
-- [Introducing Querylight TS](docs/00-introducing-querylight-ts.md)
-- [Comparing Querylight TS to other browser search libraries](docs/31-browser-search-library-comparison.md)
-- [Getting started with browser search](docs/16-getting-started.md)
-- [Documentation overview](docs/01-overview.md)
-- [Analyzer and tokenization deep dive](docs/21-analyzer-deep-dive.md)
-- [Choosing a schema for search](docs/20-schema-design.md)
-- [How to build autocomplete](docs/22-how-to-build-autocomplete.md)
-- [How to build faceted navigation](docs/23-how-to-build-faceted-navigation.md)
-- [Relevance tuning with BM25, TF-IDF, and RRF](docs/24-relevance-tuning.md)
-- [DisMaxQuery for best-field scoring](docs/33-dis-max.md)
-- [BoostingQuery for soft demotion](docs/34-boosting.md)
-- [WildcardQuery for term-level patterns](docs/35-wildcard-query.md)
-- [RegexpQuery for regex term matching](docs/36-regexp-query.md)
-- [DistanceFeatureQuery for recency and closeness boosts](docs/37-distance-feature-query.md)
-- [RankFeatureQuery for numeric relevance signals](docs/38-rank-feature-query.md)
-- [ScriptQuery for custom JavaScript filters](docs/39-script-query.md)
-- [ScriptScoreQuery for custom JavaScript scoring](docs/40-script-score-query.md)
-- [NumericFieldIndex and DateFieldIndex](docs/41-numeric-and-date-fields.md)
-- [Document chunking strategies](docs/25-document-chunking-strategies.md)
-- [Serialization, hydration, and shipping indexes](docs/26-shipping-indexes.md)
-- [Performance and memory tuning](docs/27-performance-and-memory-tuning.md)
-- [Testing search behavior](docs/28-testing-search-behavior.md)
-- [Real-world recipes](docs/29-real-world-recipes.md)
-- [Other work related to Querylight TS](docs/30-other-related-work.md)
-- [Ask the Docs end to end](docs/18-ask-the-docs.md)
-- [How the tag aggregations sidebar works](docs/19-tag-aggregations-sidebar.md)
-- [Highlighting with Querylight TS](docs/17-highlighting.md)
+- [Documentation index](docs/index.md)
+- [Introducing Querylight TS](docs/overview/introduction.md)
+- [Comparing Querylight TS to other browser search libraries](docs/overview/browser-search-library-comparison.md)
+- [Getting started with browser search](docs/overview/getting-started-with-browser-search.md)
+- [Documentation overview](docs/overview/what-querylight-ts-covers.md)
+- [Analyzer and tokenization deep dive](docs/analysis/analyzer-and-tokenization-deep-dive.md)
+- [Choosing a schema for search](docs/schema/choosing-a-schema-for-search.md)
+- [How to build autocomplete](docs/guides/how-to-build-autocomplete.md)
+- [How to build faceted navigation](docs/guides/how-to-build-faceted-navigation.md)
+- [Relevance tuning with BM25, TF-IDF, and RRF](docs/ranking/relevance-tuning.md)
+- [DisMaxQuery for best-field scoring](docs/lexical-querying/dis-max-query.md)
+- [BoostingQuery for soft demotion](docs/lexical-querying/boosting-query.md)
+- [WildcardQuery for term-level patterns](docs/lexical-querying/wildcard-query.md)
+- [RegexpQuery for regex term matching](docs/lexical-querying/regexp-query.md)
+- [DistanceFeatureQuery for recency and closeness boosts](docs/ranking/distance-feature-query.md)
+- [RankFeatureQuery for numeric relevance signals](docs/ranking/rank-feature-query.md)
+- [ScriptQuery for custom JavaScript filters](docs/lexical-querying/script-query.md)
+- [ScriptScoreQuery for custom JavaScript scoring](docs/ranking/script-score-query.md)
+- [NumericFieldIndex and DateFieldIndex](docs/indexing/numeric-and-date-fields.md)
+- [Document chunking strategies](docs/features/document-chunking-strategies.md)
+- [Serialization, hydration, and shipping indexes](docs/indexing/serialization-hydration-and-shipping-indexes.md)
+- [Performance and memory tuning](docs/operations/performance-and-memory-tuning.md)
+- [Testing search behavior](docs/operations/testing-search-behavior.md)
+- [Real-world recipes](docs/guides/real-world-recipes.md)
+- [Other work related to Querylight TS](docs/overview/other-work-related-to-querylight-ts.md)
+- [Ask the Docs end to end](docs/demo/ask-the-docs-end-to-end.md)
+- [How the tag aggregations sidebar works](docs/demo/tag-aggregations-sidebar.md)
+- [Highlighting with Querylight TS](docs/features/highlighting-with-querylight-ts.md)
 
 ## Install
 
@@ -144,7 +150,7 @@ npm run dev
 
 ## Positioning
 
-This is intended as a broader client-side search toolkit than fuzzy-match-only libraries such as `fuse.js`: it combines ranking, boolean logic, multi-field search, phrase search, prefixes, aggregations, vector search, and geo support behind one small pure TypeScript API. For a fuller comparison with `fuse.js`, Lunr, MiniSearch, FlexSearch, Pagefind, and Orama, see [the comparison article](docs/31-browser-search-library-comparison.md).
+This is intended as a broader client-side search toolkit than fuzzy-match-only libraries such as `fuse.js`: it combines ranking, boolean logic, multi-field search, phrase search, prefixes, aggregations, vector search, and geo support behind one small pure TypeScript API. For a fuller comparison with `fuse.js`, Lunr, MiniSearch, FlexSearch, Pagefind, and Orama, see [the comparison article](docs/overview/browser-search-library-comparison.md).
 
 ## Project Notes
 

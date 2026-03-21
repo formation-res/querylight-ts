@@ -1,0 +1,48 @@
+---
+id: simple-text-search
+section: Other Features
+title: SimpleTextSearch for Plain JSON Documents
+summary: A beginner path that builds a usable index from plain objects and runs a good-enough default search.
+tags: [simple, search, fuzzy, prefix, beginner]
+apis: [createSimpleTextSearchIndex, simpleTextSearch, DocumentIndex]
+level: foundation
+order: 10
+---
+
+# SimpleTextSearch for Plain JSON Documents
+
+If you want a practical default without assembling your own `BoolQuery`, Querylight TS can build a search bundle from plain JSON documents and run a broader lexical + fuzzy search for you.
+
+## Beginner setup
+
+```ts
+import { createSimpleTextSearchIndex, simpleTextSearch } from "@tryformation/querylight-ts";
+
+const search = createSimpleTextSearchIndex({
+  documents: [
+    {
+      id: "range-filters",
+      title: "RangeQuery Over Lexical Fields",
+      description: "Use lexical ranges over sortable string values.",
+      body: "RangeQuery compares terms lexically."
+    }
+  ],
+  primaryFields: ["title"],
+  secondaryFields: ["description", "body"]
+});
+
+const hits = simpleTextSearch(search, { query: "range fi", limit: 5 });
+```
+
+## What it does
+
+- Indexes the declared primary and secondary fields.
+- Builds default prefix support for incomplete queries.
+- Builds a fuzzy side index for typo-tolerant matching.
+- Fuses the lexical and fuzzy rankings with reciprocal rank fusion.
+
+The returned bundle also exposes the underlying `DocumentIndex` so you can graduate to custom queries later without re-indexing your data.
+
+If you need highlighting, keep retrieval and highlighting separate: use `simpleTextSearch` to rank results, then call `documentIndex.highlight(...)` on the returned ids for fields such as `title` and `body`.
+
+For a fuller walkthrough, including the equivalent manual setup and a build-time browser architecture, see [Getting Started with Browser Search](./../overview/getting-started-with-browser-search.md). For the offset-based highlighter API, see [Highlighting with Querylight TS](./highlighting-with-querylight-ts.md).

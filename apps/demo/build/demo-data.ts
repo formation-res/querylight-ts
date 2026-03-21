@@ -34,7 +34,7 @@ export type DocEntry = {
   tags: string[];
   apis: string[];
   level: "foundation" | "querying" | "indexing" | "advanced";
-  order: string;
+  order: number;
   markdown: string;
   body: string;
   examples: string[];
@@ -101,9 +101,9 @@ function toDocEntry(filePath: string, raw: string): DocEntry {
   const id = metadata.id;
   const section = metadata.section;
   const level = metadata.level as DocEntry["level"];
-  const order = metadata.order;
+  const order = Number(metadata.order);
 
-  if (!title || !summary || !id || !section || !level || !order) {
+  if (!title || !summary || !id || !section || !level || Number.isNaN(order)) {
     throw new Error(`invalid doc metadata in ${filePath}`);
   }
 
@@ -123,6 +123,16 @@ function toDocEntry(filePath: string, raw: string): DocEntry {
   };
 }
 
+function collectMarkdownFiles(dirPath: string): string[] {
+  return fs.readdirSync(dirPath, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      return collectMarkdownFiles(fullPath);
+    }
+    return entry.isFile() && entry.name.endsWith(".md") ? [fullPath] : [];
+  });
+}
+
 function toDocument(entry: DocEntry): Document {
   // Keep metadata in dedicated fields so the demo can mix free-text search,
   // facets, suggestions, and API/tag navigation from one index payload.
@@ -139,7 +149,7 @@ function toDocument(entry: DocEntry): Document {
       examples: entry.examples,
       combined: [entry.title, entry.summary, entry.body, entry.tags.join(" "), entry.apis.join(" ")].join(" "),
       suggest: [entry.title, entry.tags.join(" "), entry.apis.join(" ")].join(" "),
-      order: [entry.order]
+      order: [String(entry.order)]
     }
   };
 }
@@ -275,15 +285,12 @@ function cosineSimilarity(left: number[], right: number[]): number {
 
 export async function buildDemoDataPayload(rootDir: string): Promise<DemoDataPayload> {
   const docsDir = path.resolve(rootDir, "docs");
-  const docs = fs
-    .readdirSync(docsDir)
-    .filter((filename) => filename.endsWith(".md"))
-    .map((filename) => {
-      const fullPath = path.join(docsDir, filename);
+  const docs = collectMarkdownFiles(docsDir)
+    .map((fullPath) => {
       const raw = fs.readFileSync(fullPath, "utf8");
-      return toDocEntry(path.posix.join("docs", filename), raw);
+      return toDocEntry(path.posix.join("docs", path.relative(docsDir, fullPath).split(path.sep).join("/")), raw);
     })
-    .sort((left, right) => left.order.localeCompare(right.order));
+    .sort((left, right) => left.order - right.order || left.title.localeCompare(right.title));
 
   const semantic = await createSemanticPayload(docs);
 

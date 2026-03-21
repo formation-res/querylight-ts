@@ -22,7 +22,7 @@ import {
 } from "../packages/querylight/dist/index.js";
 
 const DOCS_DIR = new URL("../docs/", import.meta.url);
-const DOC_SECTION_ORDER = ["Overview", "Analysis", "Queries", "Discovery", "Ranking", "Indexing", "Advanced", "Operations"];
+const DOC_SECTION_ORDER = ["Overview", "Schema", "Analysis", "Lexical Querying", "Ranking", "Discovery", "Indexing", "Other Features", "Guides", "Demo Internals", "Operations"];
 const SEARCH_INPUT_DEBOUNCE_MS = 150;
 
 const tagAnalyzer = new Analyzer([], new KeywordTokenizer());
@@ -36,7 +36,7 @@ const queries = [
   { label: "hybrid:api", query: "geo polygon", mode: "hybrid", operation: OP.AND, prefix: false, ranking: RankingAlgorithm.BM25, tag: null, section: null, excludeAdvanced: false },
   { label: "match:bm25", query: "bm25 ranking", mode: "match", operation: OP.AND, prefix: false, ranking: RankingAlgorithm.BM25, tag: null, section: null, excludeAdvanced: false },
   { label: "phrase:serialization", query: "\"index state serialization\"", mode: "phrase", operation: OP.AND, prefix: false, ranking: RankingAlgorithm.BM25, tag: null, section: null, excludeAdvanced: false },
-  { label: "facet:querying", query: "query", mode: "hybrid", operation: OP.OR, prefix: true, ranking: RankingAlgorithm.BM25, tag: null, section: "Queries", excludeAdvanced: false },
+  { label: "facet:querying", query: "query", mode: "hybrid", operation: OP.OR, prefix: true, ranking: RankingAlgorithm.BM25, tag: null, section: "Lexical Querying", excludeAdvanced: false },
   { label: "vector", query: "nearest neighbor embeddings", mode: "vector", operation: OP.AND, prefix: false, ranking: RankingAlgorithm.BM25, tag: null, section: null, excludeAdvanced: false },
   { label: "all:no-advanced", query: "", mode: "all", operation: OP.AND, prefix: false, ranking: RankingAlgorithm.BM25, tag: null, section: null, excludeAdvanced: true }
 ];
@@ -101,7 +101,7 @@ function toDocEntry(filePath, raw) {
     tags: parseStringArray(metadata.tags ?? ""),
     apis: parseStringArray(metadata.apis ?? ""),
     level: metadata.level,
-    order: metadata.order,
+    order: Number(metadata.order),
     markdown: markdownBody,
     body: stripMarkdown(markdownBody),
     examples: extractCodeBlocks(markdownBody),
@@ -109,16 +109,35 @@ function toDocEntry(filePath, raw) {
   };
 }
 
+async function collectMarkdownFiles(dirUrl) {
+  const entries = await fs.readdir(dirUrl, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const entryUrl = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, dirUrl);
+    if (entry.isDirectory()) {
+      files.push(...(await collectMarkdownFiles(entryUrl)));
+    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      files.push(entryUrl);
+    }
+  }
+  return files;
+}
+
 async function loadDocs() {
-  const filenames = (await fs.readdir(DOCS_DIR)).filter((file) => file.endsWith(".md")).sort();
+  const filenames = await collectMarkdownFiles(DOCS_DIR);
   const docs = await Promise.all(
-    filenames.map(async (filename) => {
-      const filePath = new URL(filename, DOCS_DIR);
+    filenames.map(async (filePath) => {
       const raw = await fs.readFile(filePath, "utf8");
-      return toDocEntry(path.basename(filename), raw);
+      return toDocEntry(path.relative(new URL("../", import.meta.url).pathname, filePath.pathname), raw);
     })
   );
-  return docs.sort((left, right) => left.order.localeCompare(right.order));
+  return docs.sort((left, right) => {
+    const leftSectionIndex = DOC_SECTION_ORDER.indexOf(left.section);
+    const rightSectionIndex = DOC_SECTION_ORDER.indexOf(right.section);
+    const normalizedLeftSectionIndex = leftSectionIndex === -1 ? DOC_SECTION_ORDER.length : leftSectionIndex;
+    const normalizedRightSectionIndex = rightSectionIndex === -1 ? DOC_SECTION_ORDER.length : rightSectionIndex;
+    return normalizedLeftSectionIndex - normalizedRightSectionIndex || left.order - right.order || left.title.localeCompare(right.title);
+  });
 }
 
 function toDocument(entry) {
@@ -135,7 +154,7 @@ function toDocument(entry) {
       examples: entry.examples,
       combined: [entry.title, entry.summary, entry.body, entry.tags.join(" "), entry.apis.join(" "), entry.examples.join(" ")].join(" "),
       suggest: [entry.title, entry.tags.join(" "), entry.apis.join(" ")].join(" "),
-      order: [entry.order]
+      order: [String(entry.order)]
     }
   };
 }

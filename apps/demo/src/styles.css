@@ -167,7 +167,7 @@
   }
 
   .toc-link {
-    @apply flex min-w-0 w-full items-start gap-3 overflow-hidden rounded-2xl border border-transparent px-3 py-3 text-left text-stone-700 transition hover:border-orange-700/30 hover:bg-white/70 hover:text-stone-950;
+    @apply flex min-w-0 w-full items-start overflow-hidden rounded-2xl border border-transparent px-3 py-3 text-left text-stone-700 transition hover:border-orange-700/30 hover:bg-white/70 hover:text-stone-950;
   }
 
   .toc-link-active {
@@ -178,8 +178,24 @@
     @apply cursor-not-allowed opacity-45 hover:border-transparent hover:bg-transparent hover:text-stone-700;
   }
 
-  .toc-link-order {
-    @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-stone-900/10 bg-white/80 font-mono text-xs text-stone-500;
+  .toc-section {
+    @apply rounded-[24px] border border-stone-900/8 bg-stone-50/40 px-3 py-3;
+  }
+
+  .toc-section-summary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-2 py-1.5 text-left;
+  }
+
+  .toc-section-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .toc-section-title {
+    @apply text-xs font-semibold uppercase tracking-[0.18em] text-stone-600;
+  }
+
+  .toc-section-count {
+    @apply rounded-full border border-stone-900/10 bg-white/90 px-2.5 py-1 font-mono text-[11px] text-stone-500;
   }
 
   .doc-card {
