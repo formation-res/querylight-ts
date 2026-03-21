@@ -99,7 +99,17 @@ export interface GeoFieldIndexState extends IndexStateBase {
   documents: Record<string, string>;
 }
 
-export type IndexState = TextFieldIndexState | GeoFieldIndexState | VectorFieldIndexState;
+export interface NumericFieldIndexState extends IndexStateBase {
+  kind: "NumericFieldIndexState";
+  documents: Record<string, number[]>;
+}
+
+export interface DateFieldIndexState extends IndexStateBase {
+  kind: "DateFieldIndexState";
+  documents: Record<string, number[]>;
+}
+
+export type IndexState = TextFieldIndexState | GeoFieldIndexState | NumericFieldIndexState | DateFieldIndexState | VectorFieldIndexState;
 
 export interface DocumentIndexState {
   documents: Record<string, Document>;

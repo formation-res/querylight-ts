@@ -33,6 +33,7 @@ export type { TrieNodeState } from "./trie";
 
 export {
   type Bm25Config,
+  type DateFieldIndexState,
   type Document,
   type DocumentIndexState,
   type FieldIndex,
@@ -48,6 +49,7 @@ export {
   type Hits,
   type IndexState,
   type IndexStateBase,
+  type NumericFieldIndexState,
   QueryContext,
   RankingAlgorithm,
   type ReciprocalRankFusionOptions,
@@ -63,10 +65,13 @@ export {
   reciprocalRankFusion
 } from "./shared";
 
-export { DocumentIndex, GeoFieldIndex, TextFieldIndex } from "./document-index";
+export { DateFieldIndex, DocumentIndex, GeoFieldIndex, NumericFieldIndex, TextFieldIndex } from "./document-index";
 
 export {
   BoolQuery,
+  BoostingQuery,
+  DisMaxQuery,
+  DistanceFeatureQuery,
   ExistsQuery,
   GeoPointQuery,
   GeoPolygonQuery,
@@ -76,12 +81,27 @@ export {
   MatchQuery,
   OP,
   PrefixQuery,
+  RankFeatureQuery,
   RangeQuery,
+  RegexpQuery,
+  ScriptQuery,
+  ScriptScoreQuery,
   TermQuery,
   TermsQuery,
+  WildcardQuery,
   VectorRescoreQuery
 } from "./query";
-export type { VectorRescoreOptions } from "./query";
+export type {
+  RankFeatureLinearOptions,
+  RankFeatureLogOptions,
+  RankFeatureOptions,
+  RankFeatureSaturationOptions,
+  RankFeatureSigmoidOptions,
+  ScriptExecutionContext,
+  ScriptFilter,
+  ScriptScore,
+  VectorRescoreOptions
+} from "./query";
 export type { Query } from "./shared";
 
 export {

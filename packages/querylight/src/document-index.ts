@@ -13,6 +13,7 @@ import {
   type Document,
   type DocumentIndexState,
   type FieldIndex,
+  type DateFieldIndexState,
   type GeoFieldIndexState,
   type HighlightClause,
   type HighlightFieldResult,
@@ -23,6 +24,7 @@ import {
   type Hit,
   type Hits,
   type IndexState,
+  type NumericFieldIndexState,
   QueryContext,
   RankingAlgorithm,
   type SearchRequest,
@@ -49,6 +51,51 @@ class TfIdfRankingStrategy implements RankingStrategy {
       })
       .sort((a, b) => b[1] - a[1]);
   }
+}
+
+function parseNumericValue(value: string | number | Date): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  const asNumber = Number(value);
+  if (Number.isFinite(asNumber)) {
+    return asNumber;
+  }
+  const asDate = Date.parse(value);
+  return Number.isFinite(asDate) ? asDate : undefined;
+}
+
+function filterNumericRange(
+  documents: Record<string, number[]>,
+  {
+    lt,
+    lte,
+    gt,
+    gte
+  }: {
+    lt?: string;
+    lte?: string;
+    gt?: string;
+    gte?: string;
+  }
+): Hits {
+  const lower = gt ?? gte;
+  const lowerValue = lower == null ? undefined : parseNumericValue(lower);
+  const lowerInclusive = gte != null;
+  const upper = lt ?? lte;
+  const upperValue = upper == null ? undefined : parseNumericValue(upper);
+  const upperInclusive = lte != null;
+
+  return Object.entries(documents)
+    .filter(([, values]) => values.some((value) => {
+      const lowerClause = lowerValue == null ? true : lowerInclusive ? value >= lowerValue : value > lowerValue;
+      const upperClause = upperValue == null ? true : upperInclusive ? value <= upperValue : value < upperValue;
+      return lowerClause && upperClause;
+    }))
+    .map(([id]): Hit => [id, 1.0]);
 }
 
 class Bm25RankingStrategy implements RankingStrategy {
@@ -423,6 +470,10 @@ export class TextFieldIndex implements FieldIndex {
     return this.reverseMap.get(term);
   }
 
+  terms(): string[] {
+    return [...this.reverseMap.keys()];
+  }
+
   highlightValue(
     field: string,
     valueIndex: number,
@@ -671,5 +722,85 @@ export class GeoFieldIndex implements FieldIndex {
       }
     }
     return hits;
+  }
+}
+
+export class NumericFieldIndex implements FieldIndex {
+  private readonly documents: Record<string, number[]>;
+
+  constructor(documents: Record<string, number[]> = {}) {
+    this.documents = documents;
+  }
+
+  get indexState(): NumericFieldIndexState {
+    return {
+      kind: "NumericFieldIndexState",
+      documents: Object.fromEntries(Object.entries(this.documents).map(([id, values]) => [id, [...values]]))
+    };
+  }
+
+  loadState(fieldIndexState: IndexState): FieldIndex {
+    if (fieldIndexState.kind !== "NumericFieldIndexState") {
+      throw new Error(`wrong index type; expecting NumericFieldIndexState but was ${fieldIndexState.kind}`);
+    }
+    return new NumericFieldIndex(
+      Object.fromEntries(Object.entries(fieldIndexState.documents).map(([id, values]) => [id, [...values]]))
+    );
+  }
+
+  indexValue(docId: string, value: string): void {
+    const parsed = parseNumericValue(value);
+    if (parsed == null) {
+      return;
+    }
+    this.documents[docId] = [...(this.documents[docId] ?? []), parsed];
+  }
+
+  numericValues(docId: string): number[] {
+    return [...(this.documents[docId] ?? [])];
+  }
+
+  filterRange(params: { lt?: string; lte?: string; gt?: string; gte?: string }): Hits {
+    return filterNumericRange(this.documents, params);
+  }
+}
+
+export class DateFieldIndex implements FieldIndex {
+  private readonly documents: Record<string, number[]>;
+
+  constructor(documents: Record<string, number[]> = {}) {
+    this.documents = documents;
+  }
+
+  get indexState(): DateFieldIndexState {
+    return {
+      kind: "DateFieldIndexState",
+      documents: Object.fromEntries(Object.entries(this.documents).map(([id, values]) => [id, [...values]]))
+    };
+  }
+
+  loadState(fieldIndexState: IndexState): FieldIndex {
+    if (fieldIndexState.kind !== "DateFieldIndexState") {
+      throw new Error(`wrong index type; expecting DateFieldIndexState but was ${fieldIndexState.kind}`);
+    }
+    return new DateFieldIndex(
+      Object.fromEntries(Object.entries(fieldIndexState.documents).map(([id, values]) => [id, [...values]]))
+    );
+  }
+
+  indexValue(docId: string, value: string): void {
+    const parsed = parseNumericValue(value);
+    if (parsed == null) {
+      return;
+    }
+    this.documents[docId] = [...(this.documents[docId] ?? []), parsed];
+  }
+
+  numericValues(docId: string): number[] {
+    return [...(this.documents[docId] ?? [])];
+  }
+
+  filterRange(params: { lt?: string; lte?: string; gt?: string; gte?: string }): Hits {
+    return filterNumericRange(this.documents, params);
   }
 }

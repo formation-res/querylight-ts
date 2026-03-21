@@ -1,7 +1,7 @@
 import { type PolygonCoordinates } from "./geo";
-import { DocumentIndex, GeoFieldIndex, TextFieldIndex } from "./document-index";
+import { DateFieldIndex, DocumentIndex, GeoFieldIndex, NumericFieldIndex, TextFieldIndex } from "./document-index";
 import { type Hit, type Hits, QueryContext, andHits, applyBoost, geoFieldHits, ids, normalizedBoost, orHits, textFieldHits } from "./query-support";
-import { type Query } from "./shared";
+import { type Document, type Query } from "./shared";
 import { type Vector, VectorFieldIndex } from "./vector";
 
 export enum OP {
@@ -13,6 +13,101 @@ export interface VectorRescoreOptions {
   windowSize?: number;
   queryWeight?: number;
   rescoreQueryWeight?: number;
+}
+
+export interface RankFeatureSaturationOptions {
+  type?: "saturation";
+  pivot?: number;
+}
+
+export interface RankFeatureLogOptions {
+  type: "log";
+  scalingFactor?: number;
+}
+
+export interface RankFeatureSigmoidOptions {
+  type: "sigmoid";
+  pivot: number;
+  exponent?: number;
+}
+
+export interface RankFeatureLinearOptions {
+  type: "linear";
+  factor?: number;
+}
+
+export type RankFeatureOptions =
+  | RankFeatureSaturationOptions
+  | RankFeatureLogOptions
+  | RankFeatureSigmoidOptions
+  | RankFeatureLinearOptions;
+
+export interface ScriptExecutionContext {
+  documentIndex: DocumentIndex;
+  document: Document;
+  score: number;
+  values(field: string): string[];
+  value(field: string): string | undefined;
+  numericValues(field: string): number[];
+  numericValue(field: string): number | undefined;
+}
+
+export type ScriptFilter = (context: ScriptExecutionContext) => boolean;
+export type ScriptScore = (context: ScriptExecutionContext) => number;
+
+function parseNumericValue(value: string | number | Date): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  const asNumber = Number(value);
+  if (Number.isFinite(asNumber)) {
+    return asNumber;
+  }
+  const asDate = Date.parse(value);
+  return Number.isFinite(asDate) ? asDate : undefined;
+}
+
+function documentValues(document: Document, field: string): string[] {
+  return document.fields[field] ?? [];
+}
+
+function numericDocumentValues(document: Document, field: string): number[] {
+  return documentValues(document, field)
+    .map((value) => parseNumericValue(value))
+    .filter((value): value is number => value != null);
+}
+
+function indexedNumericValues(documentIndex: DocumentIndex, document: Document, field: string): number[] {
+  const fieldIndex = documentIndex.getFieldIndex(field);
+  if (fieldIndex instanceof NumericFieldIndex || fieldIndex instanceof DateFieldIndex) {
+    return fieldIndex.numericValues(document.id);
+  }
+  return numericDocumentValues(document, field);
+}
+
+function createScriptExecutionContext(
+  documentIndex: DocumentIndex,
+  document: Document,
+  score: number
+): ScriptExecutionContext {
+  return {
+    documentIndex,
+    document,
+    score,
+    values: (field) => [...documentValues(document, field)],
+    value: (field) => documentValues(document, field)[0],
+    numericValues: (field) => indexedNumericValues(documentIndex, document, field),
+    numericValue: (field) => indexedNumericValues(documentIndex, document, field)[0]
+  };
+}
+
+function wildcardToRegExp(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const source = `^${escaped.replace(/\*/g, ".*").replace(/\?/g, ".")}$`;
+  return new RegExp(source);
 }
 
 export class BoolQuery implements Query {
@@ -122,7 +217,7 @@ export class TermQuery implements Query {
     const hits = textFieldHits(
       documentIndex,
       this.field,
-      (fieldIndex) => (fieldIndex.termMatches(this.text) ?? []).map((match): Hit => [match.id, 1.0])
+      (fieldIndex) => [...new Set((fieldIndex.termMatches(this.text) ?? []).map((match) => match.id))].map((id): Hit => [id, 1.0])
     );
     return applyBoost(hits, normalizedBoost(this));
   }
@@ -159,6 +254,60 @@ export class TermsQuery implements Query {
   }
 }
 
+export class WildcardQuery implements Query {
+  private readonly matcher: RegExp;
+
+  constructor(
+    private readonly field: string,
+    private readonly pattern: string,
+    public readonly boost: number | undefined = undefined
+  ) {
+    this.matcher = wildcardToRegExp(pattern);
+  }
+
+  hits(documentIndex: DocumentIndex): Hits {
+    const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => {
+      const termHits = fieldIndex.terms()
+        .filter((term) => this.matcher.test(term))
+        .map((term) => (fieldIndex.termMatches(term) ?? []).map((match): Hit => [match.id, 1.0]));
+      return termHits.length > 0 ? termHits.reduce(orHits, []) : [];
+    });
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
+  }
+}
+
+export class RegexpQuery implements Query {
+  private readonly matcher: RegExp;
+
+  constructor(
+    private readonly field: string,
+    pattern: string | RegExp,
+    public readonly boost: number | undefined = undefined
+  ) {
+    this.matcher = typeof pattern === "string"
+      ? new RegExp(pattern)
+      : new RegExp(pattern.source, pattern.flags.replaceAll("g", ""));
+  }
+
+  hits(documentIndex: DocumentIndex): Hits {
+    const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => {
+      const termHits = fieldIndex.terms()
+        .filter((term) => this.matcher.test(term))
+        .map((term) => (fieldIndex.termMatches(term) ?? []).map((match): Hit => [match.id, 1.0]));
+      return termHits.length > 0 ? termHits.reduce(orHits, []) : [];
+    });
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
+  }
+}
+
 export class ExistsQuery implements Query {
   constructor(
     private readonly field: string,
@@ -190,7 +339,12 @@ export class RangeQuery implements Query {
   ) {}
 
   hits(documentIndex: DocumentIndex): Hits {
-    const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => fieldIndex.filterTermsByRange(this.params));
+    const fieldIndex = documentIndex.getFieldIndex(this.field);
+    const hits = fieldIndex instanceof TextFieldIndex
+      ? fieldIndex.filterTermsByRange(this.params)
+      : fieldIndex instanceof NumericFieldIndex || fieldIndex instanceof DateFieldIndex
+        ? fieldIndex.filterRange(this.params)
+        : [];
     return applyBoost(hits, normalizedBoost(this));
   }
 
@@ -301,6 +455,50 @@ export class MultiMatchQuery implements Query {
   }
 }
 
+export class DisMaxQuery implements Query {
+  private readonly tieBreaker: number;
+
+  constructor(
+    private readonly queries: Query[],
+    tieBreaker = 0,
+    public readonly boost: number | undefined = undefined
+  ) {
+    if (!Number.isFinite(tieBreaker) || tieBreaker < 0 || tieBreaker > 1) {
+      throw new Error("tieBreaker should be a finite number between 0 and 1");
+    }
+    this.tieBreaker = tieBreaker;
+  }
+
+  hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
+    if (this.queries.length === 0) {
+      return [];
+    }
+
+    const perDocScores = new Map<string, number[]>();
+    for (const query of this.queries) {
+      for (const [id, score] of query.hits(documentIndex, context)) {
+        const scores = perDocScores.get(id) ?? [];
+        scores.push(score);
+        perDocScores.set(id, scores);
+      }
+    }
+
+    const hits = [...perDocScores.entries()]
+      .map(([id, scores]): Hit => {
+        const maxScore = Math.max(...scores);
+        const sum = scores.reduce((total, score) => total + score, 0);
+        return [id, maxScore + (sum - maxScore) * this.tieBreaker];
+      })
+      .sort((a, b) => b[1] - a[1]);
+
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(documentIndex: DocumentIndex) {
+    return this.queries.flatMap((query) => query.highlightClauses?.(documentIndex) ?? []);
+  }
+}
+
 export class MatchPhrase implements Query {
   constructor(
     private readonly field: string,
@@ -362,6 +560,35 @@ export class MatchAll implements Query {
   }
 }
 
+export class BoostingQuery implements Query {
+  private readonly negativeBoost: number;
+
+  constructor(
+    private readonly positive: Query,
+    private readonly negative: Query,
+    negativeBoost: number,
+    public readonly boost: number | undefined = undefined
+  ) {
+    if (!Number.isFinite(negativeBoost) || negativeBoost <= 0 || negativeBoost > 1) {
+      throw new Error("negativeBoost should be a finite number > 0 and <= 1");
+    }
+    this.negativeBoost = negativeBoost;
+  }
+
+  hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
+    const positiveHits = this.positive.hits(documentIndex, context);
+    const negativeIds = new Set(ids(this.negative.hits(documentIndex, context)));
+    const hits = positiveHits
+      .map(([id, score]): Hit => [id, negativeIds.has(id) ? score * this.negativeBoost : score])
+      .filter(([, score]) => score > 0);
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(documentIndex: DocumentIndex) {
+    return this.positive.highlightClauses?.(documentIndex) ?? [];
+  }
+}
+
 export class GeoPointQuery implements Query {
   constructor(
     private readonly field: string,
@@ -402,6 +629,153 @@ export class GeoPolygonQuery implements Query {
 
   highlightClauses(): [] {
     return [];
+  }
+}
+
+export class DistanceFeatureQuery implements Query {
+  private readonly origin: number;
+  private readonly pivot: number;
+
+  constructor(
+    private readonly field: string,
+    origin: number | string | Date,
+    pivot: number,
+    public readonly boost: number | undefined = undefined
+  ) {
+    const parsedOrigin = parseNumericValue(origin);
+    if (parsedOrigin == null) {
+      throw new Error("origin should be a finite number or parseable date");
+    }
+    if (!Number.isFinite(pivot) || pivot <= 0) {
+      throw new Error("pivot should be a finite number > 0");
+    }
+    this.origin = parsedOrigin;
+    this.pivot = pivot;
+  }
+
+  hits(documentIndex: DocumentIndex): Hits {
+    const hits = Object.values(documentIndex.documents)
+      .map((document): Hit | null => {
+        const numericValues = indexedNumericValues(documentIndex, document, this.field);
+        if (numericValues.length === 0) {
+          return null;
+        }
+        const closestDistance = Math.min(...numericValues.map((value) => Math.abs(value - this.origin)));
+        return [document.id, this.pivot / (this.pivot + closestDistance)];
+      })
+      .filter((hit): hit is Hit => hit !== null)
+      .sort((a, b) => b[1] - a[1]);
+
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
+  }
+}
+
+export class RankFeatureQuery implements Query {
+  constructor(
+    private readonly field: string,
+    private readonly options: RankFeatureOptions = {},
+    public readonly boost: number | undefined = undefined
+  ) {}
+
+  hits(documentIndex: DocumentIndex): Hits {
+    const hits = Object.values(documentIndex.documents)
+      .map((document): Hit | null => {
+        const numericValues = indexedNumericValues(documentIndex, document, this.field);
+        if (numericValues.length === 0) {
+          return null;
+        }
+        const featureValue = Math.max(...numericValues);
+        const score = this.rankFeatureScore(featureValue);
+        return score > 0 ? [document.id, score] : null;
+      })
+      .filter((hit): hit is Hit => hit !== null)
+      .sort((a, b) => b[1] - a[1]);
+
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
+  }
+
+  private rankFeatureScore(value: number): number {
+    switch (this.options.type) {
+      case "linear":
+        return value * (this.options.factor ?? 1.0);
+      case "log":
+        return Math.log((this.options.scalingFactor ?? 1.0) + value);
+      case "sigmoid": {
+        const exponent = this.options.exponent ?? 1;
+        const pivot = this.options.pivot;
+        if (!Number.isFinite(pivot) || pivot <= 0) {
+          throw new Error("sigmoid rank feature pivot should be a finite number > 0");
+        }
+        if (!Number.isFinite(exponent) || exponent <= 0) {
+          throw new Error("sigmoid rank feature exponent should be a finite number > 0");
+        }
+        return value <= 0 ? 0 : (value ** exponent) / (pivot ** exponent + value ** exponent);
+      }
+      case "saturation":
+      case undefined: {
+        const pivot = this.options.pivot ?? 1.0;
+        if (!Number.isFinite(pivot) || pivot <= 0) {
+          throw new Error("saturation rank feature pivot should be a finite number > 0");
+        }
+        return value <= 0 ? 0 : value / (value + pivot);
+      }
+      default:
+        return 0;
+    }
+  }
+}
+
+export class ScriptQuery implements Query {
+  constructor(
+    private readonly script: ScriptFilter,
+    public readonly boost: number | undefined = undefined
+  ) {}
+
+  hits(documentIndex: DocumentIndex): Hits {
+    const hits = Object.values(documentIndex.documents)
+      .filter((document) => this.script(createScriptExecutionContext(documentIndex, document, 1.0)))
+      .map((document): Hit => [document.id, 1.0]);
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
+  }
+}
+
+export class ScriptScoreQuery implements Query {
+  constructor(
+    private readonly query: Query,
+    private readonly script: ScriptScore,
+    public readonly boost: number | undefined = undefined
+  ) {}
+
+  hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
+    const hits = this.query.hits(documentIndex, context)
+      .map(([id, score]): Hit | null => {
+        const document = documentIndex.get(id);
+        if (!document) {
+          return null;
+        }
+        const nextScore = this.script(createScriptExecutionContext(documentIndex, document, score));
+        return Number.isFinite(nextScore) && nextScore > 0 ? [id, nextScore] : null;
+      })
+      .filter((hit): hit is Hit => hit !== null)
+      .sort((a, b) => b[1] - a[1]);
+
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(documentIndex: DocumentIndex) {
+    return this.query.highlightClauses?.(documentIndex) ?? [];
   }
 }
 

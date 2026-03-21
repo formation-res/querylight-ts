@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { Analyzer, DocumentIndex, MatchQuery, NgramTokenFilter, OP, RankingAlgorithm, TextFieldIndex, type TextFieldIndexState } from "../src/index";
+import {
+  Analyzer,
+  DateFieldIndex,
+  DistanceFeatureQuery,
+  DocumentIndex,
+  MatchQuery,
+  NgramTokenFilter,
+  NumericFieldIndex,
+  OP,
+  RankFeatureQuery,
+  RankingAlgorithm,
+  RangeQuery,
+  TextFieldIndex,
+  type TextFieldIndexState
+} from "../src/index";
 import { quotesIndex, sampleObject, toDoc } from "./testfixture";
 
 describe("index state serialization", () => {
@@ -45,5 +59,33 @@ describe("index state serialization", () => {
 
     expect(index.searchRequest({ query: new MatchQuery("combined", "range", OP.OR), limit: 10 }).map(([id]) => id)).toContain("range-filters");
     expect(loaded.searchRequest({ query: new MatchQuery("combined", "range", OP.OR), limit: 10 }).map(([id]) => id)).toContain("range-filters");
+  });
+
+  it("should preserve numeric and date indexes after loading state", () => {
+    const index = new DocumentIndex({
+      popularity: new NumericFieldIndex(),
+      publishedAt: new DateFieldIndex()
+    });
+
+    index.index({
+      id: "1",
+      fields: {
+        popularity: ["10"],
+        publishedAt: ["2025-01-01T00:00:00.000Z"]
+      }
+    });
+    index.index({
+      id: "2",
+      fields: {
+        popularity: ["50"],
+        publishedAt: ["2025-01-10T00:00:00.000Z"]
+      }
+    });
+
+    const loaded = index.loadState(index.indexState);
+
+    expect(loaded.searchRequest({ query: new RankFeatureQuery("popularity") }).map(([id]) => id)).toEqual(["2", "1"]);
+    expect(loaded.searchRequest({ query: new RangeQuery("publishedAt", { gte: "2025-01-05T00:00:00.000Z" }) }).map(([id]) => id)).toEqual(["2"]);
+    expect(loaded.searchRequest({ query: new DistanceFeatureQuery("publishedAt", "2025-01-08T00:00:00.000Z", 7 * 24 * 60 * 60 * 1000) }).map(([id]) => id)).toEqual(["2", "1"]);
   });
 });

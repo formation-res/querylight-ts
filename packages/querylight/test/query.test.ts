@@ -1,5 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { Analyzer, BoolQuery, DocumentIndex, ExistsQuery, MatchAll, MatchPhrase, MatchQuery, MultiMatchQuery, NgramTokenFilter, OP, PrefixQuery, RankingAlgorithm, TermsQuery, TextFieldIndex, VectorFieldIndex, VectorRescoreQuery, bigramVector, createSeededRandom } from "../src/index";
+import {
+  Analyzer,
+  BoolQuery,
+  BoostingQuery,
+  DateFieldIndex,
+  DisMaxQuery,
+  DistanceFeatureQuery,
+  DocumentIndex,
+  ExistsQuery,
+  MatchAll,
+  MatchPhrase,
+  MatchQuery,
+  MultiMatchQuery,
+  NgramTokenFilter,
+  NumericFieldIndex,
+  OP,
+  PrefixQuery,
+  RankFeatureQuery,
+  RangeQuery,
+  RankingAlgorithm,
+  RegexpQuery,
+  ScriptQuery,
+  ScriptScoreQuery,
+  TermQuery,
+  TermsQuery,
+  TextFieldIndex,
+  VectorFieldIndex,
+  VectorRescoreQuery,
+  WildcardQuery,
+  bigramVector,
+  createSeededRandom
+} from "../src/index";
 import { quotesIndex } from "./testfixture";
 
 describe("queries", () => {
@@ -79,6 +110,26 @@ describe("queries", () => {
     expect(index.searchRequest({ query: new TermsQuery("tags", ["alpha", "beta"]) }).map(([id]) => id).sort()).toEqual(["1", "2", "4"]);
   });
 
+  it("should support wildcard term queries", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex() });
+    index.index({ id: "1", fields: { title: ["querylight"] } });
+    index.index({ id: "2", fields: { title: ["query planner"] } });
+    index.index({ id: "3", fields: { title: ["light query"] } });
+    index.index({ id: "4", fields: { title: ["vector search"] } });
+
+    expect(index.searchRequest({ query: new WildcardQuery("title", "que*") }).map(([id]) => id).sort()).toEqual(["1", "2", "3"]);
+  });
+
+  it("should support regex term queries", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex() });
+    index.index({ id: "1", fields: { title: ["querylight"] } });
+    index.index({ id: "2", fields: { title: ["query planner"] } });
+    index.index({ id: "3", fields: { title: ["light query"] } });
+    index.index({ id: "4", fields: { title: ["vector search"] } });
+
+    expect(index.searchRequest({ query: new RegexpQuery("title", "^quer") }).map(([id]) => id).sort()).toEqual(["1", "2", "3"]);
+  });
+
   it("should support exists queries", () => {
     const index = new DocumentIndex({ title: new TextFieldIndex(), tags: new TextFieldIndex() });
     index.index({ id: "1", fields: { title: ["alpha"] } });
@@ -95,6 +146,86 @@ describe("queries", () => {
     index.index({ id: "3", fields: { title: ["portable"], body: ["nothing relevant"] } });
 
     expect(index.searchRequest({ query: new MultiMatchQuery(["title", "body"], "querylight portable") }).map(([id]) => id)).toEqual(["1", "2"]);
+  });
+
+  it("should prefer the best clause in dis max and blend with the tie breaker", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex(), body: new TextFieldIndex() });
+    index.index({ id: "1", fields: { title: ["alpha"], body: ["nothing"] } });
+    index.index({ id: "2", fields: { title: ["alpha"], body: ["alpha"] } });
+
+    const query = new DisMaxQuery([
+      new TermQuery("title", "alpha", 2.0),
+      new TermQuery("body", "alpha", 1.0)
+    ], 0.5);
+
+    expect(index.searchRequest({ query }).map(([id]) => id)).toEqual(["2", "1"]);
+  });
+
+  it("should demote negative matches in boosting queries", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex(), tags: new TextFieldIndex() });
+    index.index({ id: "1", fields: { title: ["alpha"], tags: ["featured"] } });
+    index.index({ id: "2", fields: { title: ["alpha"], tags: ["deprecated"] } });
+
+    const query = new BoostingQuery(
+      new TermQuery("title", "alpha"),
+      new TermQuery("tags", "deprecated"),
+      0.2
+    );
+
+    expect(index.searchRequest({ query }).map(([id]) => id)).toEqual(["1", "2"]);
+  });
+
+  it("should support numeric ranges and distance features with numeric indexes", () => {
+    const index = new DocumentIndex({ price: new NumericFieldIndex() });
+    index.index({ id: "1", fields: { price: ["10"] } });
+    index.index({ id: "2", fields: { price: ["15"] } });
+    index.index({ id: "3", fields: { price: ["40"] } });
+
+    expect(index.searchRequest({ query: new RangeQuery("price", { gte: "12", lt: "20" }) }).map(([id]) => id)).toEqual(["2"]);
+    expect(index.searchRequest({ query: new DistanceFeatureQuery("price", 12, 10) }).map(([id]) => id)).toEqual(["1", "2", "3"]);
+  });
+
+  it("should support date distance features with date indexes", () => {
+    const index = new DocumentIndex({ publishedAt: new DateFieldIndex() });
+    index.index({ id: "1", fields: { publishedAt: ["2025-01-01T00:00:00.000Z"] } });
+    index.index({ id: "2", fields: { publishedAt: ["2025-01-05T00:00:00.000Z"] } });
+    index.index({ id: "3", fields: { publishedAt: ["2025-02-01T00:00:00.000Z"] } });
+
+    expect(index.searchRequest({
+      query: new DistanceFeatureQuery("publishedAt", "2025-01-04T00:00:00.000Z", 7 * 24 * 60 * 60 * 1000)
+    }).map(([id]) => id)).toEqual(["2", "1", "3"]);
+  });
+
+  it("should support rank feature queries", () => {
+    const index = new DocumentIndex({ popularity: new NumericFieldIndex() });
+    index.index({ id: "1", fields: { popularity: ["5"] } });
+    index.index({ id: "2", fields: { popularity: ["20"] } });
+    index.index({ id: "3", fields: { popularity: ["50"] } });
+
+    expect(index.searchRequest({ query: new RankFeatureQuery("popularity") }).map(([id]) => id)).toEqual(["3", "2", "1"]);
+  });
+
+  it("should support script queries", () => {
+    const index = new DocumentIndex({ popularity: new NumericFieldIndex(), title: new TextFieldIndex() });
+    index.index({ id: "1", fields: { popularity: ["5"], title: ["alpha"] } });
+    index.index({ id: "2", fields: { popularity: ["20"], title: ["beta"] } });
+
+    expect(index.searchRequest({
+      query: new ScriptQuery(({ numericValue }) => (numericValue("popularity") ?? 0) >= 10)
+    }).map(([id]) => id)).toEqual(["2"]);
+  });
+
+  it("should support script score queries", () => {
+    const index = new DocumentIndex({ popularity: new NumericFieldIndex(), title: new TextFieldIndex() });
+    index.index({ id: "1", fields: { popularity: ["5"], title: ["alpha alpha"] } });
+    index.index({ id: "2", fields: { popularity: ["20"], title: ["alpha"] } });
+
+    const query = new ScriptScoreQuery(
+      new TermQuery("title", "alpha"),
+      ({ score, numericValue }) => score * (numericValue("popularity") ?? 1)
+    );
+
+    expect(index.searchRequest({ query }).map(([id]) => id)).toEqual(["2", "1"]);
   });
 
   it("should highlight exact term matches with source offsets", () => {

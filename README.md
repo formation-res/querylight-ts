@@ -5,7 +5,7 @@
 
 Pure TypeScript port of the Kotlin `querylight` library, packaged for browsers and Node.js.
 
-Querylight TS is a lightweight in-process search toolkit for static sites, browser apps, and Node.js projects that need more than fuzzy matching but less than a full search server. It combines structured indexing, BM25/TF-IDF ranking, boolean queries, aggregations, vector search, hybrid reranking, highlighting, and geo search behind one small API.
+Querylight TS is a lightweight in-process search toolkit for static sites, browser apps, and Node.js projects that need more than fuzzy matching but less than a full search server. It combines structured indexing, BM25/TF-IDF ranking, boolean queries, advanced relevance tuning, aggregations, vector search, hybrid reranking, highlighting, and geo search behind one small API.
 
 In practice, that means it is an easy way to build semantic-search features locally without introducing a separate vector database or search service. You can use it to power search experiences such as "Ask the Docs", related-article suggestions, semantic reranking on top of lexical results, typo-tolerant content discovery, faceted navigation, and map- or region-aware retrieval.
 
@@ -43,7 +43,8 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 - In-memory reverse index for structured documents
 - TF-IDF and BM25 ranking
 - Reciprocal rank fusion for combining lexical, geo, filter, and vector results
-- Boolean, term, terms, exists, range, phrase, prefix, multi-match, and match-all queries
+- Boolean, term, terms, wildcard, regex, exists, range, phrase, prefix, multi-match, dis-max, boosting, and match-all queries
+- Numeric/date field indexes plus distance-feature, rank-feature, and JS script scoring queries
 - Beginner-friendly plain JSON indexing with `simpleTextSearch`
 - Offset-based exact, phrase, prefix, and fuzzy highlighting
 - Analyzer/tokenizer/token-filter pipeline
@@ -64,6 +65,15 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 - [How to build autocomplete](docs/22-how-to-build-autocomplete.md)
 - [How to build faceted navigation](docs/23-how-to-build-faceted-navigation.md)
 - [Relevance tuning with BM25, TF-IDF, and RRF](docs/24-relevance-tuning.md)
+- [DisMaxQuery for best-field scoring](docs/33-dis-max.md)
+- [BoostingQuery for soft demotion](docs/34-boosting.md)
+- [WildcardQuery for term-level patterns](docs/35-wildcard-query.md)
+- [RegexpQuery for regex term matching](docs/36-regexp-query.md)
+- [DistanceFeatureQuery for recency and closeness boosts](docs/37-distance-feature-query.md)
+- [RankFeatureQuery for numeric relevance signals](docs/38-rank-feature-query.md)
+- [ScriptQuery for custom JavaScript filters](docs/39-script-query.md)
+- [ScriptScoreQuery for custom JavaScript scoring](docs/40-script-score-query.md)
+- [NumericFieldIndex and DateFieldIndex](docs/41-numeric-and-date-fields.md)
 - [Document chunking strategies](docs/25-document-chunking-strategies.md)
 - [Serialization, hydration, and shipping indexes](docs/26-shipping-indexes.md)
 - [Performance and memory tuning](docs/27-performance-and-memory-tuning.md)
