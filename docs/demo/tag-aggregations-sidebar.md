@@ -1,21 +1,22 @@
 ---
 id: tag-aggregations-sidebar
 section: Demo Internals
-title: How the Tag Aggregations Sidebar Works
-summary: How the demo calculates live tag counts and significant terms for the right-hand sidebar.
-tags: [demo, aggregations, facets, sidebar, significant-terms]
-apis: [termsAggregation, getTopSignificantTerms, BoolQuery, TermQuery]
+title: How the Aggregations Sidebar Works
+summary: How the demo calculates live text facets, word-count buckets, and significant terms for the right-hand sidebar.
+tags: [demo, aggregations, facets, sidebar, significant-terms, histogram]
+apis: [termsAggregation, getTopSignificantTerms, rangeAggregation, histogram, BoolQuery, TermQuery, RangeQuery]
 level: advanced
 order: 20
 ---
 
-# How the Tag Aggregations Sidebar Works
+# How the Aggregations Sidebar Works
 
 The right sidebar in the demo is a live faceting panel. Its job is to answer questions like:
 
 - Which tags appear in the current results?
 - Which sections are represented?
 - Which APIs are most common?
+- How long are the matching articles?
 - Which terms are unusually characteristic of this result set?
 
 ## The core idea
@@ -26,7 +27,7 @@ The flow is:
 
 1. Run the current query.
 2. Collect the matched document ids.
-3. Run aggregations on fields such as `tags`, `section`, and `api` using only those ids.
+3. Run aggregations on fields such as `tags`, `section`, `api`, and `wordCount` using only those ids.
 4. Render the counts as clickable chips.
 
 That means the sidebar always reflects the current query state.
@@ -40,13 +41,15 @@ Relevant source:
 
 The important pieces are:
 
-- `buildFacetFilterQueries(...)`: turns current UI filter state into `TermQuery` filters
+- `buildFacetFilterQueries(...)`: turns current UI filter state into `TermQuery` and `RangeQuery` filters
 - `searchForState(...)`: runs the search, computes selected ids, and derives facets
 - `renderFacets(...)`: renders the sidebar groups and active filter chips
 
-## Indexing tags so aggregations stay clean
+## Indexing metadata so aggregations stay clean
 
 The demo indexes tags, sections, and API names with a keyword-style analyzer instead of full text analysis.
+
+It also indexes article word count as a dedicated numeric field.
 
 That matters because facet values should usually stay intact:
 
@@ -103,6 +106,8 @@ That is useful when:
 
 Clicking a tag chip does not rerun a special facet query. It updates the search state and runs the normal search flow again with an added `TermQuery("tags", value)` filter.
 
+The article-length chips work the same way, except they add a `RangeQuery("wordCount", ...)` filter.
+
 After that:
 
 - the result list changes
@@ -123,6 +128,13 @@ The sidebar helps because it turns a flat result list into a navigable slice of 
 - tags reveal topic clusters
 - sections reveal where the results live
 - APIs reveal concrete entry points
+- word-count buckets show whether the current slice skews short or deep
 - significant terms reveal vocabulary worth trying next
 
 That is a big improvement over just showing ten blue links.
+
+## Related articles
+
+- [Article Length Facets in the Demo](./article-length-facets-in-the-demo.md)
+- [Terms Aggregation and Significant Terms](../discovery/terms-aggregation-and-significant-terms.md)
+- [Numeric and Date Aggregations](../discovery/numeric-and-date-aggregations.md)

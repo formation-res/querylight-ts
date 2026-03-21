@@ -11,7 +11,9 @@ import {
   MatchPhrase,
   MatchQuery,
   NgramTokenFilter,
+  NumericFieldIndex,
   OP,
+  type Query,
   RangeQuery,
   RankingAlgorithm,
   reciprocalRankFusion,
@@ -57,8 +59,16 @@ type DocEntry = {
   order: number;
   markdown: string;
   body: string;
+  wordCount: number;
   examples: string[];
   path: string;
+};
+
+type WordCountFacet = {
+  key: string;
+  label: string;
+  from?: number;
+  to?: number;
 };
 
 type SearchState = {
@@ -69,6 +79,7 @@ type SearchState = {
   ranking: RankingAlgorithm;
   tag: string | null;
   section: string | null;
+  wordCountFacet: string | null;
   excludeAdvanced: boolean;
 };
 
@@ -82,6 +93,9 @@ type SearchResult = {
   tagFacets: Record<string, number>;
   sectionFacets: Record<string, number>;
   apiFacets: Record<string, number>;
+  wordCountStats: { count: number; min: number | null; max: number | null; sum: number; avg: number | null };
+  wordCountFacets: Array<{ key: string; label: string; docCount: number }>;
+  wordCountHistogram: Array<{ key: number; docCount: number }>;
   significantTerms: Record<string, [number, number]>;
 };
 
@@ -198,6 +212,13 @@ const tagAnalyzer = new Analyzer([], new KeywordTokenizer());
 const fuzzyAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3)]);
 const edgeAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilter(2, 6)]);
 const SEARCH_INPUT_DEBOUNCE_MS = 150;
+const WORD_COUNT_FACETS: WordCountFacet[] = [
+  { key: "short", label: "Under 400", to: 400 },
+  { key: "medium", label: "400-800", from: 400, to: 800 },
+  { key: "long", label: "800-1400", from: 800, to: 1400 },
+  { key: "deep", label: "1400+", from: 1400 }
+];
+const WORD_COUNT_HISTOGRAM_INTERVAL = 250;
 const DOC_SECTION_ORDER = [
   "Overview",
   "Schema",
@@ -232,6 +253,7 @@ const initialState: SearchState = {
   ranking: RankingAlgorithm.BM25,
   tag: null,
   section: null,
+  wordCountFacet: null,
   excludeAdvanced: false
 };
 
@@ -271,8 +293,8 @@ function renderLoading(message: string): void {
   `;
 }
 
-function escapeHtml(value: string): string {
-  return value
+function escapeHtml(value: string | number | boolean): string {
+  return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -408,6 +430,7 @@ function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
     tags: new TextFieldIndex(tagAnalyzer, tagAnalyzer),
     api: new TextFieldIndex(tagAnalyzer, tagAnalyzer),
     examples: new TextFieldIndex(undefined, undefined, ranking),
+    wordCount: new NumericFieldIndex(),
     combined: new TextFieldIndex(undefined, undefined, ranking),
     suggest: new TextFieldIndex(edgeAnalyzer, edgeAnalyzer, ranking),
     order: new TextFieldIndex(tagAnalyzer, tagAnalyzer)
@@ -601,13 +624,20 @@ function parseQueryInput(rawQuery: string): { queryText: string; quotedPhrase: s
 }
 
 function buildFacetFilterQueries(current: SearchState): QueryFilters {
-  const filters: TermQuery[] = [];
+  const filters: Query[] = [];
   const mustNot: TermQuery[] = [];
   if (current.section) {
     filters.push(new TermQuery("section", current.section));
   }
   if (current.tag) {
     filters.push(new TermQuery("tags", current.tag));
+  }
+  const wordCountFacet = wordCountFacetByKey(current.wordCountFacet);
+  if (wordCountFacet) {
+    filters.push(new RangeQuery("wordCount", {
+      ...(wordCountFacet.from == null ? {} : { gte: String(wordCountFacet.from) }),
+      ...(wordCountFacet.to == null ? {} : { lt: String(wordCountFacet.to) })
+    }));
   }
   if (current.excludeAdvanced) {
     mustNot.push(new TermQuery("level", "advanced"));
@@ -616,9 +646,13 @@ function buildFacetFilterQueries(current: SearchState): QueryFilters {
 }
 
 type QueryFilters = {
-  filters: TermQuery[];
+  filters: Query[];
   mustNot: TermQuery[];
 };
+
+function wordCountFacetByKey(key: string | null): WordCountFacet | null {
+  return WORD_COUNT_FACETS.find((facet) => facet.key === key) ?? null;
+}
 
 function searchForState(context: RuntimeContext, current: SearchState): SearchResult {
   // One search pass produces both the visible result list and the derived facet
@@ -629,6 +663,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   const tagIndex = index.getFieldIndex("tags") as TextFieldIndex;
   const sectionIndex = index.getFieldIndex("section") as TextFieldIndex;
   const apiIndex = index.getFieldIndex("api") as TextFieldIndex;
+  const wordCountIndex = index.getFieldIndex("wordCount") as NumericFieldIndex;
   const { queryText, quotedPhrase } = parseQueryInput(current.query);
   const trimmed = queryText.trim();
   const allowPrefixSuggestions = trimmed.length >= 2;
@@ -759,6 +794,18 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   const tagFacets = tagIndex.termsAggregation(12, selectedIds.size > 0 ? selectedIds : undefined);
   const sectionFacets = sectionIndex.termsAggregation(8, selectedIds.size > 0 ? selectedIds : undefined);
   const apiFacets = apiIndex.termsAggregation(10, selectedIds.size > 0 ? selectedIds : undefined);
+  const wordCountStats = wordCountIndex.stats(selectedIds.size > 0 ? selectedIds : undefined);
+  const wordCountFacets = wordCountIndex
+    .rangeAggregation(WORD_COUNT_FACETS, selectedIds.size > 0 ? selectedIds : undefined)
+    .map((bucket) => ({
+      key: bucket.key,
+      label: WORD_COUNT_FACETS.find((facet) => facet.key === bucket.key)?.label ?? bucket.key,
+      docCount: bucket.docCount
+    }));
+  const wordCountHistogram = wordCountIndex.histogram(
+    WORD_COUNT_HISTOGRAM_INTERVAL,
+    selectedIds.size > 0 ? selectedIds : undefined
+  );
   const significantTerms = bodyIndex.getTopSignificantTerms(
     10,
     selectedIds.size > 0 ? selectedIds : new Set(context.docs.map((doc) => doc.id))
@@ -774,6 +821,9 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
     tagFacets,
     sectionFacets,
     apiFacets,
+    wordCountStats,
+    wordCountFacets,
+    wordCountHistogram,
     significantTerms
   };
 }
@@ -988,9 +1038,12 @@ function updateSummary(summaryNode: HTMLParagraphElement, current: SearchResult 
     summaryNode.textContent = "No active search";
     return;
   }
-  const filters = [state.section ? `section:${state.section}` : "", state.tag ? `tag:${state.tag}` : "", state.excludeAdvanced ? "without advanced" : ""]
-    .filter(Boolean)
-    .join(" · ");
+  const filters = [
+    state.section ? `section:${state.section}` : "",
+    state.tag ? `tag:${state.tag}` : "",
+    wordCountFacetByKey(state.wordCountFacet)?.label ? `length:${wordCountFacetByKey(state.wordCountFacet)?.label}` : "",
+    state.excludeAdvanced ? "without advanced" : ""
+  ].filter(Boolean).join(" · ");
   summaryNode.textContent = `${current.finalHits.length} results · ${state.mode} · ${state.ranking}${filters ? ` · ${filters}` : ""}`;
 }
 
@@ -1067,7 +1120,10 @@ function renderSuggestions(context: RuntimeContext, suggestionsNode: HTMLDivElem
 function renderFacets(context: RuntimeContext, activeFiltersNode: HTMLDivElement, facetSectionsNode: HTMLDivElement, current: SearchResult | null): void {
   const activeFilters = [
     state.section ? { label: `Section: ${state.section}`, facet: "section", value: state.section } : null,
-    state.tag ? { label: `Tag: ${state.tag}`, facet: "tag", value: state.tag } : null
+    state.tag ? { label: `Tag: ${state.tag}`, facet: "tag", value: state.tag } : null,
+    state.wordCountFacet
+      ? { label: `Length: ${wordCountFacetByKey(state.wordCountFacet)?.label ?? state.wordCountFacet}`, facet: "word-count", value: state.wordCountFacet }
+      : null
   ].filter(Boolean) as Array<{ label: string; facet: string; value: string }>;
 
   activeFiltersNode.innerHTML =
@@ -1083,7 +1139,15 @@ function renderFacets(context: RuntimeContext, activeFiltersNode: HTMLDivElement
   const sectionFacets = Object.entries(source.sectionFacets);
   const tagFacets = Object.entries(source.tagFacets);
   const apiFacets = Object.entries(source.apiFacets);
+  const wordCountFacets = source.wordCountFacets;
+  const wordCountHistogram = source.wordCountHistogram;
+  const maxWordCountBucket = Math.max(...wordCountHistogram.map((bucket) => bucket.docCount), 1);
   const significantTerms = Object.entries(source.significantTerms).slice(0, 6);
+  const wordCountAverage = source.wordCountStats.avg == null ? "n/a" : Math.round(source.wordCountStats.avg).toLocaleString();
+  const wordCountRange =
+    source.wordCountStats.min == null || source.wordCountStats.max == null
+      ? "n/a"
+      : `${source.wordCountStats.min.toLocaleString()}-${source.wordCountStats.max.toLocaleString()}`;
 
   facetSectionsNode.innerHTML = `
     <div class="grid gap-5">
@@ -1103,6 +1167,36 @@ function renderFacets(context: RuntimeContext, activeFiltersNode: HTMLDivElement
         <h3 class="text-sm font-semibold text-stone-900">APIs</h3>
         <div class="mt-3 flex flex-wrap gap-2">
           ${apiFacets.map(([value, count]) => `<button class="chip-button" data-facet="api" data-value="${escapeHtml(value)}">${escapeHtml(value)} <span class="text-stone-400">${count}</span></button>`).join("") || `<p class="text-sm text-stone-500">No API facets.</p>`}
+        </div>
+      </section>
+      <section>
+        <div class="flex items-end justify-between gap-3">
+          <h3 class="text-sm font-semibold text-stone-900">Article Length</h3>
+          <p class="text-xs text-stone-500">avg ${escapeHtml(wordCountAverage)} words</p>
+        </div>
+        <p class="mt-2 text-xs text-stone-500">${source.wordCountStats.count} values indexed · range ${escapeHtml(wordCountRange)}</p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          ${wordCountFacets.map((bucket) => `<button class="chip-button" data-facet="word-count" data-value="${escapeHtml(bucket.key)}">${escapeHtml(bucket.label)} <span class="text-stone-400">${bucket.docCount}</span></button>`).join("") || `<p class="text-sm text-stone-500">No length buckets.</p>`}
+        </div>
+        <div class="word-count-histogram mt-4">
+          ${wordCountHistogram.map((bucket) => `
+            <button
+              type="button"
+              class="word-count-bar"
+              data-facet="word-count"
+              data-value="${escapeHtml(
+                WORD_COUNT_FACETS.find((facet) =>
+                  (facet.from == null || bucket.key >= facet.from) &&
+                  (facet.to == null || bucket.key < facet.to)
+                )?.key ?? ""
+              )}"
+              title="${escapeHtml(`${bucket.key.toLocaleString()}-${(bucket.key + WORD_COUNT_HISTOGRAM_INTERVAL - 1).toLocaleString()} words · ${bucket.docCount} docs`)}"
+            >
+              <span class="word-count-bar-label">${escapeHtml(bucket.key.toLocaleString())}</span>
+              <span class="word-count-bar-track"><span class="word-count-bar-fill" style="width:${(bucket.docCount / maxWordCountBucket) * 100}%"></span></span>
+              <span class="word-count-bar-count">${bucket.docCount}</span>
+            </button>
+          `).join("") || `<p class="text-sm text-stone-500">No histogram buckets.</p>`}
         </div>
       </section>
       <section>
@@ -1621,7 +1715,7 @@ function wireApp(context: RuntimeContext): void {
   };
 
   const resetToHomeIfEmpty = () => {
-    if (!state.query.trim() && !state.tag && !state.section && !state.excludeAdvanced) {
+    if (!state.query.trim() && !state.tag && !state.section && !state.wordCountFacet && !state.excludeAdvanced) {
       submittedResult = null;
       suggestionResult = null;
       currentView = "home";
@@ -1811,6 +1905,8 @@ function wireApp(context: RuntimeContext): void {
       state.mode = "match";
     } else if (facet === "section") {
       state.section = state.section === value ? null : value;
+    } else if (facet === "word-count") {
+      state.wordCountFacet = state.wordCountFacet === value ? null : value || null;
     }
     closeMobilePanel();
     activeExperience = "search";

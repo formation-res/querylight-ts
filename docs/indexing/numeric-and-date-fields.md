@@ -2,9 +2,9 @@
 id: numeric-and-date-fields
 section: Indexing
 title: NumericFieldIndex and DateFieldIndex for Structured Features
-summary: Map numeric and date fields explicitly so range, distance, and feature scoring behave predictably.
-tags: [indexing, numeric, date, range, ranking]
-apis: [NumericFieldIndex, DateFieldIndex, RangeQuery, RankFeatureQuery, DistanceFeatureQuery]
+summary: Map numeric and date fields explicitly so range queries, ranking features, and aggregations behave predictably.
+tags: [indexing, numeric, date, range, ranking, aggregation]
+apis: [NumericFieldIndex, DateFieldIndex, RangeQuery, RankFeatureQuery, DistanceFeatureQuery, stats, histogram, dateHistogram]
 level: advanced
 order: 40
 ---
@@ -28,6 +28,7 @@ That is fine for lexical fields, but feature-oriented fields are better expresse
 - range queries behave numerically
 - recency and distance scoring are explicit
 - rank-feature scoring reads directly from indexed values
+- numeric/date aggregations can reuse the parsed values directly
 
 ## Example
 
@@ -57,6 +58,7 @@ index.index({
 - `RangeQuery`
 - `DistanceFeatureQuery`
 - `RankFeatureQuery`
+- `stats`, `rangeAggregation`, and `histogram`/`dateHistogram`
 - `ScriptQuery` / `ScriptScoreQuery` via `numericValue()` and `numericValues()`
 
 ## Notes
@@ -64,3 +66,4 @@ index.index({
 - Values are still provided through the normal document `fields` object as strings.
 - `DateFieldIndex` stores parsed timestamps internally.
 - If a value cannot be parsed, it is ignored by the numeric/date index.
+- Aggregation helpers operate on the stored numeric values and can be restricted to a subset of document ids.

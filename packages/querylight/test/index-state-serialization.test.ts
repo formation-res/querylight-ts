@@ -87,5 +87,31 @@ describe("index state serialization", () => {
     expect(loaded.searchRequest({ query: new RankFeatureQuery("popularity") }).map(([id]) => id)).toEqual(["2", "1"]);
     expect(loaded.searchRequest({ query: new RangeQuery("publishedAt", { gte: "2025-01-05T00:00:00.000Z" }) }).map(([id]) => id)).toEqual(["2"]);
     expect(loaded.searchRequest({ query: new DistanceFeatureQuery("publishedAt", "2025-01-08T00:00:00.000Z", 7 * 24 * 60 * 60 * 1000) }).map(([id]) => id)).toEqual(["2", "1"]);
+
+    const loadedPopularity = loaded.getFieldIndex("popularity") as NumericFieldIndex;
+    const loadedPublishedAt = loaded.getFieldIndex("publishedAt") as DateFieldIndex;
+    expect(loadedPopularity.stats()).toEqual({
+      count: 2,
+      min: 10,
+      max: 50,
+      sum: 60,
+      avg: 30
+    });
+    expect(loadedPopularity.histogram(25)).toEqual([
+      { key: 0, docCount: 1 },
+      { key: 50, docCount: 1 }
+    ]);
+    expect(loadedPublishedAt.dateHistogram(24 * 60 * 60 * 1000)).toEqual([
+      {
+        key: Date.parse("2025-01-01T00:00:00.000Z"),
+        keyAsString: "2025-01-01T00:00:00.000Z",
+        docCount: 1
+      },
+      {
+        key: Date.parse("2025-01-10T00:00:00.000Z"),
+        keyAsString: "2025-01-10T00:00:00.000Z",
+        docCount: 1
+      }
+    ]);
   });
 });

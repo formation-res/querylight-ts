@@ -54,6 +54,16 @@ This index mirrors the documentation table of contents used by the demo.
 ## Discovery
 
 - [Terms Aggregation and Significant Terms](./discovery/terms-aggregation-and-significant-terms.md)
+- [Numeric and Date Aggregations](./discovery/numeric-and-date-aggregations.md)
+- [Value Count Aggregation](./discovery/value-count-aggregation.md)
+- [Min Aggregation](./discovery/min-aggregation.md)
+- [Max Aggregation](./discovery/max-aggregation.md)
+- [Sum Aggregation](./discovery/sum-aggregation.md)
+- [Avg Aggregation](./discovery/avg-aggregation.md)
+- [Stats Aggregation](./discovery/stats-aggregation.md)
+- [Range Aggregation](./discovery/range-aggregation.md)
+- [Histogram Aggregation](./discovery/histogram-aggregation.md)
+- [Date Histogram Aggregation](./discovery/date-histogram-aggregation.md)
 
 ## Indexing
 
@@ -80,7 +90,9 @@ This index mirrors the documentation table of contents used by the demo.
 ## Demo Internals
 
 - [Ask the Docs End to End](./demo/ask-the-docs-end-to-end.md)
-- [How the Tag Aggregations Sidebar Works](./demo/tag-aggregations-sidebar.md)
+- [How the Aggregations Sidebar Works](./demo/tag-aggregations-sidebar.md)
+- [Article Length Facets in the Demo](./demo/article-length-facets-in-the-demo.md)
+- [How the Aggregations Sidebar Works](./demo/tag-aggregations-sidebar.md)
 
 ## Operations
 

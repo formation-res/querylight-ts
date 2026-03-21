@@ -2,23 +2,30 @@
 id: aggregations
 section: Discovery
 title: Terms Aggregation and Significant Terms
-summary: Build facets from the current result set and surface discriminative vocabulary.
-tags: [aggregation, significant-terms, facets, discovery, analytics]
-apis: [termsAggregation, getTopSignificantTerms, TermQuery]
+summary: Build term facets from the current result set and surface discriminative vocabulary.
+tags: [aggregation, significant-terms, facets, discovery, analytics, terms]
+apis: [termsAggregation, getTopSignificantTerms, TermQuery, TextFieldIndex]
 level: querying
 order: 10
 ---
 
 # Terms Aggregation and Significant Terms
 
-Querylight exposes aggregation helpers directly on `TextFieldIndex`.
+Querylight exposes text-oriented aggregation helpers directly on `TextFieldIndex`.
 
 If you have used e-commerce or documentation search before, you have already seen aggregations. They are the counts in sidebars such as:
 
 - `Tags: vector (3), highlighting (2), ranking (2)`
 - `Section: Overview (4), Advanced (3)`
 
-In Querylight TS, aggregations are not a separate server feature. They are computed directly from the indexed terms in a field, optionally restricted to a subset of matching document ids.
+In Querylight TS, aggregations are not a separate server feature. They are computed directly from field indexes, optionally restricted to a subset of matching document ids.
+
+This article focuses on text-oriented discovery:
+
+- term counts for facets
+- significant terms for "what stands out here?"
+
+For numeric/date buckets and metric summaries, see [Numeric and Date Aggregations](./numeric-and-date-aggregations.md).
 
 ## Terms aggregation
 
@@ -66,6 +73,10 @@ Expected result:
 }
 ```
 
+`termsAggregation` counts documents, not raw term occurrences.
+
+That means if the same term appears multiple times inside one document, that document still contributes only once to the bucket. This is usually what you want for facet counts.
+
 ## Significant terms
 
 Use `getTopSignificantTerms` to compare the current subset with the full background corpus.
@@ -97,6 +108,12 @@ Expected shape:
 ```
 
 The exact score depends on term frequencies, but the main idea is stable: terms that are unusually common in the subset rise to the top.
+
+Unlike `termsAggregation`, significant terms are not intended to produce stable filter counts. They are better used as:
+
+- query suggestions
+- sidebar hints
+- exploratory vocabulary prompts
 
 ## Why this matters
 

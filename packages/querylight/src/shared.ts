@@ -109,6 +109,38 @@ export interface DateFieldIndexState extends IndexStateBase {
   documents: Record<string, number[]>;
 }
 
+export interface NumericStatsAggregation {
+  count: number;
+  min: number | null;
+  max: number | null;
+  sum: number;
+  avg: number | null;
+}
+
+export interface NumericRangeAggregationRange {
+  key?: string;
+  from?: string | number | Date;
+  to?: string | number | Date;
+}
+
+export interface NumericRangeAggregationBucket {
+  key: string;
+  from: number | null;
+  to: number | null;
+  docCount: number;
+}
+
+export interface NumericHistogramBucket {
+  key: number;
+  docCount: number;
+}
+
+export interface DateHistogramBucket {
+  key: number;
+  keyAsString: string;
+  docCount: number;
+}
+
 export type IndexState = TextFieldIndexState | GeoFieldIndexState | NumericFieldIndexState | DateFieldIndexState | VectorFieldIndexState;
 
 export interface DocumentIndexState {

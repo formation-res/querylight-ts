@@ -10,6 +10,7 @@ import {
 } from "./geo";
 import {
   type Bm25Config,
+  type DateHistogramBucket,
   type Document,
   type DocumentIndexState,
   type FieldIndex,
@@ -24,6 +25,10 @@ import {
   type Hit,
   type Hits,
   type IndexState,
+  type NumericHistogramBucket,
+  type NumericRangeAggregationBucket,
+  type NumericRangeAggregationRange,
+  type NumericStatsAggregation,
   type NumericFieldIndexState,
   QueryContext,
   RankingAlgorithm,
@@ -96,6 +101,146 @@ function filterNumericRange(
       return lowerClause && upperClause;
     }))
     .map(([id]): Hit => [id, 1.0]);
+}
+
+function valuesForSubset(documents: Record<string, number[]>, subsetDocIds?: Set<string>): number[] {
+  const entries = subsetDocIds
+    ? [...subsetDocIds].map((docId) => [docId, documents[docId] ?? []] as const)
+    : Object.entries(documents);
+  return entries.flatMap(([, values]) => values);
+}
+
+function docEntriesForSubset(documents: Record<string, number[]>, subsetDocIds?: Set<string>): Array<[string, number[]]> {
+  return subsetDocIds
+    ? [...subsetDocIds]
+      .filter((docId) => (documents[docId] ?? []).length > 0)
+      .map((docId) => [docId, documents[docId] ?? []] as [string, number[]])
+    : Object.entries(documents).filter(([, values]) => values.length > 0);
+}
+
+function computeNumericStats(values: number[]): NumericStatsAggregation {
+  if (values.length === 0) {
+    return {
+      count: 0,
+      min: null,
+      max: null,
+      sum: 0,
+      avg: null
+    };
+  }
+
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  let sum = 0;
+
+  for (const value of values) {
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+    sum += value;
+  }
+
+  return {
+    count: values.length,
+    min,
+    max,
+    sum,
+    avg: sum / values.length
+  };
+}
+
+function normalizeAggregationBound(value: string | number | Date | undefined): number | null {
+  if (value == null) {
+    return null;
+  }
+  const parsed = parseNumericValue(value);
+  if (parsed == null) {
+    throw new Error(`could not parse aggregation bound: ${String(value)}`);
+  }
+  return parsed;
+}
+
+function defaultRangeBucketKey(from: number | null, to: number | null): string {
+  if (from == null && to == null) {
+    return "*";
+  }
+  if (from == null) {
+    return `*-${to}`;
+  }
+  if (to == null) {
+    return `${from}-*`;
+  }
+  return `${from}-${to}`;
+}
+
+function createRangeBuckets(
+  documents: Record<string, number[]>,
+  ranges: NumericRangeAggregationRange[],
+  subsetDocIds?: Set<string>
+): NumericRangeAggregationBucket[] {
+  const normalizedRanges = ranges.map((range) => {
+    const from = normalizeAggregationBound(range.from);
+    const to = normalizeAggregationBound(range.to);
+    return {
+      key: range.key ?? defaultRangeBucketKey(from, to),
+      from,
+      to
+    };
+  });
+
+  const buckets = normalizedRanges.map((range) => ({
+    ...range,
+    docCount: 0
+  }));
+
+  for (const [, values] of docEntriesForSubset(documents, subsetDocIds)) {
+    buckets.forEach((bucket) => {
+      const matches = values.some((value) =>
+        (bucket.from == null || value >= bucket.from) &&
+        (bucket.to == null || value < bucket.to)
+      );
+      if (matches) {
+        bucket.docCount += 1;
+      }
+    });
+  }
+
+  return buckets;
+}
+
+function createHistogramBuckets(
+  documents: Record<string, number[]>,
+  interval: number,
+  subsetDocIds?: Set<string>
+): NumericHistogramBucket[] {
+  if (!Number.isFinite(interval) || interval <= 0) {
+    throw new Error("histogram interval should be a finite number > 0");
+  }
+
+  const bucketCounts = new Map<number, number>();
+
+  for (const [, values] of docEntriesForSubset(documents, subsetDocIds)) {
+    const keys = new Set(values.map((value) => Math.floor(value / interval) * interval));
+    for (const key of keys) {
+      bucketCounts.set(key, (bucketCounts.get(key) ?? 0) + 1);
+    }
+  }
+
+  return [...bucketCounts.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([key, docCount]) => ({ key, docCount }));
+}
+
+function createDateHistogramBuckets(
+  documents: Record<string, number[]>,
+  intervalMs: number,
+  subsetDocIds?: Set<string>
+): DateHistogramBucket[] {
+  return createHistogramBuckets(documents, intervalMs, subsetDocIds)
+    .map(({ key, docCount }) => ({
+      key,
+      keyAsString: new Date(key).toISOString(),
+      docCount
+    }));
 }
 
 class Bm25RankingStrategy implements RankingStrategy {
@@ -763,6 +908,38 @@ export class NumericFieldIndex implements FieldIndex {
   filterRange(params: { lt?: string; lte?: string; gt?: string; gte?: string }): Hits {
     return filterNumericRange(this.documents, params);
   }
+
+  valueCount(subsetDocIds?: Set<string>): number {
+    return valuesForSubset(this.documents, subsetDocIds).length;
+  }
+
+  min(subsetDocIds?: Set<string>): number | null {
+    return computeNumericStats(valuesForSubset(this.documents, subsetDocIds)).min;
+  }
+
+  max(subsetDocIds?: Set<string>): number | null {
+    return computeNumericStats(valuesForSubset(this.documents, subsetDocIds)).max;
+  }
+
+  sum(subsetDocIds?: Set<string>): number {
+    return computeNumericStats(valuesForSubset(this.documents, subsetDocIds)).sum;
+  }
+
+  avg(subsetDocIds?: Set<string>): number | null {
+    return computeNumericStats(valuesForSubset(this.documents, subsetDocIds)).avg;
+  }
+
+  stats(subsetDocIds?: Set<string>): NumericStatsAggregation {
+    return computeNumericStats(valuesForSubset(this.documents, subsetDocIds));
+  }
+
+  rangeAggregation(ranges: NumericRangeAggregationRange[], subsetDocIds?: Set<string>): NumericRangeAggregationBucket[] {
+    return createRangeBuckets(this.documents, ranges, subsetDocIds);
+  }
+
+  histogram(interval: number, subsetDocIds?: Set<string>): NumericHistogramBucket[] {
+    return createHistogramBuckets(this.documents, interval, subsetDocIds);
+  }
 }
 
 export class DateFieldIndex implements FieldIndex {
@@ -802,5 +979,40 @@ export class DateFieldIndex implements FieldIndex {
 
   filterRange(params: { lt?: string; lte?: string; gt?: string; gte?: string }): Hits {
     return filterNumericRange(this.documents, params);
+  }
+
+  valueCount(subsetDocIds?: Set<string>): number {
+    return valuesForSubset(this.documents, subsetDocIds).length;
+  }
+
+  min(subsetDocIds?: Set<string>): number | null {
+    return computeNumericStats(valuesForSubset(this.documents, subsetDocIds)).min;
+  }
+
+  max(subsetDocIds?: Set<string>): number | null {
+    return computeNumericStats(valuesForSubset(this.documents, subsetDocIds)).max;
+  }
+
+  sum(subsetDocIds?: Set<string>): number {
+    return computeNumericStats(valuesForSubset(this.documents, subsetDocIds)).sum;
+  }
+
+  avg(subsetDocIds?: Set<string>): number | null {
+    return computeNumericStats(valuesForSubset(this.documents, subsetDocIds)).avg;
+  }
+
+  stats(subsetDocIds?: Set<string>): NumericStatsAggregation {
+    return computeNumericStats(valuesForSubset(this.documents, subsetDocIds));
+  }
+
+  rangeAggregation(ranges: NumericRangeAggregationRange[], subsetDocIds?: Set<string>): NumericRangeAggregationBucket[] {
+    return createRangeBuckets(this.documents, ranges, subsetDocIds);
+  }
+
+  dateHistogram(intervalMs: number, subsetDocIds?: Set<string>): DateHistogramBucket[] {
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+      throw new Error("date histogram interval should be a finite number > 0");
+    }
+    return createDateHistogramBuckets(this.documents, intervalMs, subsetDocIds);
   }
 }

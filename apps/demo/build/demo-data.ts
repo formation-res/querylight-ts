@@ -3,6 +3,7 @@ import path from "node:path";
 import { pipeline, env, type FeatureExtractionPipeline } from "@huggingface/transformers";
 import {
   Analyzer,
+  NumericFieldIndex,
   DocumentIndex,
   EdgeNgramsTokenFilter,
   KeywordTokenizer,
@@ -37,6 +38,7 @@ export type DocEntry = {
   order: number;
   markdown: string;
   body: string;
+  wordCount: number;
   examples: string[];
   path: string;
 };
@@ -96,6 +98,7 @@ function parseFrontmatter(raw: string): { metadata: Record<string, string>; body
 
 function toDocEntry(filePath: string, raw: string): DocEntry {
   const { metadata, body: markdownBody } = parseFrontmatter(raw);
+  const body = stripMarkdown(markdownBody);
   const title = metadata.title;
   const summary = metadata.summary;
   const id = metadata.id;
@@ -117,7 +120,8 @@ function toDocEntry(filePath: string, raw: string): DocEntry {
     level,
     order,
     markdown: markdownBody,
-    body: stripMarkdown(markdownBody),
+    body,
+    wordCount: body.split(/\s+/).filter(Boolean).length,
     examples: extractCodeBlocks(markdownBody),
     path: filePath
   };
@@ -147,6 +151,7 @@ function toDocument(entry: DocEntry): Document {
       tags: entry.tags,
       api: entry.apis,
       examples: entry.examples,
+      wordCount: [String(entry.wordCount)],
       combined: [entry.title, entry.summary, entry.body, entry.tags.join(" "), entry.apis.join(" ")].join(" "),
       suggest: [entry.title, entry.tags.join(" "), entry.apis.join(" ")].join(" "),
       order: [String(entry.order)]
@@ -164,6 +169,7 @@ function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
     tags: new TextFieldIndex(tagAnalyzer, tagAnalyzer),
     api: new TextFieldIndex(tagAnalyzer, tagAnalyzer),
     examples: new TextFieldIndex(undefined, undefined, ranking),
+    wordCount: new NumericFieldIndex(),
     combined: new TextFieldIndex(undefined, undefined, ranking),
     suggest: new TextFieldIndex(edgeAnalyzer, edgeAnalyzer, ranking),
     order: new TextFieldIndex(tagAnalyzer, tagAnalyzer)

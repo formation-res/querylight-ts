@@ -258,6 +258,30 @@
     @apply mr-2 inline-block text-[11px] font-semibold uppercase tracking-[0.14em] text-orange-800;
   }
 
+  .word-count-histogram {
+    @apply grid gap-2;
+  }
+
+  .word-count-bar {
+    @apply grid w-full grid-cols-[64px_minmax(0,1fr)_32px] items-center gap-3 rounded-2xl border border-stone-900/8 bg-stone-50/70 px-3 py-2 text-left transition hover:border-orange-700/30 hover:bg-white;
+  }
+
+  .word-count-bar-label {
+    @apply text-xs font-mono text-stone-500;
+  }
+
+  .word-count-bar-track {
+    @apply h-2 overflow-hidden rounded-full bg-stone-200;
+  }
+
+  .word-count-bar-fill {
+    @apply block h-full rounded-full bg-orange-600/80;
+  }
+
+  .word-count-bar-count {
+    @apply text-right text-xs text-stone-500;
+  }
+
   .search-highlight {
     @apply rounded-md bg-orange-200/80 px-1 py-0.5 text-stone-950;
     box-decoration-break: clone;
