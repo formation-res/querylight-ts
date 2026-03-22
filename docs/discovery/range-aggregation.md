@@ -73,4 +73,4 @@ const freshness = publishedAtIndex.rangeAggregation([
 
 - [Histogram Aggregation](./histogram-aggregation.md)
 - [Date Histogram Aggregation](./date-histogram-aggregation.md)
-- [Numeric and Date Aggregations](./numeric-and-date-aggregations.md)
+- [NumericFieldIndex and DateFieldIndex for Structured Features](../indexing/numeric-and-date-fields.md)

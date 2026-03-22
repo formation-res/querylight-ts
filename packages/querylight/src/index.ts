@@ -59,6 +59,7 @@ export {
   RankingAlgorithm,
   type ReciprocalRankFusionOptions,
   type SearchRequest,
+  type SignificantTermsBucket,
   type TermPos,
   type TextFieldIndexState,
   andHits,

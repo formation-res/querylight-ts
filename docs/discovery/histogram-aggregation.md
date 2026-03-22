@@ -60,4 +60,4 @@ const subsetBuckets = priceIndex.histogram(10, new Set(["a", "b"]));
 
 - [Range Aggregation](./range-aggregation.md)
 - [Date Histogram Aggregation](./date-histogram-aggregation.md)
-- [Numeric and Date Aggregations](./numeric-and-date-aggregations.md)
+- [NumericFieldIndex and DateFieldIndex for Structured Features](../indexing/numeric-and-date-fields.md)

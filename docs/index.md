@@ -56,9 +56,8 @@ This index mirrors the documentation table of contents used by the demo.
 
 ## Aggregations
 
-- [Terms Aggregation and Significant Terms](./discovery/terms-aggregation-and-significant-terms.md)
-- [Section and Tag Aggregations](./discovery/section-and-tag-aggregations.md)
-- [Numeric and Date Aggregations](./discovery/numeric-and-date-aggregations.md)
+- [Terms Aggregation](./discovery/terms-aggregation.md)
+- [Significant Terms Aggregation](./discovery/significant-terms-aggregation.md)
 - [Value Count Aggregation](./discovery/value-count-aggregation.md)
 - [Min Aggregation](./discovery/min-aggregation.md)
 - [Max Aggregation](./discovery/max-aggregation.md)

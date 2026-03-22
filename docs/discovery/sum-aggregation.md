@@ -45,4 +45,4 @@ const totalForSubset = popularityIndex.sum(new Set(["a", "b"]));
 
 - [Avg Aggregation](./avg-aggregation.md)
 - [Stats Aggregation](./stats-aggregation.md)
-- [Numeric and Date Aggregations](./numeric-and-date-aggregations.md)
+- [NumericFieldIndex and DateFieldIndex for Structured Features](../indexing/numeric-and-date-fields.md)

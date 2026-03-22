@@ -98,7 +98,7 @@ Use this for:
 ### Significant terms
 
 ```ts
-const interesting = textField.getTopSignificantTerms(6, subset);
+const interesting = textField.significantTermsAggregation(6, subset);
 ```
 
 Use this for:
@@ -138,5 +138,7 @@ It is not a replacement for a warehouse or OLAP engine. It is a useful middle gr
 
 - [From Raw API Payloads to Browser Dashboards](./from-raw-api-payloads-to-browser-dashboards.md)
 - [Build Interactive ECharts Dashboards from Plain JSON](./building-echarts-dashboards-from-plain-json.md)
-- [Numeric and Date Aggregations](../discovery/numeric-and-date-aggregations.md)
-- [Terms Aggregation and Significant Terms](../discovery/terms-aggregation-and-significant-terms.md)
+- [Terms Aggregation](../discovery/terms-aggregation.md)
+- [Histogram Aggregation](../discovery/histogram-aggregation.md)
+- [Date Histogram Aggregation](../discovery/date-histogram-aggregation.md)
+- [Significant Terms Aggregation](../discovery/significant-terms-aggregation.md)

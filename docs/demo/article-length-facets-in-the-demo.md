@@ -90,4 +90,4 @@ Length is not a topical facet, but it is often a useful navigation hint in docs:
 - [How the Aggregations Sidebar Works](./tag-aggregations-sidebar.md)
 - [Range Aggregation](../discovery/range-aggregation.md)
 - [Histogram Aggregation](../discovery/histogram-aggregation.md)
-- [Numeric and Date Aggregations](../discovery/numeric-and-date-aggregations.md)
+- [NumericFieldIndex and DateFieldIndex for Structured Features](../indexing/numeric-and-date-fields.md)

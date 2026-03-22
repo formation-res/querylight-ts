@@ -70,4 +70,4 @@ If no values are available, it returns:
 
 - [Avg Aggregation](./avg-aggregation.md)
 - [Range Aggregation](./range-aggregation.md)
-- [Numeric and Date Aggregations](./numeric-and-date-aggregations.md)
+- [NumericFieldIndex and DateFieldIndex for Structured Features](../indexing/numeric-and-date-fields.md)

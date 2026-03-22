@@ -56,4 +56,4 @@ const count = priceIndex.valueCount(subsetIds);
 
 - [Min Aggregation](./min-aggregation.md)
 - [Avg Aggregation](./avg-aggregation.md)
-- [Numeric and Date Aggregations](./numeric-and-date-aggregations.md)
+- [NumericFieldIndex and DateFieldIndex for Structured Features](../indexing/numeric-and-date-fields.md)

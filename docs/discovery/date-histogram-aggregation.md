@@ -60,4 +60,4 @@ const recentBuckets = publishedAtIndex.dateHistogram(oneDay, new Set(["a", "b"])
 
 - [Histogram Aggregation](./histogram-aggregation.md)
 - [Range Aggregation](./range-aggregation.md)
-- [Numeric and Date Aggregations](./numeric-and-date-aggregations.md)
+- [NumericFieldIndex and DateFieldIndex for Structured Features](../indexing/numeric-and-date-fields.md)

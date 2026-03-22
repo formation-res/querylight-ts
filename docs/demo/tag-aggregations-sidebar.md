@@ -4,7 +4,7 @@ section: Demo Internals
 title: How the Aggregations Sidebar Works
 summary: How the demo calculates live text facets, word-count buckets, and significant terms for the right-hand sidebar.
 tags: [demo, aggregations, facets, sidebar, significant-terms, histogram]
-apis: [termsAggregation, getTopSignificantTerms, rangeAggregation, histogram, BoolQuery, TermQuery, RangeQuery]
+apis: [termsAggregation, significantTermsAggregation, rangeAggregation, histogram, BoolQuery, TermQuery, RangeQuery]
 level: advanced
 order: 20
 ---
@@ -136,5 +136,5 @@ That is a big improvement over just showing ten blue links.
 ## Related articles
 
 - [Article Length Facets in the Demo](./article-length-facets-in-the-demo.md)
-- [Terms Aggregation and Significant Terms](../discovery/terms-aggregation-and-significant-terms.md)
-- [Numeric and Date Aggregations](../discovery/numeric-and-date-aggregations.md)
+- [Terms Aggregation](../discovery/terms-aggregation.md)
+- [Significant Terms Aggregation](../discovery/significant-terms-aggregation.md)

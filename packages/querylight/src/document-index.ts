@@ -30,6 +30,7 @@ import {
   type NumericRangeAggregationRange,
   type NumericStatsAggregation,
   type NumericFieldIndexState,
+  type SignificantTermsBucket,
   QueryContext,
   RankingAlgorithm,
   type SearchRequest,
@@ -749,27 +750,29 @@ export class TextFieldIndex implements FieldIndex {
     return this.termCounts.get(docId) ?? 0;
   }
 
-  getTopSignificantTerms(n: number, subsetDocIds: Set<string>): Record<string, [number, number]> {
+  significantTermsAggregation(n: number, subsetDocIds: Set<string>): SignificantTermsBucket[] {
     const totalDocs = this.termCounts.size;
     const subsetSize = subsetDocIds.size;
-    return Object.fromEntries(
-      [...this.termDocPositions.entries()]
-        .map(([term, docPositions]) => {
-          const docCount = countDocsInSubset(docPositions, subsetDocIds);
-          if (docCount === 0) {
-            return null;
-          }
-          const backgroundCount = docPositions.size;
-          const subsetCount = docCount;
-          const subsetFrequency = subsetSize === 0 ? 0 : subsetCount / subsetSize;
-          const backgroundFrequency = backgroundCount / (totalDocs || 1);
-          const significance = backgroundFrequency > 0 ? subsetFrequency / backgroundFrequency : subsetFrequency;
-          return [term, [significance, docCount] as [number, number]] as [string, [number, number]];
-        })
-        .filter((entry): entry is [string, [number, number]] => entry !== null)
-        .sort((a, b) => b[1][0] - a[1][0])
-        .slice(0, n)
-    );
+    return [...this.termDocPositions.entries()]
+      .map(([term, docPositions]) => {
+        const subsetDocCount = countDocsInSubset(docPositions, subsetDocIds);
+        if (subsetDocCount === 0) {
+          return null;
+        }
+        const backgroundDocCount = docPositions.size;
+        const subsetFrequency = subsetSize === 0 ? 0 : subsetDocCount / subsetSize;
+        const backgroundFrequency = backgroundDocCount / (totalDocs || 1);
+        const score = backgroundFrequency > 0 ? subsetFrequency / backgroundFrequency : subsetFrequency;
+        return {
+          key: term,
+          score,
+          subsetDocCount,
+          backgroundDocCount
+        } satisfies SignificantTermsBucket;
+      })
+      .filter((entry): entry is SignificantTermsBucket => entry !== null)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, n);
   }
 
   termsAggregation(n: number, subsetDocIds?: Set<string>): Record<string, number> {

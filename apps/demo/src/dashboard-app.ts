@@ -489,7 +489,7 @@ const buckets = temperatureField.histogram(2, subset);</code></pre>
           <article class="dashboard-ops-card">
             <p class="dashboard-ops-label">Querylight operations used</p>
             <p class="dashboard-copy"><code>TermQuery(indicatorId)</code> + <code>TermsQuery(country)</code> + <code>RangeQuery(year)</code> define the subset.</p>
-            <p class="dashboard-copy"><code>NumericFieldIndex.stats(value)</code> powers summary cards and <code>TextFieldIndex.getTopSignificantTerms(corpus)</code> explains the slice.</p>
+            <p class="dashboard-copy"><code>NumericFieldIndex.stats(value)</code> powers summary cards and <code>TextFieldIndex.significantTermsAggregation(corpus)</code> explains the slice.</p>
           </article>
           <article class="dashboard-ops-card">
             <p class="dashboard-ops-label">Significant terms in this slice</p>
@@ -560,7 +560,7 @@ const buckets = temperatureField.histogram(2, subset);</code></pre>
           <article class="dashboard-ops-card">
             <p class="dashboard-ops-label">Querylight operations used</p>
             <p class="dashboard-copy"><code>RangeQuery(magnitude)</code> + <code>RangeQuery(depthKm)</code> + optional <code>TermQuery(placeCategory)</code> define the event subset.</p>
-            <p class="dashboard-copy"><code>TextFieldIndex.getTopSignificantTerms(placeText)</code> surfaces the place words that dominate the current slice.</p>
+            <p class="dashboard-copy"><code>TextFieldIndex.significantTermsAggregation(placeText)</code> surfaces the place words that dominate the current slice.</p>
           </article>
           <article class="dashboard-ops-card">
             <p class="dashboard-ops-label">Significant place terms</p>
@@ -720,7 +720,7 @@ function createWorldBankSection(
     const corpusField = getTextField(runtime.index, "corpus");
     const stats = valueField.stats(subset);
     const countryAgg = countryField.termsAggregation(6, subset);
-    const significantTerms = Object.entries(corpusField.getTopSignificantTerms(6, subset));
+    const significantTerms = corpusField.significantTermsAggregation(6, subset);
     const latestYear = records.length > 0 ? Math.max(...records.map((record) => record.year)) : Math.max(startYear, endYear);
     const indicatorName = indicators.find(([id]) => id === indicatorSelect.value)?.[1] ?? indicatorSelect.value;
 
@@ -737,7 +737,7 @@ function createWorldBankSection(
     ]);
 
     significantNode.innerHTML = significantTerms
-      .map(([term, [score, count]]) => `<span class="dashboard-term-pill">${escapeHtml(term)} · ${formatNumber(score)}x · ${count}</span>`)
+      .map((bucket) => `<span class="dashboard-term-pill">${escapeHtml(bucket.key)} · ${formatNumber(bucket.score)}x · ${bucket.subsetDocCount}</span>`)
       .join("");
 
     const activeYears = years.filter((year) => year >= Math.min(startYear, endYear) && year <= Math.max(startYear, endYear));
@@ -894,7 +894,7 @@ function createEarthquakeSection(
     const placeCategoryField = getTextField(runtime.index, "placeCategory");
     const stats = magnitudeField.stats(subset);
     const depthStats = depthField.stats(subset);
-    const significantTerms = Object.entries(placeField.getTopSignificantTerms(8, subset));
+    const significantTerms = placeField.significantTermsAggregation(8, subset);
     const placeCategoryTerms = placeCategoryField.termsAggregation(8, subset);
 
     filtersNode.innerHTML = `
@@ -908,7 +908,7 @@ function createEarthquakeSection(
       { label: "Average depth", value: `${formatNumber(depthStats.avg)} km`, hint: "Depth statistics over the same subset." }
     ]);
     significantNode.innerHTML = significantTerms
-      .map(([term, [score, count]]) => `<span class="dashboard-term-pill">${escapeHtml(term)} · ${formatNumber(score)}x · ${count}</span>`)
+      .map((bucket) => `<span class="dashboard-term-pill">${escapeHtml(bucket.key)} · ${formatNumber(bucket.score)}x · ${bucket.subsetDocCount}</span>`)
       .join("");
 
     const magnitudeBuckets = magnitudeField.histogram(1, subset);

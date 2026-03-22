@@ -46,4 +46,4 @@ const averageLengthInSubset = wordCountIndex.avg(new Set(["a", "b"]));
 
 - [Value Count Aggregation](./value-count-aggregation.md)
 - [Stats Aggregation](./stats-aggregation.md)
-- [Numeric and Date Aggregations](./numeric-and-date-aggregations.md)
+- [NumericFieldIndex and DateFieldIndex for Structured Features](../indexing/numeric-and-date-fields.md)

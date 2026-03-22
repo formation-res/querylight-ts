@@ -4,7 +4,7 @@ section: Guides
 title: How To Build Faceted Navigation
 summary: Use text, numeric, and date aggregations over the current hit set to drive filters, counts, and exploratory navigation.
 tags: [facets, aggregations, filters, navigation, significant-terms, histogram]
-apis: [termsAggregation, getTopSignificantTerms, rangeAggregation, histogram, dateHistogram, BoolQuery, TermQuery, RangeQuery, DocumentIndex]
+apis: [termsAggregation, significantTermsAggregation, rangeAggregation, histogram, dateHistogram, BoolQuery, TermQuery, RangeQuery, DocumentIndex]
 level: querying
 order: 20
 ---

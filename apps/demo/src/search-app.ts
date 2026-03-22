@@ -15,6 +15,7 @@ import {
   RangeQuery,
   RankingAlgorithm,
   reciprocalRankFusion,
+  type SignificantTermsBucket,
   TermQuery,
   TextFieldIndex,
   VectorFieldIndex,
@@ -104,7 +105,7 @@ type SearchResult = {
   wordCountStats: { count: number; min: number | null; max: number | null; sum: number; avg: number | null };
   wordCountFacets: Array<{ key: string; label: string; docCount: number }>;
   wordCountHistogram: Array<{ key: number; docCount: number }>;
-  significantTerms: Record<string, [number, number]>;
+  significantTerms: SignificantTermsBucket[];
 };
 
 type RuntimeIndexes = {
@@ -888,12 +889,11 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
         : new Set(visibleHits.map(([id]) => id));
   const significantTerms =
     significantTermsSubset && significantTermsSubset.size > 0
-      ? Object.fromEntries(
-          Object.entries(bodyIndex.getTopSignificantTerms(20, significantTermsSubset))
-            .filter(([term, [score, docCount]]) => !/^\d+$/.test(term) && score > 1.05 && docCount > 1)
-            .slice(0, 10)
-        )
-      : {};
+      ? bodyIndex
+          .significantTermsAggregation(20, significantTermsSubset)
+          .filter((bucket) => !/^\d+$/.test(bucket.key) && bucket.score > 1.05 && bucket.subsetDocCount > 1)
+          .slice(0, 10)
+      : [];
   const responseTimeMs = Math.max(1, Math.round(performance.now() - startedAt));
 
   return {
@@ -1265,7 +1265,7 @@ function renderFacets(
   const wordCountFacets = source.wordCountFacets;
   const wordCountHistogram = source.wordCountHistogram;
   const maxWordCountBucket = Math.max(...wordCountHistogram.map((bucket) => bucket.docCount), 1);
-  const significantTerms = Object.entries(source.significantTerms).slice(0, 6);
+  const significantTerms = source.significantTerms.slice(0, 6);
   const wordCountAverage = source.wordCountStats.avg == null ? "n/a" : Math.round(source.wordCountStats.avg).toLocaleString();
   const wordCountRange =
     source.wordCountStats.min == null || source.wordCountStats.max == null
@@ -1326,8 +1326,8 @@ function renderFacets(
         <h3 class="text-sm font-semibold text-stone-900">Significant Terms</h3>
         <div class="mt-3 flex flex-wrap gap-2">
           ${significantTerms
-            .map(([term, values]) => `<button class="chip-button" data-example="${escapeHtml(term)}">${escapeHtml(term)} <span class="text-stone-400">${values[0].toFixed(2)}</span></button>`)
-            .join("") || `<p class="text-sm text-stone-500">No term suggestions.</p>`}
+            .map((bucket) => `<button class="chip-button" data-example="${escapeHtml(bucket.key)}">${escapeHtml(bucket.key)} <span class="text-stone-400">${bucket.score.toFixed(2)}</span></button>`)
+            .join("") || `<p class="text-sm text-stone-500">Do a lexical search to get significant terms.</p>`}
         </div>
       </section>
     </div>

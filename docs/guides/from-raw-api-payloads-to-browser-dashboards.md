@@ -96,7 +96,7 @@ For example:
 - `stats(...)` gives you summary metrics
 - `histogram(...)` gives you numeric buckets
 - `dateHistogram(...)` gives you time buckets
-- `getTopSignificantTerms(...)` gives you characteristic vocabulary for a slice
+- `significantTermsAggregation(...)` gives you characteristic vocabulary for a slice
 
 That is enough to power:
 

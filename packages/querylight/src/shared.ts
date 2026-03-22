@@ -141,6 +141,13 @@ export interface DateHistogramBucket {
   docCount: number;
 }
 
+export interface SignificantTermsBucket {
+  key: string;
+  score: number;
+  subsetDocCount: number;
+  backgroundDocCount: number;
+}
+
 export type IndexState = TextFieldIndexState | GeoFieldIndexState | NumericFieldIndexState | DateFieldIndexState | VectorFieldIndexState;
 
 export interface DocumentIndexState {
