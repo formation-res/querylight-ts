@@ -25,6 +25,8 @@ This article focuses on text-oriented discovery:
 - term counts for facets
 - significant terms for "what stands out here?"
 
+If you specifically want metadata facets over documentation fields such as `section` and `tags`, see [Section and Tag Aggregations](./section-and-tag-aggregations.md).
+
 For numeric/date buckets and metric summaries, see [Numeric and Date Aggregations](./numeric-and-date-aggregations.md).
 
 ## Terms aggregation
@@ -127,4 +129,5 @@ The right sidebar in the demo runs aggregations over the currently selected resu
 
 ## Learn more
 
+- [Section and Tag Aggregations](./section-and-tag-aggregations.md)
 - [Faceted search on Wikipedia](https://en.wikipedia.org/wiki/Faceted_search)

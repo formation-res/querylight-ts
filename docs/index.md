@@ -57,6 +57,7 @@ This index mirrors the documentation table of contents used by the demo.
 ## Discovery
 
 - [Terms Aggregation and Significant Terms](./discovery/terms-aggregation-and-significant-terms.md)
+- [Section and Tag Aggregations](./discovery/section-and-tag-aggregations.md)
 - [Numeric and Date Aggregations](./discovery/numeric-and-date-aggregations.md)
 - [Value Count Aggregation](./discovery/value-count-aggregation.md)
 - [Min Aggregation](./discovery/min-aggregation.md)
@@ -103,6 +104,5 @@ This index mirrors the documentation table of contents used by the demo.
 
 ## Operations
 
-- [Testing Patterns from the Repository](./operations/testing-patterns-from-the-repository.md)
 - [Performance and Memory Tuning](./operations/performance-and-memory-tuning.md)
 - [Testing Search Behavior](./operations/testing-search-behavior.md)
