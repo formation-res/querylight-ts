@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 function readFacetCount(text: string | null): number {
   const match = text?.match(/(\d+)\s*$/);
@@ -8,8 +8,13 @@ function readFacetCount(text: string | null): number {
   return Number.parseInt(match[1] ?? "0", 10);
 }
 
+async function switchToLexicalSearch(page: Page): Promise<void> {
+  await page.locator("#experience-search").click();
+}
+
 test("detail tag facet keeps results usable", async ({ page }) => {
   await page.goto("/");
+  await switchToLexicalSearch(page);
 
   const queryInput = page.locator("#query");
   await queryInput.fill("terms");
@@ -37,8 +42,45 @@ test("docs search boots from the gzipped demo payload", async ({ page }) => {
   await expect(page.locator("#query")).toBeVisible();
 });
 
+test("home view defaults to ask mode with a shared query input", async ({ page }) => {
+  await page.goto("/");
+
+  const askButton = page.locator("#experience-ask");
+  const searchButton = page.locator("#experience-search");
+  const queryInput = page.locator("#query");
+  const topCard = page.locator("#demo-shell-content > section").first();
+
+  await expect(askButton).toHaveClass(/nav-result-active/);
+  await expect(searchButton).not.toHaveClass(/nav-result-active/);
+  await expect(topCard).toContainText("Querylight Documentation & Demo");
+  await expect(topCard).not.toContainText("Documentation search and embedded analytics.");
+  await expect(topCard).not.toContainText("Querylight TS Demo");
+  await expect(topCard).not.toContainText("Package 0.9.2");
+  await expect(topCard).not.toContainText("Built");
+  await expect(page.locator("#active-filters-inline")).not.toContainText("No active facets.");
+
+  await queryInput.fill("vector search");
+  await searchButton.click();
+  await expect(queryInput).toHaveValue("vector search");
+  await askButton.click();
+  await expect(queryInput).toHaveValue("vector search");
+
+  await page.locator("#clear-query").click();
+  await expect(queryInput).toHaveValue("");
+});
+
+test("query-param boot keeps lexical search active", async ({ page }) => {
+  await page.goto("/?q=terms");
+
+  await expect(page.locator("#experience-search")).toHaveClass(/nav-result-active/);
+  await expect(page.locator("#experience-ask")).not.toHaveClass(/nav-result-active/);
+  await expect(page.locator("#query")).toHaveValue("terms");
+  await expect(page.locator("#result-count")).toContainText(/matches/);
+});
+
 test("facet count matches the current-query result count after applying it", async ({ page }) => {
   await page.goto("/");
+  await switchToLexicalSearch(page);
 
   const queryInput = page.locator("#query");
   await queryInput.fill("terms");
@@ -147,6 +189,7 @@ test("api reference header link navigates without triggering a hard reload", asy
 
 test("api reference pages appear in search and section facets", async ({ page }) => {
   await page.goto("/");
+  await switchToLexicalSearch(page);
 
   await page.locator("#query").fill("createSimpleTextSearchIndex");
   await page.locator("#submit-query").click();
@@ -158,6 +201,7 @@ test("api reference pages appear in search and section facets", async ({ page })
 
 test("search results support paging and expose offset metadata", async ({ page }) => {
   await page.goto("/");
+  await switchToLexicalSearch(page);
 
   await page.locator("#query").fill("search");
   await page.locator("#submit-query").click();
@@ -184,6 +228,7 @@ test("search results support paging and expose offset metadata", async ({ page }
 
 test("all documentation view paginates beyond the first 20 docs", async ({ page }) => {
   await page.goto("/");
+  await switchToLexicalSearch(page);
 
   await page.locator("#submit-query").click();
 
@@ -244,6 +289,7 @@ test("ask the docs jump to section keeps the current docs page", async ({ page }
 
 test("narrower text queries still show significant term suggestions", async ({ page }) => {
   await page.goto("/");
+  await switchToLexicalSearch(page);
 
   await page.locator("#query").fill("semantic");
   await page.locator("#submit-query").click();

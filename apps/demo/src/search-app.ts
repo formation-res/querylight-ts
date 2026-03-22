@@ -928,29 +928,20 @@ function createShell(context: RuntimeContext): void {
   requireApp().innerHTML = `
     <main id="demo-shell" class="demo-shell mx-auto w-[min(1560px,calc(100vw-24px))] py-6 lg:py-8" data-busy="false">
       <div id="demo-shell-content" class="demo-shell-content">
-      <section class="surface mb-5 p-5 sm:p-6">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div class="max-w-3xl">
-            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-orange-700">Querylight TS Demo</p>
-            <h1 class="mt-3 font-serif text-4xl leading-tight text-stone-950 sm:text-5xl">Documentation search and embedded analytics.</h1>
-            <p class="mt-3 max-w-2xl text-sm leading-7 text-stone-600 sm:text-base">
-              Explore the docs search experience or switch to the dashboard to see Querylight TS turn raw API payloads into faceted, local-first charts.
-            </p>
-          </div>
-          <div class="flex flex-wrap gap-2">
+      <section class="surface search-shell mb-5 p-5 sm:p-6">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <h1 class="font-serif text-2xl leading-tight text-stone-950 sm:text-3xl">Querylight Documentation &amp; Demo</h1>
+          <div class="flex flex-wrap gap-2 lg:justify-end">
             <a href="/" class="chip-button${docsSearchClass}">Docs Search</a>
             <a href="/docs/api/" class="chip-button${apiReferenceClass}">API Reference</a>
             <a href="/dashboard/" class="chip-button">Dashboard</a>
           </div>
         </div>
-        <p class="mt-4 text-xs text-stone-500">${escapeHtml(`Package ${packageMeta.version} · ${buildTimeLabel}`)}</p>
-      </section>
-      <section class="surface search-shell p-5 sm:p-6">
-        <div class="mb-4 inline-flex rounded-full border border-stone-900/10 bg-white/75 p-1">
+        <div class="mt-5 inline-flex rounded-full border border-stone-900/10 bg-white/75 p-1">
           <button id="experience-ask" type="button" class="chip-button">Ask the docs</button>
           <button id="experience-search" type="button" class="chip-button">Search</button>
         </div>
-        <form id="query-form" class="search-form" autocomplete="off">
+        <form id="query-form" class="search-form mt-4" autocomplete="off">
           <div class="search-input-wrap">
             <input id="query" class="control-input min-w-0 flex-1" placeholder="Search Querylight TS documentation" />
             <button id="clear-query" type="button" class="control-button control-button-muted">Clear</button>
@@ -1245,7 +1236,7 @@ function renderActiveFilters(...nodes: HTMLDivElement[]): void {
     ? activeFilters
         .map((filter) => `<button class="chip-button" data-facet="${filter.facet}" data-value="${escapeHtml(filter.value)}">${escapeHtml(filter.label)} ×</button>`)
         .join("")
-    : `<p class="text-sm text-stone-500">No active facets.</p>`;
+    : "";
 
   nodes.forEach((node) => {
     node.innerHTML = content;
@@ -1733,9 +1724,20 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     setMobilePanel("none");
   };
 
+  const syncSharedQuery = (query: string): void => {
+    state = searchContext.patch({ query, offset: 0 });
+    semanticQuestionState = {
+      ...semanticQuestionState,
+      query,
+      status: query.trim() ? semanticQuestionState.status : "idle",
+      error: null,
+      ...(query.trim() ? {} : { results: [] })
+    };
+  };
+
   const goHome = () => {
     state = searchContext.replace({ ...initialState });
-    activeExperience = "search";
+    activeExperience = "ask";
     submittedResult = null;
     suggestionResult = null;
     semanticQuestionState = {
@@ -1760,14 +1762,15 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   const syncControls = () => {
     const isAsk = activeExperience === "ask";
-    queryInput.value = isAsk ? semanticQuestionState.query : state.query;
+    const sharedQuery = state.query;
+    queryInput.value = sharedQuery;
     queryInput.placeholder = isAsk ? "Ask a question like: how do I use vector search?" : "Search Querylight TS documentation";
     modeSelect.value = state.mode;
     rankingSelect.value = state.ranking;
     operationSelect.value = state.operation;
     prefixInput.checked = state.prefix;
     excludeAdvancedInput.checked = state.excludeAdvanced;
-    clearQueryButton.disabled = (isAsk ? semanticQuestionState.query : state.query).length === 0;
+    clearQueryButton.disabled = sharedQuery.length === 0;
     experienceSearchButton.classList.toggle("nav-result-active", !isAsk);
     experienceAskButton.classList.toggle("nav-result-active", isAsk);
     [modeSelect, rankingSelect, operationSelect, prefixInput, excludeAdvancedInput].forEach((control) => {
@@ -1912,13 +1915,13 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     suggestionResult = null;
     activeDocId = "";
     activeChunkId = null;
-    activeExperience = "search";
+    activeExperience = nextQuery || nextApi || nextTag ? "search" : "ask";
     state = searchContext.patch({
-      query: nextQuery,
       offset: 0,
       api: nextApi,
       tag: nextTag
     });
+    syncSharedQuery(nextQuery);
 
     if (state.query.trim()) {
       setSearchModeFromQuery(state.query);
@@ -1969,17 +1972,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   };
 
   queryInput.addEventListener("input", () => {
-    if (activeExperience === "ask") {
-      semanticQuestionState = {
-        ...semanticQuestionState,
-        query: queryInput.value,
-        status: queryInput.value.trim() ? semanticQuestionState.status : "idle",
-        error: null,
-        ...(queryInput.value.trim() ? {} : { results: [] })
-      };
-    } else {
-      state = searchContext.patch({ query: queryInput.value, offset: 0 });
-    }
+    syncSharedQuery(queryInput.value);
     syncControls();
     scheduleSuggestions();
   }, { signal });
@@ -2009,17 +2002,8 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   }, { signal });
 
   clearQueryButton.addEventListener("click", () => {
-    if (activeExperience === "ask") {
-      semanticQuestionState = {
-        query: "",
-        status: "idle",
-        results: [],
-        error: null
-      };
-      currentView = "home";
-    } else {
-      state = searchContext.patch({ query: "", offset: 0 });
-    }
+    syncSharedQuery("");
+    currentView = "home";
     resetToHomeIfEmpty();
     queryInput.focus();
     renderApp();
@@ -2031,6 +2015,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   }, { signal });
 
   experienceSearchButton.addEventListener("click", () => {
+    syncSharedQuery(queryInput.value);
     activeExperience = "search";
     if (!submittedResult && !state.query.trim()) {
       currentView = "home";
@@ -2041,6 +2026,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   }, { signal });
 
   experienceAskButton.addEventListener("click", () => {
+    syncSharedQuery(queryInput.value);
     activeExperience = "ask";
     currentView = semanticQuestionState.results.length > 0 ? "ask" : "home";
     hideSuggestions();
@@ -2146,8 +2132,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
     const example = target.closest<HTMLElement>("[data-example]")?.dataset.example;
     if (example) {
-      state.query = example;
-      state.offset = 0;
+      syncSharedQuery(example);
       setSearchModeFromQuery(example);
       closeMobilePanel();
       activeExperience = "search";
