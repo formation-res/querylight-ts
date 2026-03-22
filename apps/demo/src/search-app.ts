@@ -82,11 +82,12 @@ type SearchState = {
   api: string | null;
   tag: string | null;
   section: string | null;
+  significantTerm: string | null;
   wordCountFacet: string | null;
   excludeAdvanced: boolean;
 };
 
-type FacetKind = "api" | "section" | "tag" | "word-count";
+type FacetKind = "api" | "section" | "tag" | "significant-term" | "word-count";
 
 type SearchResult = {
   lexicalHits: Hits;
@@ -251,6 +252,7 @@ const initialState: SearchState = {
   api: null,
   tag: null,
   section: null,
+  significantTerm: null,
   wordCountFacet: null,
   excludeAdvanced: false
 };
@@ -318,10 +320,12 @@ class SearchContextController {
     return this.resolved.get(JSON.stringify(next)) ?? null;
   }
 
-  private facetKey(facet: FacetKind): "api" | "section" | "tag" | "wordCountFacet" {
+  private facetKey(facet: FacetKind): "api" | "section" | "tag" | "significantTerm" | "wordCountFacet" {
     switch (facet) {
       case "word-count":
         return "wordCountFacet";
+      case "significant-term":
+        return "significantTerm";
       default:
         return facet;
     }
@@ -695,6 +699,9 @@ function buildFacetFilterQueries(current: SearchState): QueryFilters {
   }
   if (current.tag) {
     filters.push(new TermQuery({ field: "tags", text: current.tag }));
+  }
+  if (current.significantTerm) {
+    filters.push(new TermQuery({ field: "body", text: current.significantTerm }));
   }
   const wordCountFacet = wordCountFacetByKey(current.wordCountFacet);
   if (wordCountFacet) {
@@ -1146,6 +1153,7 @@ function updateSummary(context: RuntimeContext, summaryNode: HTMLParagraphElemen
     state.section ? `section:${state.section}` : "",
     state.api ? `api:${state.api}` : "",
     state.tag ? `tag:${state.tag}` : "",
+    state.significantTerm ? `term:${state.significantTerm}` : "",
     wordCountFacetByKey(state.wordCountFacet)?.label ? `length:${wordCountFacetByKey(state.wordCountFacet)?.label}` : "",
     state.excludeAdvanced ? "without advanced" : ""
   ].filter(Boolean).join(" · ");
@@ -1227,6 +1235,7 @@ function renderActiveFilters(...nodes: HTMLDivElement[]): void {
     state.section ? { label: `Section: ${state.section}`, facet: "section", value: state.section } : null,
     state.api ? { label: `API: ${state.api}`, facet: "api", value: state.api } : null,
     state.tag ? { label: `Tag: ${state.tag}`, facet: "tag", value: state.tag } : null,
+    state.significantTerm ? { label: `Term: ${state.significantTerm}`, facet: "significant-term", value: state.significantTerm } : null,
     state.wordCountFacet
       ? { label: `Length: ${wordCountFacetByKey(state.wordCountFacet)?.label ?? state.wordCountFacet}`, facet: "word-count", value: state.wordCountFacet }
       : null
@@ -1325,7 +1334,11 @@ function renderFacets(
         <h3 class="text-sm font-semibold text-stone-900">Significant Terms</h3>
         <div class="mt-3 flex flex-wrap gap-2">
           ${significantTerms
-            .map((bucket) => `<button class="chip-button" data-example="${escapeHtml(bucket.key)}">${escapeHtml(bucket.key)} <span class="text-stone-400">${bucket.score.toFixed(2)}</span></button>`)
+            .map((bucket) => {
+              const docCountLabel = String(bucket.subsetDocCount);
+              const title = `${bucket.subsetDocCount} matching docs · ${bucket.backgroundDocCount} docs in corpus · significance ${bucket.score.toFixed(2)}`;
+              return `<button class="chip-button" data-facet="significant-term" data-value="${escapeHtml(bucket.key)}" title="${escapeHtml(title)}">${escapeHtml(bucket.key)} <span class="text-stone-400">${escapeHtml(docCountLabel)}</span></button>`;
+            })
             .join("") || `<p class="text-sm text-stone-500">Do a lexical search to get significant terms.</p>`}
         </div>
       </section>
@@ -1927,7 +1940,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       setSearchModeFromQuery(state.query);
       submittedResult = await searchContext.resultFor(state);
       currentView = "results";
-    } else if (state.tag || state.api || state.section || state.wordCountFacet || state.excludeAdvanced) {
+    } else if (state.tag || state.api || state.section || state.significantTerm || state.wordCountFacet || state.excludeAdvanced) {
       submittedResult = await searchContext.resultFor(state);
       currentView = "results";
     } else if (currentView !== "ask") {
@@ -1958,7 +1971,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   };
 
   const resetToHomeIfEmpty = () => {
-    if (!state.query.trim() && !state.tag && !state.api && !state.section && !state.wordCountFacet && !state.excludeAdvanced) {
+    if (!state.query.trim() && !state.tag && !state.api && !state.section && !state.significantTerm && !state.wordCountFacet && !state.excludeAdvanced) {
       submittedResult = null;
       suggestionResult = null;
       currentView = "home";
@@ -2130,16 +2143,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       return;
     }
 
-    const example = target.closest<HTMLElement>("[data-example]")?.dataset.example;
-    if (example) {
-      syncSharedQuery(example);
-      setSearchModeFromQuery(example);
-      closeMobilePanel();
-      activeExperience = "search";
-      void runSubmittedSearch("results");
-      return;
-    }
-
     const docTarget = target.closest<HTMLElement>("[data-doc]");
     const docId = docTarget?.dataset.doc;
     if (docId) {
@@ -2182,7 +2185,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     const facet = facetTarget.dataset.facet;
     const facetOrigin = facetTarget.dataset.facetOrigin;
     const value = facetTarget.dataset.value ?? "";
-    if (facet === "tag" || facet === "api" || facet === "section" || facet === "word-count") {
+    if (facet === "tag" || facet === "api" || facet === "section" || facet === "significant-term" || facet === "word-count") {
       state = searchContext.toggleFacet(facet, value);
       state = searchContext.patch({ offset: 0 });
     }

@@ -104,6 +104,10 @@ function formatNumber(value: number | null | undefined, digits = 2): string {
   }).format(value);
 }
 
+function formatDocCount(value: number): string {
+  return `${formatNumber(value, 0)} doc${value === 1 ? "" : "s"}`;
+}
+
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
@@ -738,7 +742,7 @@ function createWorldBankSection(
     ]);
 
     significantNode.innerHTML = significantTerms
-      .map((bucket) => `<span class="dashboard-term-pill">${escapeHtml(bucket.key)} · ${formatNumber(bucket.score)}x · ${bucket.subsetDocCount}</span>`)
+      .map((bucket) => `<span class="dashboard-term-pill" title="${escapeHtml(`${formatNumber(bucket.subsetDocCount, 0)} matching docs · ${formatNumber(bucket.backgroundDocCount, 0)} docs in corpus · significance ${formatNumber(bucket.score)}x`)}">${escapeHtml(bucket.key)} · ${escapeHtml(formatDocCount(bucket.subsetDocCount))}</span>`)
       .join("");
 
     const activeYears = years.filter((year) => year >= Math.min(startYear, endYear) && year <= Math.max(startYear, endYear));
@@ -909,7 +913,7 @@ function createEarthquakeSection(
       { label: "Average depth", value: `${formatNumber(depthStats.avg)} km`, hint: "Depth statistics over the same subset." }
     ]);
     significantNode.innerHTML = significantTerms
-      .map((bucket) => `<span class="dashboard-term-pill">${escapeHtml(bucket.key)} · ${formatNumber(bucket.score)}x · ${bucket.subsetDocCount}</span>`)
+      .map((bucket) => `<span class="dashboard-term-pill" title="${escapeHtml(`${formatNumber(bucket.subsetDocCount, 0)} matching docs · ${formatNumber(bucket.backgroundDocCount, 0)} docs in corpus · significance ${formatNumber(bucket.score)}x`)}">${escapeHtml(bucket.key)} · ${escapeHtml(formatDocCount(bucket.subsetDocCount))}</span>`)
       .join("");
 
     const magnitudeBuckets = magnitudeField.histogram(1, subset);

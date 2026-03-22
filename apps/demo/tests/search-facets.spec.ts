@@ -247,7 +247,7 @@ test("all documentation view does not show significant term suggestions", async 
   await page.goto("/");
 
   await expect(page.locator("#facet-sections")).toContainText("Do a lexical search to get significant terms.");
-  await expect(page.locator('#facet-sections [data-example]')).toHaveCount(0);
+  await expect(page.locator('#facet-sections [data-facet="significant-term"]')).toHaveCount(0);
 });
 
 test("ask the docs returns semantic matches with backend fallback messaging", async ({ page }) => {
@@ -295,7 +295,34 @@ test("narrower text queries still show significant term suggestions", async ({ p
   await page.locator("#submit-query").click();
 
   await expect(page.locator("#result-count")).toContainText(/matches/);
-  await expect.poll(async () => page.locator('#facet-sections [data-example]').count()).toBeGreaterThan(0);
+  await expect.poll(async () => page.locator('#facet-sections [data-facet="significant-term"]').count()).toBeGreaterThan(0);
+});
+
+test("significant term suggestions apply an exact facet filter with inline document counts", async ({ page }) => {
+  await page.goto("/");
+  await switchToLexicalSearch(page);
+
+  await page.locator("#query").fill("semantic");
+  await page.locator("#submit-query").click();
+
+  const firstSignificantTerm = page.locator('#facet-sections [data-facet="significant-term"]').first();
+  await expect(firstSignificantTerm).toBeVisible();
+  const term = await firstSignificantTerm.getAttribute("data-value");
+  const labelText = await firstSignificantTerm.textContent();
+  const countMatch = labelText?.match(/(\d+)\s*$/);
+  const expectedCount = Number.parseInt(countMatch?.[1] ?? "", 10);
+  const escapedTerm = (term ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  expect(term).toBeTruthy();
+  expect(Number.isFinite(expectedCount)).toBeTruthy();
+  await expect(firstSignificantTerm).not.toContainText(/\b\d+\.\d{2}\b/);
+  await expect(firstSignificantTerm).toHaveAttribute("title", /matching docs · .*docs in corpus · significance \d+\.\d{2}/);
+
+  await firstSignificantTerm.click();
+
+  await expect(page.locator("#active-filters-inline")).toContainText(new RegExp(`Term: ${escapedTerm}`));
+  await expect(page.locator("#query")).toHaveValue("semantic");
+  await expect(page.locator("#result-count")).toHaveText(new RegExp(`^${expectedCount} matches`));
 });
 
 test("mobile TOC panel opens as a full-height sheet above the footer", async ({ page }) => {
