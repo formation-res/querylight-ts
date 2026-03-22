@@ -1,6 +1,6 @@
 ---
 id: aggregations
-section: Discovery
+section: Aggregations
 title: Terms Aggregation and Significant Terms
 summary: Build term facets from the current result set and surface discriminative vocabulary.
 tags: [aggregation, significant-terms, facets, discovery, analytics, terms]

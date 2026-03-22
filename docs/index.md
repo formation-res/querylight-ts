@@ -54,7 +54,7 @@ This index mirrors the documentation table of contents used by the demo.
 - [RankFeatureQuery for Numeric Relevance Signals](./ranking/rank-feature-query.md)
 - [ScriptScoreQuery for Custom JavaScript Scoring](./ranking/script-score-query.md)
 
-## Discovery
+## Aggregations
 
 - [Terms Aggregation and Significant Terms](./discovery/terms-aggregation-and-significant-terms.md)
 - [Section and Tag Aggregations](./discovery/section-and-tag-aggregations.md)

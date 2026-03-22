@@ -1,6 +1,6 @@
 ---
 id: min-aggregation
-section: Discovery
+section: Aggregations
 title: Min Aggregation
 summary: Get the smallest indexed numeric or date value, optionally restricted to the current result set.
 tags: [aggregation, min, numeric, date, analytics]

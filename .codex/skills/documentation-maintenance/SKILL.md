@@ -32,6 +32,34 @@ The docs live under topic subdirectories in `docs/`.
 
 Use these folders to mirror the TOC structure. Do not create new top-level doc buckets casually.
 
+## Source of truth
+
+Before editing anything, determine whether you are looking at:
+
+- canonical documentation sources
+- generated demo-site content
+- generated payload artifacts
+
+In this repository, the canonical docs source is `docs/`.
+
+Treat these paths as generated outputs unless the user explicitly asks to work on the generation pipeline itself:
+
+- `apps/demo/content/docs`
+- `apps/demo/static/data`
+- `apps/demo/public`
+- `apps/demo/src/generated`
+
+Do not make content edits directly in generated copies when the same material originates in `docs/`.
+
+If a docs change must appear in the demo:
+
+1. edit `docs/` first
+2. update `docs/index.md` if navigation changed
+3. regenerate the demo-site content and payloads from source
+4. verify the generated output reflects the source change
+
+If a stale generated file disagrees with `docs/`, treat `docs/` as authoritative and refresh or remove the stale artifact instead of patching around it.
+
 ## Coverage rules
 
 - Every user-facing feature should have documentation.
@@ -102,8 +130,9 @@ When a feature changes:
 1. Identify the primary article that should own the change.
 2. Decide whether the change is large enough to require a new dedicated article.
 3. Update cross-links from adjacent articles if the new page changes the learning path.
-4. Update `docs/index.md`.
-5. If the docs demo relies on metadata or ordering, keep front matter aligned with the existing section taxonomy.
+4. Confirm you are editing the canonical source in `docs/`, not a generated demo copy.
+5. Update `docs/index.md`.
+6. If the docs demo relies on metadata or ordering, keep front matter aligned with the existing section taxonomy and regenerate the demo content from source.
 
 ## Naming and ordering
 
@@ -116,7 +145,7 @@ When a feature changes:
   - `Analysis`
   - `Lexical Querying`
   - `Ranking`
-  - `Discovery`
+  - `Aggregations`
   - `Indexing`
   - `Other Features`
   - `Guides`
@@ -128,7 +157,9 @@ When a feature changes:
 A docs-related feature change is not done until:
 
 - the code change is documented in the correct article or a new article exists
+- the canonical source in `docs/` was edited instead of a generated copy
 - `docs/index.md` reflects the new structure
 - front matter is complete and correctly ordered
 - nearby links are updated when navigation changed
+- generated demo docs/payloads are refreshed when they depend on the changed source
 - the doc tone and structure match the rest of the docs set

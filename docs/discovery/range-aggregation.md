@@ -1,6 +1,6 @@
 ---
 id: range-aggregation
-section: Discovery
+section: Aggregations
 title: Range Aggregation
 summary: Bucket numeric or date fields into explicit ranges for faceting and filtered navigation.
 tags: [aggregation, range, numeric, date, facets, analytics]

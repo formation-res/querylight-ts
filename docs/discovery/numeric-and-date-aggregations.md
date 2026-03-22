@@ -1,6 +1,6 @@
 ---
 id: numeric-date-aggregations
-section: Discovery
+section: Aggregations
 title: Numeric and Date Aggregations
 summary: A map of the numeric and date aggregation helpers available on NumericFieldIndex and DateFieldIndex.
 tags: [aggregation, numeric, date, histogram, range, analytics]

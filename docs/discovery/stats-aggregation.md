@@ -1,6 +1,6 @@
 ---
 id: stats-aggregation
-section: Discovery
+section: Aggregations
 title: Stats Aggregation
 summary: Get count, min, max, sum, and average from a numeric or date field in one call.
 tags: [aggregation, stats, numeric, date, analytics]

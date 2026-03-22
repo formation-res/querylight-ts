@@ -1,6 +1,6 @@
 ---
 id: histogram-aggregation
-section: Discovery
+section: Aggregations
 title: Histogram Aggregation
 summary: Bucket numeric fields into regular fixed-width intervals for charts and sidebar facets.
 tags: [aggregation, histogram, numeric, facets, analytics]

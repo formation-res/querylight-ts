@@ -1,6 +1,6 @@
 ---
 id: sum-aggregation
-section: Discovery
+section: Aggregations
 title: Sum Aggregation
 summary: Add up all indexed numeric or date values in a field, optionally within a filtered subset.
 tags: [aggregation, sum, numeric, date, analytics]

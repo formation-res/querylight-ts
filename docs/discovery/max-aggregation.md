@@ -1,6 +1,6 @@
 ---
 id: max-aggregation
-section: Discovery
+section: Aggregations
 title: Max Aggregation
 summary: Get the largest indexed numeric or date value, optionally restricted to the current result set.
 tags: [aggregation, max, numeric, date, analytics]

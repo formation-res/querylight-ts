@@ -1,9 +1,9 @@
 ---
 id: section-tag-aggregations
-section: Discovery
+section: Aggregations
 title: Section and Tag Aggregations
 summary: Use terms aggregations over section and tags fields to build navigational facets for documentation and content discovery.
-tags: [aggregation, tags, section, facets, discovery, navigation]
+tags: [aggregation, tags, section, facets, navigation]
 apis: [termsAggregation, TextFieldIndex, TermQuery, DocumentIndex]
 level: querying
 order: 15
@@ -108,7 +108,7 @@ Examples:
 
 - `Overview`
 - `Guides`
-- `Discovery`
+- `Aggregations`
 - `Operations`
 
 Use `tags` aggregations when users need more specific topical refinement inside or across those areas.

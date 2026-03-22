@@ -1,6 +1,6 @@
 ---
 id: date-histogram-aggregation
-section: Discovery
+section: Aggregations
 title: Date Histogram Aggregation
 summary: Bucket date fields into fixed-width time intervals for timelines and recency views.
 tags: [aggregation, date-histogram, date, time, analytics]

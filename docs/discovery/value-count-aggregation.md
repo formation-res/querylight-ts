@@ -1,6 +1,6 @@
 ---
 id: value-count-aggregation
-section: Discovery
+section: Aggregations
 title: Value Count Aggregation
 summary: Count how many numeric or date values are indexed, optionally within the current result set.
 tags: [aggregation, value-count, numeric, date, analytics]

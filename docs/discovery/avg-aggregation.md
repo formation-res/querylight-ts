@@ -1,6 +1,6 @@
 ---
 id: avg-aggregation
-section: Discovery
+section: Aggregations
 title: Avg Aggregation
 summary: Compute the arithmetic mean of indexed numeric or date values, optionally within the current result set.
 tags: [aggregation, avg, numeric, date, analytics]

@@ -210,7 +210,7 @@ const DOC_SECTION_ORDER = [
   "Analysis",
   "Lexical Querying",
   "Ranking",
-  "Discovery",
+  "Aggregations",
   "Indexing",
   "Other Features",
   "Guides",
@@ -2234,45 +2234,13 @@ function wireApp(context: RuntimeContext): () => void {
 }
 
 let runtimeContextPromise: Promise<RuntimeContext> | null = null;
-const DEMO_DATA_CACHE_KEY = `querylight-demo:data:${BUILD_TIMESTAMP}`;
-
-function readCachedDemoData(): DemoDataPayload | null {
-  try {
-    const raw = window.sessionStorage.getItem(DEMO_DATA_CACHE_KEY);
-    if (!raw) {
-      return null;
-    }
-    return JSON.parse(raw) as DemoDataPayload;
-  } catch {
-    return null;
-  }
-}
-
-function writeCachedDemoData(payload: DemoDataPayload): void {
-  try {
-    window.sessionStorage.setItem(DEMO_DATA_CACHE_KEY, JSON.stringify(payload));
-  } catch {
-    // Ignore storage quota or privacy-mode failures and fall back to fetch.
-  }
-}
-
-function createCachedRuntimeContext(): RuntimeContext | null {
-  const cached = readCachedDemoData();
-  return cached ? createRuntimeContext(cached) : null;
-}
 
 async function loadRuntimeContext(): Promise<RuntimeContext> {
-  const cachedContext = createCachedRuntimeContext();
-  if (cachedContext) {
-    return cachedContext;
-  }
-
   const response = await fetch("/data/demo-data.json");
   if (!response.ok) {
     throw new Error(`failed to load demo data: ${response.status} ${response.statusText}`);
   }
   const demoData = (await response.json()) as DemoDataPayload;
-  writeCachedDemoData(demoData);
   return createRuntimeContext(demoData);
 }
 
@@ -2295,11 +2263,8 @@ function resetSearchState(): void {
 export async function mountSearchApp(nextApp: HTMLDivElement): Promise<() => void> {
   app = nextApp;
   resetSearchState();
-  const cachedContext = createCachedRuntimeContext();
-  if (!cachedContext) {
-    renderLoading("Loading prebuilt documentation search indexes.");
-  }
-  runtimeContextPromise ??= cachedContext ? Promise.resolve(cachedContext) : loadRuntimeContext();
+  renderLoading("Loading prebuilt documentation search indexes.");
+  runtimeContextPromise ??= loadRuntimeContext();
 
   try {
     const context = await runtimeContextPromise;
