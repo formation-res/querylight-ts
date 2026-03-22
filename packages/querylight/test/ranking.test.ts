@@ -16,16 +16,16 @@ function createIndex(algorithm: RankingAlgorithm): DocumentIndex {
 }
 
 describe("ranking", () => {
-  it("should work for both algorithms", () => {
+  it("should work for both algorithms", async () => {
     const tfidf = createIndex(RankingAlgorithm.TFIDF);
     const bm25 = createIndex(RankingAlgorithm.BM25);
-    expect(tfidf.search(new MatchQuery({ field: "text", text: "foo" }))[0]?.[0]).toBe("1");
-    expect(bm25.search(new MatchQuery({ field: "text", text: "foo" }))[0]?.[0]).toBe("1");
+    expect((await tfidf.search(new MatchQuery({ field: "text", text: "foo" })))[0]?.[0]).toBe("1");
+    expect((await bm25.search(new MatchQuery({ field: "text", text: "foo" })))[0]?.[0]).toBe("1");
   });
 
-  it("bm25 scores should match lucene", () => {
+  it("bm25 scores should match lucene", async () => {
     const bm25 = createIndex(RankingAlgorithm.BM25);
-    const results = bm25.search(new MatchQuery({ field: "text", text: "foo" }));
+    const results = await bm25.search(new MatchQuery({ field: "text", text: "foo" }));
     expect(results).toHaveLength(2);
     expect(results[0]?.[0]).toBe("1");
     expect(results[0]?.[1]).toBeCloseTo(0.7385771316718703, 6);

@@ -41,6 +41,7 @@ import {
   type SemanticModelInfo,
   type SemanticPayload
 } from "./semantic";
+import { createSemanticVectorScorer } from "./webgpu-vector-scorer";
 
 declare const __BUILD_TIMESTAMP__: string;
 
@@ -157,6 +158,7 @@ type SemanticRuntime = {
   chunkIndex: VectorFieldIndex;
   relatedArticlesByDocId: Map<string, RelatedArticleRecord>;
   chunkEmbeddingsById: Map<string, ChunkEmbeddingRecord>;
+  backend: "webgpu" | "cpu";
 };
 
 type SemanticQuestionState = {
@@ -270,7 +272,8 @@ let semanticQuestionState: SemanticQuestionState = {
 
 class SearchContextController {
   private currentState: SearchState;
-  private readonly cache = new Map<string, SearchResult>();
+  private readonly cache = new Map<string, Promise<SearchResult>>();
+  private readonly resolved = new Map<string, SearchResult>();
 
   constructor(private readonly runtime: RuntimeContext, initial: SearchState) {
     this.currentState = { ...initial };
@@ -298,15 +301,22 @@ class SearchContextController {
     });
   }
 
-  resultFor(next: SearchState = this.currentState): SearchResult {
+  async resultFor(next: SearchState = this.currentState): Promise<SearchResult> {
     const cacheKey = JSON.stringify(next);
     const cached = this.cache.get(cacheKey);
     if (cached) {
       return cached;
     }
-    const result = searchForState(this.runtime, next);
+    const result = searchForState(this.runtime, next).then((resolved) => {
+      this.resolved.set(cacheKey, resolved);
+      return resolved;
+    });
     this.cache.set(cacheKey, result);
     return result;
+  }
+
+  peek(next: SearchState = this.currentState): SearchResult | null {
+    return this.resolved.get(JSON.stringify(next)) ?? null;
   }
 
   private facetKey(facet: FacetKind): "api" | "section" | "tag" | "wordCountFacet" {
@@ -516,14 +526,16 @@ function loadSerializedIndexes(
   };
 }
 
-function createVectorIndex(dimensions: number): VectorFieldIndex {
-  return new VectorFieldIndex(SEMANTIC_INDEX_HASH_TABLES, dimensions, createSeededRandom(SEMANTIC_INDEX_RANDOM_SEED));
-}
-
-function createSemanticRuntime(semanticPayload: SemanticPayload): SemanticRuntime {
+async function createSemanticRuntime(semanticPayload: SemanticPayload): Promise<SemanticRuntime> {
   // Load the precomputed chunk embeddings into an ANN index once at startup so
   // Ask-the-docs queries only need to embed the user's question.
-  const chunkIndex = createVectorIndex(semanticPayload.model.dimensions);
+  const { scorer, backend } = await createSemanticVectorScorer();
+  const chunkIndex = new VectorFieldIndex({
+    numHashTables: SEMANTIC_INDEX_HASH_TABLES,
+    dimensions: semanticPayload.model.dimensions,
+    random: createSeededRandom(SEMANTIC_INDEX_RANDOM_SEED),
+    options: { scorer }
+  });
 
   semanticPayload.chunkEmbeddings.forEach((record) => {
     chunkIndex.insert(record.chunkId, [record.embedding]);
@@ -533,11 +545,12 @@ function createSemanticRuntime(semanticPayload: SemanticPayload): SemanticRuntim
     model: semanticPayload.model,
     chunkIndex,
     relatedArticlesByDocId: new Map(semanticPayload.relatedArticles.map((record) => [record.docId, record])),
-    chunkEmbeddingsById: new Map(semanticPayload.chunkEmbeddings.map((record) => [record.chunkId, record]))
+    chunkEmbeddingsById: new Map(semanticPayload.chunkEmbeddings.map((record) => [record.chunkId, record])),
+    backend
   };
 }
 
-function createRuntimeContext(demoData: DemoDataPayload): RuntimeContext {
+async function createRuntimeContext(demoData: DemoDataPayload): Promise<RuntimeContext> {
   const docs = [...demoData.docs].sort((left, right) => {
     const leftSectionIndex = DOC_SECTION_ORDER.indexOf(left.section);
     const rightSectionIndex = DOC_SECTION_ORDER.indexOf(right.section);
@@ -561,7 +574,7 @@ function createRuntimeContext(demoData: DemoDataPayload): RuntimeContext {
       [RankingAlgorithm.BM25]: loadSerializedIndexes(RankingAlgorithm.BM25, demoData.indexes[RankingAlgorithm.BM25]),
       [RankingAlgorithm.TFIDF]: loadSerializedIndexes(RankingAlgorithm.TFIDF, demoData.indexes[RankingAlgorithm.TFIDF])
     },
-    semantic: createSemanticRuntime(demoData.semantic)
+    semantic: await createSemanticRuntime(demoData.semantic)
   };
 }
 
@@ -628,13 +641,13 @@ function getRelatedArticles(context: RuntimeContext, doc: DocEntry): RelatedArti
     .filter((value): value is RelatedArticleViewModel => value !== null);
 }
 
-function getSemanticQuestionResults(context: RuntimeContext, queryVector: number[], limit = 4): ChunkHitViewModel[] {
-  // Retrieve more than the final limit and then collapse to one hit per
-  // document so the answer list is diverse instead of dominated by one page.
+async function getSemanticQuestionResults(context: RuntimeContext, queryVector: number[], limit = 4): Promise<ChunkHitViewModel[]> {
+  // The demo corpus is small enough to rerank every chunk exactly. That gives
+  // more stable ask-the-docs behavior than relying on ANN bucket collisions.
   const byDocId = new Map<string, ChunkHitViewModel>();
+  const candidateIds = [...context.semantic.chunkEmbeddingsById.keys()];
 
-  context.semantic.chunkIndex
-    .query(queryVector, limit * 4)
+  (await context.semantic.chunkIndex.rerankAsync(queryVector, candidateIds, limit * 4))
     .forEach(([chunkId, score]) => {
       const chunk = context.semantic.chunkEmbeddingsById.get(chunkId);
       const doc = chunk ? context.byId.get(chunk.docId) : null;
@@ -725,7 +738,7 @@ function wordCountFacetByKey(key: string | null): WordCountFacet | null {
   return WORD_COUNT_FACETS.find((facet) => facet.key === key) ?? null;
 }
 
-function searchForState(context: RuntimeContext, current: SearchState): SearchResult {
+async function searchForState(context: RuntimeContext, current: SearchState): Promise<SearchResult> {
   const startedAt = performance.now();
   // One search pass produces both the visible result list and the derived facet
   // data so the sidebar always reflects the currently selected result set.
@@ -799,14 +812,14 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   const fuzzyHits =
     trimmed.length === 0
       ? []
-      : active.fuzzy.searchRequest({
+      : await active.fuzzy.searchRequest({
           query: new MatchQuery({ field: "combined", text: trimmed, operation: OP.OR, boost: 1.5 }),
           limit: Number.MAX_SAFE_INTEGER
         });
 
   const allowedIds =
     filters.length > 0 || mustNot.length > 0
-      ? index.searchRequest({ query: filterOnlyQuery }).map(([id]) => id)
+      ? (await index.searchRequest({ query: filterOnlyQuery })).map(([id]) => id)
       : undefined;
   const filterOnlySet = new Set(allowedIds ?? context.docs.map((doc) => doc.id));
   const filterOnlyHits: Hits = context.docs
@@ -816,11 +829,11 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   const phraseHits =
     trimmed.length === 0
       ? filterOnlyHits
-      : index.searchRequest({ query: phraseQuery, limit: Number.MAX_SAFE_INTEGER });
+      : await index.searchRequest({ query: phraseQuery, limit: Number.MAX_SAFE_INTEGER });
   const hybridLexicalHits =
     trimmed.length === 0
       ? filterOnlyHits
-      : index.searchRequest({ query: hybridLexicalQuery, limit: Number.MAX_SAFE_INTEGER });
+      : await index.searchRequest({ query: hybridLexicalQuery, limit: Number.MAX_SAFE_INTEGER });
 
   let fullFinalHits: Hits;
   let lexicalHits: Hits;
@@ -838,7 +851,7 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
       highlightQuery = null;
       break;
     case "match":
-      lexicalHits = index.searchRequest({ query: baseTextQuery, limit: Number.MAX_SAFE_INTEGER });
+      lexicalHits = await index.searchRequest({ query: baseTextQuery, limit: Number.MAX_SAFE_INTEGER });
       fullFinalHits = rerankWithTitleBoost(context, trimmed, lexicalHits);
       highlightQuery = baseTextQuery;
       break;
@@ -1143,11 +1156,11 @@ function syncSemanticBusyOverlay(): void {
   overlayMessage.textContent = getSemanticOverlayMessage();
 }
 
-function updateSummary(summaryNode: HTMLParagraphElement, current: SearchResult | null): void {
+function updateSummary(context: RuntimeContext, summaryNode: HTMLParagraphElement, current: SearchResult | null): void {
   if (activeExperience === "ask") {
     summaryNode.textContent =
       semanticQuestionState.status === "ready"
-        ? `${semanticQuestionState.results.length} answers · semantic chunks`
+        ? `${semanticQuestionState.results.length} answers · semantic chunks · ${context.semantic.backend === "webgpu" ? "WebGPU" : "CPU fallback"}`
         : semanticQuestionState.status === "error"
           ? "Ask the docs unavailable"
           : "Ask the docs";
@@ -1268,7 +1281,11 @@ function renderFacets(
 ): void {
   renderActiveFilters(activeFiltersNode, activeFiltersInlineNode);
 
-  const source = current ?? searchContext.resultFor({ ...initialState });
+  const source = current ?? searchContext.peek({ ...initialState });
+  if (!source) {
+    facetSectionsNode.innerHTML = `<div class="grid gap-5"><p class="text-sm text-stone-500">Loading facets…</p></div>`;
+    return;
+  }
   const sectionFacets = Object.entries(source.sectionFacets);
   const tagFacets = Object.entries(source.tagFacets);
   const apiFacets = Object.entries(source.apiFacets);
@@ -1577,7 +1594,7 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
   }
 }
 
-function renderAskResultsPage(centerNode: HTMLDivElement): void {
+function renderAskResultsPage(context: RuntimeContext, centerNode: HTMLDivElement): void {
   const statusMessage =
     semanticQuestionState.status === "loading-model"
       ? "Loading the embedding model for the first semantic query."
@@ -1585,9 +1602,9 @@ function renderAskResultsPage(centerNode: HTMLDivElement): void {
         ? "Matching your question against semantic chunks."
         : semanticQuestionState.status === "error"
           ? semanticQuestionState.error ?? "Semantic search failed."
-          : semanticQuestionState.status === "ready"
-            ? `${semanticQuestionState.results.length} semantic matches`
-            : "Ask a natural-language question and match it against article chunks.";
+        : semanticQuestionState.status === "ready"
+            ? `${semanticQuestionState.results.length} semantic matches · ${context.semantic.backend === "webgpu" ? "WebGPU" : "CPU fallback"}`
+            : `Ask a natural-language question and match it against article chunks. ${context.semantic.backend === "webgpu" ? "WebGPU acceleration is active." : "Using CPU fallback."}`;
 
   centerNode.innerHTML = `
     <article class="surface reader-page px-6 py-8 sm:px-8 sm:py-10">
@@ -1620,7 +1637,7 @@ function renderAskResultsPage(centerNode: HTMLDivElement): void {
 
 function renderCenter(context: RuntimeContext, centerNode: HTMLDivElement, current: SearchResult | null): void {
   if (currentView === "ask") {
-    renderAskResultsPage(centerNode);
+    renderAskResultsPage(context, centerNode);
     return;
   }
   if (currentView === "results" && current) {
@@ -1654,8 +1671,9 @@ function normalizeResultOffset(result: SearchResult): number {
   return Math.min(result.offset, Math.max(result.totalHits - 1, 0));
 }
 
-function wireApp(context: RuntimeContext): () => void {
+async function wireApp(context: RuntimeContext): Promise<() => void> {
   const searchContext = new SearchContextController(context, initialState);
+  await searchContext.resultFor({ ...initialState });
   const queryForm = document.querySelector<HTMLFormElement>("#query-form");
   const queryInput = document.querySelector<HTMLInputElement>("#query");
   const homeButton = document.querySelector<HTMLButtonElement>("#go-home");
@@ -1804,7 +1822,7 @@ function wireApp(context: RuntimeContext): () => void {
   const renderShell = () => {
     syncControls();
     syncSemanticBusyOverlay();
-    updateSummary(summaryNode, submittedResult);
+    updateSummary(context, summaryNode, submittedResult);
     renderToc(context, tocNode, tocStatusNode, submittedResult);
     renderFacets(context, searchContext, activeFiltersNode, activeFiltersInlineNode, facetSectionsNode, submittedResult);
     renderCenter(context, centerNode, submittedResult);
@@ -1876,7 +1894,7 @@ function wireApp(context: RuntimeContext): () => void {
       };
       renderApp();
 
-      const results = getSemanticQuestionResults(context, embedding);
+      const results = await getSemanticQuestionResults(context, embedding);
       semanticQuestionState = {
         ...semanticQuestionState,
         status: "ready",
@@ -1897,13 +1915,13 @@ function wireApp(context: RuntimeContext): () => void {
     renderApp();
   };
 
-  const runSubmittedSearch = (nextView: "results" | "detail" = "results") => {
+  const runSubmittedSearch = async (nextView: "results" | "detail" = "results") => {
     suggestionResult = null;
-    submittedResult = searchContext.resultFor(state);
+    submittedResult = await searchContext.resultFor(state);
     const normalizedOffset = normalizeResultOffset(submittedResult);
     if (normalizedOffset !== state.offset) {
       state = searchContext.patch({ offset: normalizedOffset });
-      submittedResult = searchContext.resultFor(state);
+      submittedResult = await searchContext.resultFor(state);
     }
     if (submittedResult.finalHits.length > 0 && !submittedResult.selectedIds.has(activeDocId)) {
       activeDocId = submittedResult.finalHits[0]?.[0] ?? "";
@@ -1915,7 +1933,7 @@ function wireApp(context: RuntimeContext): () => void {
     renderApp();
   };
 
-  const syncViewFromLocation = () => {
+  const syncViewFromLocation = async () => {
     const detailHash = parseDetailHash();
     if (detailHash && window.location.pathname !== "/") {
       applyLocationHash();
@@ -1943,10 +1961,10 @@ function wireApp(context: RuntimeContext): () => void {
 
     if (state.query.trim()) {
       setSearchModeFromQuery(state.query);
-      submittedResult = searchContext.resultFor(state);
+      submittedResult = await searchContext.resultFor(state);
       currentView = "results";
     } else if (state.tag || state.api || state.section || state.wordCountFacet || state.excludeAdvanced) {
-      submittedResult = searchContext.resultFor(state);
+      submittedResult = await searchContext.resultFor(state);
       currentView = "results";
     } else if (currentView !== "ask") {
       submittedResult = null;
@@ -1968,9 +1986,9 @@ function wireApp(context: RuntimeContext): () => void {
       renderSuggestionsOnly();
       return;
     }
-    pendingSuggestions = window.setTimeout(() => {
+    pendingSuggestions = window.setTimeout(async () => {
       pendingSuggestions = null;
-      suggestionResult = searchContext.resultFor(state);
+      suggestionResult = await searchContext.resultFor(state);
       renderSuggestionsOnly();
     }, SEARCH_INPUT_DEBOUNCE_MS);
   };
@@ -2025,7 +2043,7 @@ function wireApp(context: RuntimeContext): () => void {
     if (activeExperience === "ask") {
       void runSemanticSearch();
     } else {
-      runSubmittedSearch("results");
+      void runSubmittedSearch("results");
     }
   }, { signal });
 
@@ -2068,33 +2086,33 @@ function wireApp(context: RuntimeContext): () => void {
     renderApp();
   }, { signal });
 
-  const applySearchOptions = () => {
+  const applySearchOptions = async () => {
     if (currentView === "home" && !submittedResult) {
       renderShell();
       return;
     }
-    runSubmittedSearch(currentView === "detail" ? "detail" : "results");
+    await runSubmittedSearch(currentView === "detail" ? "detail" : "results");
   };
 
   modeSelect.addEventListener("change", () => {
     state = searchContext.patch({ mode: modeSelect.value as SearchMode, offset: 0 });
-    applySearchOptions();
+    void applySearchOptions();
   }, { signal });
   rankingSelect.addEventListener("change", () => {
     state = searchContext.patch({ ranking: rankingSelect.value as RankingAlgorithm, offset: 0 });
-    applySearchOptions();
+    void applySearchOptions();
   }, { signal });
   operationSelect.addEventListener("change", () => {
     state = searchContext.patch({ operation: operationSelect.value as OP, offset: 0 });
-    applySearchOptions();
+    void applySearchOptions();
   }, { signal });
   prefixInput.addEventListener("change", () => {
     state = searchContext.patch({ prefix: prefixInput.checked, offset: 0 });
-    applySearchOptions();
+    void applySearchOptions();
   }, { signal });
   excludeAdvancedInput.addEventListener("change", () => {
     state = searchContext.patch({ excludeAdvanced: excludeAdvancedInput.checked, offset: 0 });
-    applySearchOptions();
+    void applySearchOptions();
   }, { signal });
 
   document.addEventListener("click", (event) => {
@@ -2118,7 +2136,7 @@ function wireApp(context: RuntimeContext): () => void {
         if (targetUrl.pathname === "/") {
           event.preventDefault();
           window.history.pushState({ view: "search" }, "", `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`);
-          syncViewFromLocation();
+          void syncViewFromLocation();
           return;
         }
 
@@ -2126,7 +2144,7 @@ function wireApp(context: RuntimeContext): () => void {
         if (doc && targetUrl.pathname.startsWith("/docs/")) {
           event.preventDefault();
           window.history.pushState({ view: "detail", docId: doc.id }, "", `${normalizeDocUrl(targetUrl.pathname)}${targetUrl.hash}`);
-          syncViewFromLocation();
+          void syncViewFromLocation();
           return;
         }
       }
@@ -2156,10 +2174,12 @@ function wireApp(context: RuntimeContext): () => void {
           ? Math.max(0, submittedResult.offset - submittedResult.pageSize)
           : submittedResult.offset + submittedResult.pageSize;
       state = searchContext.patch({ offset: nextOffset });
-      submittedResult = searchContext.resultFor(state);
-      currentView = "results";
-      hideSuggestions();
-      renderApp();
+      void (async () => {
+        submittedResult = await searchContext.resultFor(state);
+        currentView = "results";
+        hideSuggestions();
+        renderApp();
+      })();
       return;
     }
 
@@ -2170,7 +2190,7 @@ function wireApp(context: RuntimeContext): () => void {
       setSearchModeFromQuery(example);
       closeMobilePanel();
       activeExperience = "search";
-      runSubmittedSearch("results");
+      void runSubmittedSearch("results");
       return;
     }
 
@@ -2222,16 +2242,20 @@ function wireApp(context: RuntimeContext): () => void {
     }
     closeMobilePanel();
     activeExperience = "search";
-    submittedResult = searchContext.resultFor(state);
-    currentView = "results";
-    clearDetailHash();
-    renderApp();
+    void (async () => {
+      submittedResult = await searchContext.resultFor(state);
+      currentView = "results";
+      clearDetailHash();
+      renderApp();
+    })();
   }, { signal });
 
   window.addEventListener("resize", syncViewportState, { signal });
-  window.addEventListener("popstate", syncViewFromLocation, { signal });
+  window.addEventListener("popstate", () => {
+    void syncViewFromLocation();
+  }, { signal });
 
-  syncViewFromLocation();
+  await syncViewFromLocation();
   syncViewportState();
 
   return () => {
@@ -2279,7 +2303,7 @@ export async function mountSearchApp(nextApp: HTMLDivElement): Promise<() => voi
   try {
     const context = await runtimeContextPromise;
     createShell(context);
-    return wireApp(context);
+    return await wireApp(context);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     requireApp().innerHTML = `

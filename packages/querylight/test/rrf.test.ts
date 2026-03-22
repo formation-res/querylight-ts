@@ -34,7 +34,7 @@ describe("reciprocal rank fusion", () => {
     expect(fused[0]?.[0]).toBe("doc-2");
   });
 
-  it("should combine lexical and vector search results", () => {
+  it("should combine lexical and vector search results", async () => {
     const textIndex = new DocumentIndex({ title: new TextFieldIndex() });
     const vectorIndex = new VectorFieldIndex(8, 36 * 36, createSeededRandom(42));
     const docs = [
@@ -48,7 +48,7 @@ describe("reciprocal rank fusion", () => {
       vectorIndex.insert(doc.id, [bigramVector(doc.fields.title[0]!)]);
     });
 
-    const lexical = textIndex.search(new MatchQuery({ field: "title", text: "coffee guide" }));
+    const lexical = await textIndex.search(new MatchQuery({ field: "title", text: "coffee guide" }));
     const vector = vectorIndex.query(bigramVector("cofee gide"), 3);
     const fused = reciprocalRankFusion([lexical, vector], { rankConstant: 20 });
 
@@ -56,7 +56,7 @@ describe("reciprocal rank fusion", () => {
     expect(fused).toHaveLength(3);
   });
 
-  it("should combine structured search with geo filters", () => {
+  it("should combine structured search with geo filters", async () => {
     const index = new DocumentIndex({
       title: new TextFieldIndex(),
       location: new GeoFieldIndex()
@@ -84,8 +84,8 @@ describe("reciprocal rank fusion", () => {
       }
     });
 
-    const lexical = index.search(new MatchQuery({ field: "title", text: "specialty coffee" }));
-    const geo = index.search(
+    const lexical = await index.search(new MatchQuery({ field: "title", text: "specialty coffee" }));
+    const geo = await index.search(
       new GeoPolygonQuery({ field: "location", polygon: rectangleToPolygon(13.403, 52.519, 13.406, 52.522) })
     );
     const fused = reciprocalRankFusion([lexical, geo], { rankConstant: 10 });
@@ -94,14 +94,14 @@ describe("reciprocal rank fusion", () => {
     expect(fused.map(([id]) => id)).toContain("bakery-1");
   });
 
-  it("can be used after running separate constrained searches", () => {
+  it("can be used after running separate constrained searches", async () => {
     const index = new DocumentIndex({ title: new TextFieldIndex() });
     index.index({ id: "1", fields: { title: ["vector search with filters"] } });
     index.index({ id: "2", fields: { title: ["vector search tutorial"] } });
     index.index({ id: "3", fields: { title: ["geo filters and faceting"] } });
 
-    const broad = index.search(new MatchQuery({ field: "title", text: "vector search" }));
-    const filtered = index.search(new BoolQuery({ filter: [new MatchQuery({ field: "title", text: "filters" })] }));
+    const broad = await index.search(new MatchQuery({ field: "title", text: "vector search" }));
+    const filtered = await index.search(new BoolQuery({ filter: [new MatchQuery({ field: "title", text: "filters" })] }));
     const fused = reciprocalRankFusion([broad, filtered], { rankConstant: 5 });
 
     expect(fused[0]?.[0]).toBe("1");

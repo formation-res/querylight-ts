@@ -3,11 +3,11 @@ import { TermQuery, TextFieldIndex } from "../src/index";
 import { quotesIndex } from "./testfixture";
 
 describe("significant terms", () => {
-  it("should calculate significant-term buckets", () => {
+  it("should calculate significant-term buckets", async () => {
     const index = quotesIndex();
     const tagsIndex = index.getFieldIndex("tags") as TextFieldIndex;
     for (const term of Object.keys(tagsIndex.termsAggregation(10))) {
-      const hits = index.searchRequest({ query: new TermQuery({ field: "tags", text: term }) });
+      const hits = await index.searchRequest({ query: new TermQuery({ field: "tags", text: term }) });
       const ids = new Set(hits.map(([id]) => id));
       const buckets = (index.getFieldIndex("title") as TextFieldIndex).significantTermsAggregation(5, ids);
       expect(buckets.length).toBeGreaterThan(0);

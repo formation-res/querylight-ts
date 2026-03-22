@@ -191,8 +191,22 @@ test("all documentation view paginates beyond the first 20 docs", async ({ page 
 test("all documentation view does not show significant term suggestions", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.locator("#facet-sections")).toContainText("No term suggestions.");
+  await expect(page.locator("#facet-sections")).toContainText("Do a lexical search to get significant terms.");
   await expect(page.locator('#facet-sections [data-example]')).toHaveCount(0);
+});
+
+test("ask the docs returns semantic matches with backend fallback messaging", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator("#experience-ask").click();
+  await page.locator("#query").fill("how do I use vector search");
+  await page.locator("#submit-query").click();
+
+  const centerView = page.locator("#center-view");
+  await expect(centerView).toContainText("Ask The Docs", { timeout: 20_000 });
+  await expect(centerView).toContainText(/semantic matches/i, { timeout: 20_000 });
+  await expect(centerView).toContainText(/WebGPU|CPU fallback/, { timeout: 20_000 });
+  await expect.poll(async () => centerView.locator('[data-open-doc="true"]').count()).toBeGreaterThan(0);
 });
 
 test("narrower text queries still show significant term suggestions", async ({ page }) => {

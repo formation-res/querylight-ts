@@ -77,35 +77,35 @@ describe("simple text search", () => {
     ).toThrow("field 'description' should be a string or string[]");
   });
 
-  it("prefers primary-field hits over secondary-only hits", () => {
-    const hits = simpleTextSearch(buildIndex(), { query: "range" });
+  it("prefers primary-field hits over secondary-only hits", async () => {
+    const hits = await simpleTextSearch(buildIndex(), { query: "range" });
 
     expect(hits[0]?.[0]).toBe("range-filters");
   });
 
-  it("supports prefix behavior through the beginner defaults", () => {
-    const hits = simpleTextSearch(buildIndex(), { query: "agg" });
+  it("supports prefix behavior through the beginner defaults", async () => {
+    const hits = await simpleTextSearch(buildIndex(), { query: "agg" });
 
     expect(hits[0]?.[0]).toBe("prefix-search");
   });
 
-  it("recovers typo-tolerant matches through the fuzzy branch", () => {
-    const hits = simpleTextSearch(buildIndex(), { query: "seralization" });
+  it("recovers typo-tolerant matches through the fuzzy branch", async () => {
+    const hits = await simpleTextSearch(buildIndex(), { query: "seralization" });
 
     expect(hits[0]?.[0]).toBe("serialization");
   });
 
-  it("makes quoted queries stricter than unquoted queries", () => {
+  it("makes quoted queries stricter than unquoted queries", async () => {
     const index = buildIndex();
-    const quoted = simpleTextSearch(index, { query: "\"range filters\"" });
-    const unquoted = simpleTextSearch(index, { query: "range filters" });
+    const quoted = await simpleTextSearch(index, { query: "\"range filters\"" });
+    const unquoted = await simpleTextSearch(index, { query: "range filters" });
 
     expect(quoted.map(([id]) => id)).toContain("range-filters");
     expect(unquoted[0]?.[0]).toBe("range-filters");
   });
 
-  it("respects from and limit", () => {
-    const hits = simpleTextSearch(buildIndex(), { query: "search", from: 1, limit: 1 });
+  it("respects from and limit", async () => {
+    const hits = await simpleTextSearch(buildIndex(), { query: "search", from: 1, limit: 1 });
 
     expect(hits).toHaveLength(1);
   });

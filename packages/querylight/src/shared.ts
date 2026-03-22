@@ -68,7 +68,7 @@ export interface HighlightResult {
 /** Minimal query contract implemented by all query classes. */
 export interface Query {
   readonly boost: number | undefined;
-  hits(documentIndex: DocumentIndex, context?: QueryContext): Hits;
+  hits(documentIndex: DocumentIndex, context?: QueryContext): Promise<Hits>;
   highlightClauses?(documentIndex: DocumentIndex): HighlightClause[];
 }
 

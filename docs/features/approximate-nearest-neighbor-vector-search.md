@@ -22,7 +22,11 @@ The built-in `bigramVector` helper is practical for typo-tolerant text similarit
 ```ts
 import { VectorFieldIndex, bigramVector, createSeededRandom } from "@tryformation/querylight-ts";
 
-const vectorIndex = new VectorFieldIndex(6, 36 * 36, createSeededRandom(42));
+const vectorIndex = new VectorFieldIndex({
+  numHashTables: 6,
+  dimensions: 36 * 36,
+  random: createSeededRandom(42)
+});
 vectorIndex.insert("doc-1", [bigramVector("vector search and typo tolerance")]);
 vectorIndex.insert("doc-2", [bigramVector("phrase queries and highlighting")]);
 
@@ -39,6 +43,8 @@ Expected result:
 ```
 
 The exact scores depend on the random projections used by the ANN index, but `doc-1` should rank ahead of `doc-2` because it is much closer to the misspelled query.
+
+If you provide an async scorer backend, use `queryAsync(...)` or `rerankAsync(...)` to let that backend run asynchronously while keeping the same retrieval semantics.
 
 ## When to use this
 
@@ -83,6 +89,12 @@ Current limitations include:
 - there is no HNSW or IVF-style ANN index yet
 - there is no vector quantization or compressed vector storage yet
 - filtering and rescoring patterns exist, but the integrated vector feature set is still smaller than what larger search engines provide
+
+## Custom scorer backends
+
+`VectorFieldIndex` now separates candidate generation from dense scoring.
+
+The built-in default is a CPU scorer, but advanced users can provide a custom scorer backend via `options.scorer` when constructing the index. That makes it possible to experiment with alternatives such as a WebGPU scorer while keeping the same `VectorFieldIndex` query and rerank API.
 
 For many browser, static-site, and embedded search scenarios that tradeoff is acceptable. If you need a small pure TypeScript toolkit with vector support, this can already be useful. If you need a larger algorithmic feature set, there is room to grow.
 

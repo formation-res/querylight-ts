@@ -111,11 +111,11 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
-function toHitsSubset(index: DocumentIndex, filters: Array<TermQuery | TermsQuery | RangeQuery>): Set<string> {
+async function toHitsSubset(index: DocumentIndex, filters: Array<TermQuery | TermsQuery | RangeQuery>): Promise<Set<string>> {
   if (filters.length === 0) {
     return index.ids();
   }
-  return new Set(index.search(new BoolQuery({ filter: filters })).map(([id]) => id));
+  return new Set((await index.search(new BoolQuery({ filter: filters }))).map(([id]) => id));
 }
 
 function getNumericField(index: DocumentIndex, field: string): NumericFieldIndex {
@@ -703,7 +703,7 @@ function createWorldBankSection(
       .join("");
   };
 
-  const update = () => {
+  const update = async () => {
     const runtime = registry.worldBank();
     setSectionLoaded(section, runtime.builtAt);
     const activeCountries = [...selectedCountries];
@@ -715,7 +715,7 @@ function createWorldBankSection(
       new TermsQuery({ field: "country", terms: activeCountries }),
       new RangeQuery({ field: "year", range: { gte: String(Math.min(startYear, endYear)), lte: String(Math.max(startYear, endYear)) } })
     ];
-    const subset = toHitsSubset(runtime.index, filters);
+    const subset = await toHitsSubset(runtime.index, filters);
     const records = recordsForSubset(subset, runtime.byId).sort((left, right) => left.year - right.year);
     const valueField = getNumericField(runtime.index, "value");
     const countryField = getTextField(runtime.index, "country");
@@ -846,13 +846,13 @@ function createWorldBankSection(
       selectedCountries.add(country);
     }
     renderCountryChips();
-    update();
+    void update();
   }, { signal });
 
-  indicatorSelect.addEventListener("change", update, { signal });
-  startSelect.addEventListener("change", update, { signal });
-  endSelect.addEventListener("change", update, { signal });
-  update();
+  indicatorSelect.addEventListener("change", () => { void update(); }, { signal });
+  startSelect.addEventListener("change", () => { void update(); }, { signal });
+  endSelect.addEventListener("change", () => { void update(); }, { signal });
+  void update();
 
   return () => {};
 }
@@ -875,7 +875,7 @@ function createEarthquakeSection(
     throw new Error("earthquake dashboard nodes not found");
   }
 
-  const update = () => {
+  const update = async () => {
     const runtime = registry.earthquakes();
     setSectionLoaded(section, runtime.builtAt);
 
@@ -887,7 +887,7 @@ function createEarthquakeSection(
       filters.push(new TermQuery({ field: "placeCategory", text: placeSelect.value }));
     }
 
-    const subset = toHitsSubset(runtime.index, filters);
+    const subset = await toHitsSubset(runtime.index, filters);
     const records = recordsForSubset(subset, runtime.byId);
     const magnitudeField = getNumericField(runtime.index, "magnitude");
     const depthField = getNumericField(runtime.index, "depthKm");
@@ -986,10 +986,10 @@ function createEarthquakeSection(
     });
   };
 
-  magnitudeInput.addEventListener("input", update, { signal });
-  depthInput.addEventListener("input", update, { signal });
-  placeSelect.addEventListener("change", update, { signal });
-  update();
+  magnitudeInput.addEventListener("input", () => { void update(); }, { signal });
+  depthInput.addEventListener("input", () => { void update(); }, { signal });
+  placeSelect.addEventListener("change", () => { void update(); }, { signal });
+  void update();
 
   return () => {};
 }
@@ -1043,7 +1043,7 @@ function createWeatherSection(
       .join("");
   };
 
-  const update = () => {
+  const update = async () => {
     const runtime = registry.weather();
     setSectionLoaded(section, runtime.builtAt);
     const metric = metricConfig(metricSelect.value);
@@ -1054,7 +1054,7 @@ function createWeatherSection(
       new TermsQuery({ field: "city", terms: activeCities }),
       new RangeQuery({ field: "observedAt", range: { gte: start, lte: end } })
     ];
-    const subset = toHitsSubset(runtime.index, filters);
+    const subset = await toHitsSubset(runtime.index, filters);
     const records = recordsForSubset(subset, runtime.byId).sort((left, right) => left.observedAt.localeCompare(right.observedAt));
     const numericField = getNumericField(runtime.index, metric.field);
     const weatherCodeField = getTextField(runtime.index, "weatherCode");
@@ -1102,16 +1102,16 @@ function createWeatherSection(
     });
 
     const hours = [...new Set(runtime.records.map((record) => record.hourOfDay))].sort();
-    const heatmapData = activeCities.flatMap((city, cityIndex) =>
-      hours.map((hour, hourIndex) => {
-        const cellSubset = toHitsSubset(runtime.index, [
+    const heatmapData = await Promise.all(activeCities.flatMap((city, cityIndex) =>
+      hours.map(async (hour, hourIndex) => {
+        const cellSubset = await toHitsSubset(runtime.index, [
           ...filters,
           new TermQuery({ field: "city", text: city }),
           new TermQuery({ field: "hourOfDay", text: hour })
         ]);
         return [hourIndex, cityIndex, getNumericField(runtime.index, metric.field).avg(cellSubset) ?? 0];
       })
-    );
+    ));
 
     upsertChart(charts, "weather-heatmap", {
       tooltip: { trigger: "item" },
@@ -1176,13 +1176,13 @@ function createWeatherSection(
       selectedCities.add(city);
     }
     renderCityChips();
-    update();
+    void update();
   }, { signal });
 
-  metricSelect.addEventListener("change", update, { signal });
-  startSelect.addEventListener("change", update, { signal });
-  endSelect.addEventListener("change", update, { signal });
-  update();
+  metricSelect.addEventListener("change", () => { void update(); }, { signal });
+  startSelect.addEventListener("change", () => { void update(); }, { signal });
+  endSelect.addEventListener("change", () => { void update(); }, { signal });
+  void update();
 
   return () => {};
 }

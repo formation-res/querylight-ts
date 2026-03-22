@@ -429,13 +429,13 @@ export class DocumentIndex {
     return this.documents[id];
   }
 
-  search(query: { hits(documentIndex: DocumentIndex, context?: QueryContext): Hits }, from = 0, limit = 200): Hits {
-    const hits = query.hits(this, new QueryContext());
+  async search(query: { hits(documentIndex: DocumentIndex, context?: QueryContext): Promise<Hits> }, from = 0, limit = 200): Promise<Hits> {
+    const hits = await query.hits(this, new QueryContext());
     return hits.slice(from, Math.min(from + limit, hits.length));
   }
 
-  searchRequest({ query, from = 0, limit = 200 }: SearchRequest = {}): Hits {
-    const hits = query ? this.search(query, 0, Number.MAX_SAFE_INTEGER) : [...this.ids()].map((id): Hit => [id, 1.0]);
+  async searchRequest({ query, from = 0, limit = 200 }: SearchRequest = {}): Promise<Hits> {
+    const hits = query ? await this.search(query, 0, Number.MAX_SAFE_INTEGER) : [...this.ids()].map((id): Hit => [id, 1.0]);
     return hits.slice(from, Math.min(from + limit, hits.length));
   }
 
@@ -473,8 +473,8 @@ export class DocumentIndex {
     return { fields: fieldResults };
   }
 
-  count(request: SearchRequest = {}): number {
-    return this.searchRequest(request).length;
+  async count(request: SearchRequest = {}): Promise<number> {
+    return (await this.searchRequest(request)).length;
   }
 
   ids(): Set<string> {

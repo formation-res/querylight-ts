@@ -17,14 +17,14 @@ import {
 import { quotesIndex, sampleObject, toDoc } from "./testfixture";
 
 describe("index state serialization", () => {
-  it("should load saved state and still work", () => {
+  it("should load saved state and still work", async () => {
     const originalIndex = quotesIndex();
-    const originalCount = originalIndex.count();
+    const originalCount = await originalIndex.count();
     const state = originalIndex.indexState;
     const loadedIndex = originalIndex.loadState(state);
     const fieldState = loadedIndex.mapping.description?.indexState as TextFieldIndexState;
     expect(Object.keys(fieldState.reverseMap).length).not.toBe(0);
-    expect(loadedIndex.count()).toBe(originalCount);
+    expect(await loadedIndex.count()).toBe(originalCount);
   });
 
   it("should preserve ranking settings", () => {
@@ -42,7 +42,7 @@ describe("index state serialization", () => {
     expect(loadedField.bm25Config.b).toBe(0.6);
   });
 
-  it("should preserve ngram-based matches after loading state", () => {
+  it("should preserve ngram-based matches after loading state", async () => {
     const ngramAnalyzer = new Analyzer(undefined, undefined, [new NgramTokenFilter(3)]);
     const index = new DocumentIndex({
       combined: new TextFieldIndex(ngramAnalyzer, ngramAnalyzer, RankingAlgorithm.BM25)
@@ -57,11 +57,11 @@ describe("index state serialization", () => {
 
     const loaded = index.loadState(index.indexState);
 
-    expect(index.searchRequest({ query: new MatchQuery({ field: "combined", text: "range", operation: OP.OR }), limit: 10 }).map(([id]) => id)).toContain("range-filters");
-    expect(loaded.searchRequest({ query: new MatchQuery({ field: "combined", text: "range", operation: OP.OR }), limit: 10 }).map(([id]) => id)).toContain("range-filters");
+    expect((await index.searchRequest({ query: new MatchQuery({ field: "combined", text: "range", operation: OP.OR }), limit: 10 })).map(([id]) => id)).toContain("range-filters");
+    expect((await loaded.searchRequest({ query: new MatchQuery({ field: "combined", text: "range", operation: OP.OR }), limit: 10 })).map(([id]) => id)).toContain("range-filters");
   });
 
-  it("should preserve numeric and date indexes after loading state", () => {
+  it("should preserve numeric and date indexes after loading state", async () => {
     const index = new DocumentIndex({
       popularity: new NumericFieldIndex(),
       publishedAt: new DateFieldIndex()
@@ -84,9 +84,9 @@ describe("index state serialization", () => {
 
     const loaded = index.loadState(index.indexState);
 
-    expect(loaded.searchRequest({ query: new RankFeatureQuery({ field: "popularity" }) }).map(([id]) => id)).toEqual(["2", "1"]);
-    expect(loaded.searchRequest({ query: new RangeQuery({ field: "publishedAt", range: { gte: "2025-01-05T00:00:00.000Z" } }) }).map(([id]) => id)).toEqual(["2"]);
-    expect(loaded.searchRequest({ query: new DistanceFeatureQuery({ field: "publishedAt", origin: "2025-01-08T00:00:00.000Z", pivot: 7 * 24 * 60 * 60 * 1000 }) }).map(([id]) => id)).toEqual(["2", "1"]);
+    expect((await loaded.searchRequest({ query: new RankFeatureQuery({ field: "popularity" }) })).map(([id]) => id)).toEqual(["2", "1"]);
+    expect((await loaded.searchRequest({ query: new RangeQuery({ field: "publishedAt", range: { gte: "2025-01-05T00:00:00.000Z" } }) })).map(([id]) => id)).toEqual(["2"]);
+    expect((await loaded.searchRequest({ query: new DistanceFeatureQuery({ field: "publishedAt", origin: "2025-01-08T00:00:00.000Z", pivot: 7 * 24 * 60 * 60 * 1000 }) })).map(([id]) => id)).toEqual(["2", "1"]);
 
     const loadedPopularity = loaded.getFieldIndex("popularity") as NumericFieldIndex;
     const loadedPublishedAt = loaded.getFieldIndex("publishedAt") as DateFieldIndex;

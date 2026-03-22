@@ -54,7 +54,11 @@ import {
 
 const index = new DocumentIndex({
   title: new TextFieldIndex(),
-  embedding: new VectorFieldIndex(8, 36 * 36, createSeededRandom(42))
+  embedding: new VectorFieldIndex({
+    numHashTables: 8,
+    dimensions: 36 * 36,
+    random: createSeededRandom(42)
+  })
 });
 
 index.index({ id: "1", fields: { title: ["vector search tutorial"] } });

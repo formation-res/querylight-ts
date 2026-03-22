@@ -132,6 +132,7 @@ export type {
 export type { Query } from "./shared";
 
 export {
+  CpuVectorScorer,
   VectorFieldIndex,
   bigramVector,
   cosineSimilarity,
@@ -140,7 +141,15 @@ export {
   normalizeVector,
   populateLSHBuckets
 } from "./vector";
-export type { Vector, VectorFieldIndexState } from "./vector";
+export type {
+  AsyncVectorScorer,
+  PreparedVector,
+  Vector,
+  VectorFieldIndexOptions,
+  VectorFieldIndexParams,
+  VectorFieldIndexState,
+  VectorScorer
+} from "./vector";
 
 export {
   createSimpleTextSearchIndex,

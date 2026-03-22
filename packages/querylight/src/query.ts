@@ -330,16 +330,16 @@ export class BoolQuery implements Query {
     this.minimumShouldMatch = minimumShouldMatch;
   }
 
-  hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
+  async hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Promise<Hits> {
     if (this.filter.length === 0 && this.should.length === 0 && this.must.length === 0 && this.mustNot.length === 0) {
       throw new Error("should specify at least one of filter, must, or should");
     }
 
-    context.withFilterMode((filterContext) => {
-      const excludedHits = this.mustNot.map((query) => query.hits(documentIndex, filterContext));
+    await context.withFilterMode(async (filterContext) => {
+      const excludedHits = await Promise.all(this.mustNot.map((query) => query.hits(documentIndex, filterContext)));
       context.exclude(excludedHits.length > 0 ? ids(excludedHits.reduce(orHits)) : []);
 
-      const filtered = this.filter.map((query) => query.hits(documentIndex, filterContext));
+      const filtered = await Promise.all(this.filter.map((query) => query.hits(documentIndex, filterContext)));
       if (filtered.length > 0) {
         const reduced = filtered.reduce(andHits);
         context.include(ids(reduced));
@@ -351,21 +351,21 @@ export class BoolQuery implements Query {
       return applyBoost(context.hits(), normalizedBoost(this));
     }
 
-    const mustHits = this.must.length === 0 && this.filter.length > 0
+    const mustHits = await (this.must.length === 0 && this.filter.length > 0
       ? context.hits()
-      : (() => {
-          const mappedMusts = this.must.map((query) => query.hits(documentIndex, context));
+      : (async () => {
+          const mappedMusts = await Promise.all(this.must.map((query) => query.hits(documentIndex, context)));
           if (mappedMusts.length > 0) {
             return this.filter.length > 0 ? [context.hits(), ...mappedMusts].reduce(andHits) : mappedMusts.reduce(andHits);
           }
           return [];
-        })();
+        })());
 
     if (this.must.length > 0) {
       context.setIncludeIds(ids(mustHits));
     }
 
-    const mappedShoulds = this.should.map((query) => query.hits(documentIndex, context));
+    const mappedShoulds = await Promise.all(this.should.map((query) => query.hits(documentIndex, context)));
     const shouldHits = mappedShoulds.length > 0 ? mappedShoulds.reduce(orHits) : [];
     const shouldMatchCounts = new Map<string, number>();
     for (const hits of mappedShoulds) {
@@ -428,7 +428,7 @@ export class TermQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = textFieldHits(
       documentIndex,
       this.field,
@@ -457,7 +457,7 @@ export class TermsQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => {
       const termHits = [...new Set(this.terms)]
         .map((term) => (fieldIndex.termMatches(term) ?? []).map((match): Hit => [match.id, 1.0]));
@@ -491,7 +491,7 @@ export class WildcardQuery implements Query {
     this.matcher = wildcardToRegExp(pattern);
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => {
       const termHits = fieldIndex.terms()
         .filter((term) => this.matcher.test(term))
@@ -520,7 +520,7 @@ export class RegexpQuery implements Query {
       : new RegExp(pattern.source, pattern.flags.replaceAll("g", ""));
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => {
       const termHits = fieldIndex.terms()
         .filter((term) => this.matcher.test(term))
@@ -545,7 +545,7 @@ export class ExistsQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = Object.values(documentIndex.documents)
       .filter((document) => (document.fields[this.field] ?? []).length > 0)
       .map((document): Hit => [document.id, 1.0]);
@@ -574,7 +574,7 @@ export class RangeQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const fieldIndex = documentIndex.getFieldIndex(this.field);
     const hits = fieldIndex instanceof TextFieldIndex
       ? fieldIndex.filterTermsByRange(this.params)
@@ -605,7 +605,7 @@ export class MatchQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = textFieldHits(
       documentIndex,
       this.field,
@@ -688,7 +688,7 @@ export class MultiMatchQuery implements Query {
     this.fieldBoosts = fieldBoosts;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const fieldIndexes = this.fields
       .map((field) => {
         const fieldIndex = documentIndex.getFieldIndex(field);
@@ -739,14 +739,14 @@ export class DisMaxQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
+  async hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Promise<Hits> {
     if (this.queries.length === 0) {
       return [];
     }
 
     const perDocScores = new Map<string, number[]>();
     for (const query of this.queries) {
-      for (const [id, score] of query.hits(documentIndex, context)) {
+      for (const [id, score] of await query.hits(documentIndex, context)) {
         const scores = perDocScores.get(id) ?? [];
         scores.push(score);
         perDocScores.set(id, scores);
@@ -783,7 +783,7 @@ export class MatchPhrase implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => {
       const searchTerms = fieldIndex.queryAnalyzer.analyze(this.text);
       return fieldIndex.searchPhrase(searchTerms, this.slop);
@@ -813,7 +813,7 @@ export class PrefixQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => fieldIndex.searchPrefix(this.prefix));
     return applyBoost(hits, normalizedBoost(this));
   }
@@ -837,7 +837,7 @@ export class MatchAll implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     return applyBoost([...documentIndex.ids()].map((id): Hit => [id, 1.0]), normalizedBoost(this));
   }
 
@@ -863,9 +863,9 @@ export class BoostingQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
-    const positiveHits = this.positive.hits(documentIndex, context);
-    const negativeIds = new Set(ids(this.negative.hits(documentIndex, context)));
+  async hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Promise<Hits> {
+    const positiveHits = await this.positive.hits(documentIndex, context);
+    const negativeIds = new Set(ids(await this.negative.hits(documentIndex, context)));
     const hits = positiveHits
       .map(([id, score]): Hit => [id, negativeIds.has(id) ? score * this.negativeBoost : score])
       .filter(([, score]) => score > 0);
@@ -891,7 +891,7 @@ export class GeoPointQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = geoFieldHits(
       documentIndex,
       this.field,
@@ -917,7 +917,7 @@ export class GeoPolygonQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = geoFieldHits(
       documentIndex,
       this.field,
@@ -952,7 +952,7 @@ export class DistanceFeatureQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = Object.values(documentIndex.documents)
       .map((document): Hit | null => {
         const numericValues = indexedNumericValues(documentIndex, document, this.field);
@@ -985,7 +985,7 @@ export class RankFeatureQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = Object.values(documentIndex.documents)
       .map((document): Hit | null => {
         const numericValues = indexedNumericValues(documentIndex, document, this.field);
@@ -1050,7 +1050,7 @@ export class ScriptQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex): Hits {
+  async hits(documentIndex: DocumentIndex): Promise<Hits> {
     const hits = Object.values(documentIndex.documents)
       .filter((document) => this.script(createScriptExecutionContext(documentIndex, document, 1.0)))
       .map((document): Hit => [document.id, 1.0]);
@@ -1077,8 +1077,8 @@ export class ScriptScoreQuery implements Query {
     this.boost = boost;
   }
 
-  hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
-    const hits = this.query.hits(documentIndex, context)
+  async hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Promise<Hits> {
+    const hits = (await this.query.hits(documentIndex, context))
       .map(([id, score]): Hit | null => {
         const document = documentIndex.get(id);
         if (!document) {
@@ -1140,8 +1140,8 @@ export class VectorRescoreQuery implements Query {
     this.rescoreQueryWeight = rescoreQueryWeight;
   }
 
-  hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
-    const baseHits = this.query.hits(documentIndex, context);
+  async hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Promise<Hits> {
+    const baseHits = await this.query.hits(documentIndex, context);
     const vectorIndex = documentIndex.getFieldIndex(this.field);
 
     if (!(vectorIndex instanceof VectorFieldIndex) || this.windowSize === 0 || baseHits.length === 0) {
@@ -1149,7 +1149,7 @@ export class VectorRescoreQuery implements Query {
     }
 
     const windowHits = baseHits.slice(0, this.windowSize);
-    const rescoredHits = vectorIndex.rerank(this.vector, ids(windowHits));
+    const rescoredHits = await vectorIndex.rerankAsync(this.vector, ids(windowHits));
     const rescoredMap = new Map(rescoredHits);
 
     const rescoredWindow = windowHits

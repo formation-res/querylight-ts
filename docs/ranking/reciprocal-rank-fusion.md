@@ -33,7 +33,11 @@ import {
 } from "@tryformation/querylight-ts";
 
 const textIndex = new DocumentIndex({ title: new TextFieldIndex() });
-const vectorIndex = new VectorFieldIndex(8, 36 * 36, createSeededRandom(42));
+const vectorIndex = new VectorFieldIndex({
+  numHashTables: 8,
+  dimensions: 36 * 36,
+  random: createSeededRandom(42)
+});
 
 textIndex.index({ id: "1", fields: { title: ["specialty coffee brewing"] } });
 textIndex.index({ id: "2", fields: { title: ["coffee shops in berlin"] } });

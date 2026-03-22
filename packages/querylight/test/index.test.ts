@@ -22,8 +22,8 @@ describe("index", () => {
     expect(results[1]?.[0]).toBe("2");
   });
 
-  it("should index documents", () => {
+  it("should index documents", async () => {
     const index = testIndex();
-    expect(index.search(new MatchQuery({ field: "title", text: "Elasticsearch" }))).toHaveLength(1);
+    expect(await index.search(new MatchQuery({ field: "title", text: "Elasticsearch" }))).toHaveLength(1);
   });
 });

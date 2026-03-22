@@ -141,10 +141,10 @@ export function createSimpleTextSearchIndex<T extends Record<string, unknown>>(
 }
 
 /** Runs the default simple-text-search strategy against a bundle created by {@link createSimpleTextSearchIndex}. */
-export function simpleTextSearch<T extends Record<string, unknown>>(
+export async function simpleTextSearch<T extends Record<string, unknown>>(
   index: SimpleTextSearchIndex<T>,
   { query, from = 0, limit = 20 }: SimpleTextSearchRequest
-): Hits {
+): Promise<Hits> {
   const { queryText, quotedPhrase } = parseSimpleTextSearchInput(query);
   const trimmed = queryText.trim();
   if (trimmed.length === 0 || limit <= 0) {
@@ -165,8 +165,8 @@ export function simpleTextSearch<T extends Record<string, unknown>>(
         : [])
     ]
   });
-  const lexicalHits = index.documentIndex.searchRequest({ query: lexicalQuery, limit: branchLimit });
-  const fuzzyHits = index.fuzzyIndex.searchRequest({
+  const lexicalHits = await index.documentIndex.searchRequest({ query: lexicalQuery, limit: branchLimit });
+  const fuzzyHits = await index.fuzzyIndex.searchRequest({
     query: new MatchQuery({ field: index.fuzzyField, text: trimmed, operation: OP.OR, boost: 1.5 }),
     limit: branchLimit
   });
