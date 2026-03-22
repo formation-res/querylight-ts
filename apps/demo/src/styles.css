@@ -95,7 +95,7 @@
   }
 
   .reader-layout-below {
-    @apply relative z-0;
+    @apply relative;
   }
 
   .reader-mobile-bar {
@@ -514,11 +514,13 @@
   .reader-sidebar,
   .reader-facets {
     position: fixed;
-    left: 12px;
+    top: 12px;
     right: 12px;
     bottom: 12px;
-    z-index: 50;
-    max-height: min(76vh, calc(100vh - 120px));
+    left: 12px;
+    z-index: 120;
+    display: block;
+    max-height: none;
     overflow-y: auto;
     opacity: 0;
     pointer-events: none;
@@ -534,6 +536,11 @@
 
   .reader-facets {
     order: 4;
+  }
+
+  .reader-sidebar .reader-mobile-panel-shell,
+  .reader-facets .reader-mobile-panel-shell {
+    min-height: 100%;
   }
 
   .reader-facets-inner {
@@ -558,6 +565,10 @@
   .reader-layout[data-mobile-panel="filters"] .reader-mobile-overlay {
     pointer-events: auto;
     opacity: 1;
+  }
+
+  .reader-mobile-overlay {
+    z-index: 110;
   }
 
   .reader-page {

@@ -175,3 +175,30 @@ test("narrower text queries still show significant term suggestions", async ({ p
   await expect(page.locator("#result-count")).toContainText(/matches/);
   await expect.poll(async () => page.locator('#facet-sections [data-example]').count()).toBeGreaterThan(0);
 });
+
+test("mobile TOC panel opens as a full-height sheet above the footer", async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 932 });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Browse docs" }).click();
+
+  const readerLayout = page.locator("#reader-layout");
+  const sidebar = page.locator(".reader-sidebar");
+  const overlay = page.locator("#reader-mobile-overlay");
+  await expect(readerLayout).toHaveAttribute("data-mobile-panel", "toc");
+  await expect(sidebar).toBeVisible();
+  await expect(overlay).toBeVisible();
+
+  const viewport = page.viewportSize();
+  if (!viewport) {
+    throw new Error("Viewport size is not available");
+  }
+
+  const sidebarBox = await sidebar.boundingBox();
+  if (!sidebarBox) {
+    throw new Error("Sidebar bounding box is not available");
+  }
+
+  expect(sidebarBox.height).toBeGreaterThanOrEqual(viewport.height - 80);
+  expect(sidebarBox.y).toBeLessThan(viewport.height * 0.1);
+});
