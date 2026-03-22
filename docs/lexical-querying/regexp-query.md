@@ -29,7 +29,7 @@ index.index({ id: "2", fields: { title: ["query planner"] } });
 index.index({ id: "3", fields: { title: ["vector search"] } });
 
 const hits = index.searchRequest({
-  query: new RegexpQuery("title", "^quer")
+  query: new RegexpQuery({ field: "title", pattern: "^quer" })
 });
 ```
 

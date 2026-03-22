@@ -13,21 +13,26 @@ function expectAppearsBefore(hits: Hits, id1: string, id2: string): void {
 describe("bool queries", () => {
   it("should filter correctly", () => {
     const index = testIndex();
-    const results = index.search(new BoolQuery([], [], [new MatchQuery("title", "querylight")]));
+    const results = index.search(new BoolQuery({ filter: [new MatchQuery({ field: "title", text: "querylight" })] }));
     expect(results).toHaveLength(1);
   });
 
   it("should only find ktsearch", () => {
     const index = testIndex();
-    const esClause = new MatchQuery("description", "elasticsearch");
+    const esClause = new MatchQuery({ field: "description", text: "elasticsearch" });
     expect(index.search(esClause)).toHaveLength(3);
-    expect(index.search(new BoolQuery([], [esClause]))).toHaveLength(3);
-    expect(index.search(new BoolQuery([], [esClause], [new MatchQuery("title", "querylight")]))).toHaveLength(1);
+    expect(index.search(new BoolQuery({ must: [esClause] }))).toHaveLength(3);
+    expect(index.search(new BoolQuery({ must: [esClause], filter: [new MatchQuery({ field: "title", text: "querylight" })] }))).toHaveLength(1);
   });
 
   it("should rank", () => {
     const index = testIndex();
-    const query = new BoolQuery([new MatchQuery("title", "querylight"), new MatchQuery("description", "querylight")]);
+    const query = new BoolQuery({
+      should: [
+        new MatchQuery({ field: "title", text: "querylight" }),
+        new MatchQuery({ field: "description", text: "querylight" })
+      ]
+    });
     const results = index.search(query);
     expect(ids(results)).toEqual(expect.arrayContaining(["querylight", "es", "solr"]));
     expectAppearsBefore(results, "querylight", "es");
@@ -46,21 +51,21 @@ describe("bool queries", () => {
       ["7", "bar foo baz"]
     ].forEach(([id, title]) => index.index({ id, fields: { title: [title] } }));
 
-    const fooClause = new MatchQuery("title", "foo");
-    const barClause = new MatchQuery("title", "bar");
-    const bazClause = new MatchQuery("title", "baz");
+    const fooClause = new MatchQuery({ field: "title", text: "foo" });
+    const barClause = new MatchQuery({ field: "title", text: "bar" });
+    const bazClause = new MatchQuery({ field: "title", text: "baz" });
 
-    expect(ids(index.search(new BoolQuery([], [fooClause, barClause])))).not.toContain("1");
-    expect(ids(index.search(new BoolQuery([], [fooClause, barClause])))).toEqual(expect.arrayContaining(["4", "5", "7"]));
+    expect(ids(index.search(new BoolQuery({ must: [fooClause, barClause] })))).not.toContain("1");
+    expect(ids(index.search(new BoolQuery({ must: [fooClause, barClause] })))).toEqual(expect.arrayContaining(["4", "5", "7"]));
 
-    expect(ids(index.search(new BoolQuery([], [], [fooClause, barClause])))).not.toContain("1");
-    expect(ids(index.search(new BoolQuery([], [], [fooClause, barClause])))).toEqual(expect.arrayContaining(["4", "5", "7"]));
+    expect(ids(index.search(new BoolQuery({ filter: [fooClause, barClause] })))).not.toContain("1");
+    expect(ids(index.search(new BoolQuery({ filter: [fooClause, barClause] })))).toEqual(expect.arrayContaining(["4", "5", "7"]));
 
-    const filteredAndMust = ids(index.search(new BoolQuery([], [bazClause], [fooClause, barClause])));
+    const filteredAndMust = ids(index.search(new BoolQuery({ must: [bazClause], filter: [fooClause, barClause] })));
     expect(filteredAndMust).not.toEqual(expect.arrayContaining(["1", "4", "5"]));
     expect(filteredAndMust).toEqual(expect.arrayContaining(["7"]));
 
-    const shouldHits = ids(index.search(new BoolQuery([fooClause, barClause])));
+    const shouldHits = ids(index.search(new BoolQuery({ should: [fooClause, barClause] })));
     expect(shouldHits).toEqual(expect.arrayContaining(["1", "2", "4", "5", "7"]));
     expect(shouldHits).not.toEqual(expect.arrayContaining(["6"]));
   });
@@ -74,10 +79,12 @@ describe("bool queries", () => {
       ["4", "foo bar"]
     ].forEach(([id, title]) => index.index({ id, fields: { title: [title] } }));
 
-    const results = ids(index.search(new BoolQuery([], [], [], [
-      new MatchQuery("title", "foo"),
-      new MatchQuery("title", "bar")
-    ]))).sort();
+    const results = ids(index.search(new BoolQuery({
+      mustNot: [
+        new MatchQuery({ field: "title", text: "foo" }),
+        new MatchQuery({ field: "title", text: "bar" })
+      ]
+    }))).sort();
 
     expect(results).toEqual(["3"]);
   });
@@ -90,10 +97,10 @@ describe("bool queries", () => {
       ["3", "alpha gamma"]
     ].forEach(([id, title]) => index.index({ id, fields: { title: [title] } }));
 
-    const hits = index.search(new BoolQuery(
-      [new MatchQuery("title", "beta")],
-      [new MatchQuery("title", "alpha")]
-    ));
+    const hits = index.search(new BoolQuery({
+      should: [new MatchQuery({ field: "title", text: "beta" })],
+      must: [new MatchQuery({ field: "title", text: "alpha" })]
+    }));
 
     expect(ids(hits)).toEqual(["2", "1", "3"]);
   });
@@ -107,14 +114,13 @@ describe("bool queries", () => {
       ["4", "alpha beta gamma"]
     ].forEach(([id, title]) => index.index({ id, fields: { title: [title] } }));
 
-    const hits = index.search(new BoolQuery(
-      [new MatchQuery("title", "alpha"), new MatchQuery("title", "beta")],
-      [],
-      [],
-      [],
-      undefined,
-      2
-    ));
+    const hits = index.search(new BoolQuery({
+      should: [
+        new MatchQuery({ field: "title", text: "alpha" }),
+        new MatchQuery({ field: "title", text: "beta" })
+      ],
+      minimumShouldMatch: 2
+    }));
 
     expect(ids(hits)).toEqual(["3", "4"]);
   });
@@ -127,14 +133,14 @@ describe("bool queries", () => {
       ["3", "alpha beta gamma"]
     ].forEach(([id, title]) => index.index({ id, fields: { title: [title] } }));
 
-    const hits = index.search(new BoolQuery(
-      [new MatchQuery("title", "beta"), new MatchQuery("title", "gamma")],
-      [new MatchQuery("title", "alpha")],
-      [],
-      [],
-      undefined,
-      2
-    ));
+    const hits = index.search(new BoolQuery({
+      should: [
+        new MatchQuery({ field: "title", text: "beta" }),
+        new MatchQuery({ field: "title", text: "gamma" })
+      ],
+      must: [new MatchQuery({ field: "title", text: "alpha" })],
+      minimumShouldMatch: 2
+    }));
 
     expect(ids(hits)).toEqual(["3"]);
   });

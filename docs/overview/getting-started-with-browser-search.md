@@ -152,21 +152,23 @@ for (const doc of documents) {
 
 function search(query: string) {
   const lexicalHits = index.searchRequest({
-    query: new BoolQuery([
-      new MatchPhrase("title", query, 1, 8),
-      new MatchPhrase("description", query, 2, 3),
-      new MatchPhrase("body", query, 2, 3),
-      new MatchQuery("title", query, OP.AND, false, 6),
-      new MatchQuery("description", query, OP.AND, false, 2.5),
-      new MatchQuery("body", query, OP.AND, false, 2.0),
-      new MatchQuery("primarySuggest", query, OP.OR, true, 4),
-      new MatchQuery("secondarySuggest", query, OP.OR, true, 2)
-    ]),
+    query: new BoolQuery({
+      should: [
+        new MatchPhrase({ field: "title", text: query, slop: 1, boost: 8 }),
+        new MatchPhrase({ field: "description", text: query, slop: 2, boost: 3 }),
+        new MatchPhrase({ field: "body", text: query, slop: 2, boost: 3 }),
+        new MatchQuery({ field: "title", text: query, operation: OP.AND, boost: 6 }),
+        new MatchQuery({ field: "description", text: query, operation: OP.AND, boost: 2.5 }),
+        new MatchQuery({ field: "body", text: query, operation: OP.AND, boost: 2.0 }),
+        new MatchQuery({ field: "primarySuggest", text: query, operation: OP.OR, prefixMatch: true, boost: 4 }),
+        new MatchQuery({ field: "secondarySuggest", text: query, operation: OP.OR, prefixMatch: true, boost: 2 })
+      ]
+    }),
     limit: 20
   });
 
   const fuzzyHits = fuzzyIndex.searchRequest({
-    query: new MatchQuery("combined", query, OP.OR, false, 1.5),
+    query: new MatchQuery({ field: "combined", text: query, operation: OP.OR, boost: 1.5 }),
     limit: 20
   });
 
@@ -251,7 +253,7 @@ const hydratedSearch = {
 
 const hits = simpleTextSearch(hydratedSearch, { query: "range fi", limit: 5 });
 
-const query = new MatchQuery("title", "range filters");
+const query = new MatchQuery({ field: "title", text: "range filters" });
 const highlighted = hydratedSearch.documentIndex.highlight(hits[0]![0], query, {
   fields: ["title", "body"]
 });

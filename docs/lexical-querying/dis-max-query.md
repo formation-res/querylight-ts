@@ -26,11 +26,13 @@ Instead of summing every clause like a bool `should`, `DisMaxQuery` keeps the hi
 ```ts
 import { DisMaxQuery, MatchQuery, OP } from "@tryformation/querylight-ts";
 
-const query = new DisMaxQuery([
-  new MatchQuery("title", "portable browser search", OP.AND, false, 3.0),
-  new MatchQuery("tagline", "portable browser search", OP.AND, false, 2.0),
-  new MatchQuery("body", "portable browser search", OP.AND, false, 1.0)
-]);
+const query = new DisMaxQuery({
+  queries: [
+    new MatchQuery({ field: "title", text: "portable browser search", operation: OP.AND, boost: 3.0 }),
+    new MatchQuery({ field: "tagline", text: "portable browser search", operation: OP.AND, boost: 2.0 }),
+    new MatchQuery({ field: "body", text: "portable browser search", operation: OP.AND, boost: 1.0 })
+  ]
+});
 ```
 
 ## Tie breaker behavior
@@ -42,10 +44,13 @@ const query = new DisMaxQuery([
 - `1`: behaves more like summing all matching clauses
 
 ```ts
-const query = new DisMaxQuery([
-  new MatchQuery("title", "vector search", OP.AND, false, 3.0),
-  new MatchQuery("body", "vector search", OP.AND, false, 1.0)
-], 0.2);
+const query = new DisMaxQuery({
+  queries: [
+    new MatchQuery({ field: "title", text: "vector search", operation: OP.AND, boost: 3.0 }),
+    new MatchQuery({ field: "body", text: "vector search", operation: OP.AND, boost: 1.0 })
+  ],
+  tieBreaker: 0.2
+});
 ```
 
 That means a document with a strong title hit still wins, but a document that also matches in the body gets a small extra push.

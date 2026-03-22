@@ -72,13 +72,13 @@ In the dashboard demo, charts start with a filtered subset:
 
 ```ts
 const filters = [
-  new TermQuery("indicatorId", "SP.POP.TOTL"),
-  new TermsQuery("country", ["United States", "Germany", "Japan"]),
-  new RangeQuery("year", { gte: "2018", lte: "2024" })
+  new TermQuery({ field: "indicatorId", text: "SP.POP.TOTL" }),
+  new TermsQuery({ field: "country", terms: ["United States", "Germany", "Japan"] }),
+  new RangeQuery({ field: "year", range: { gte: "2018", lte: "2024" } })
 ];
 
 const subset = new Set(
-  index.search(new BoolQuery([], [], filters)).map(([id]) => id)
+  index.search(new BoolQuery({ filter: filters })).map(([id]) => id)
 );
 ```
 

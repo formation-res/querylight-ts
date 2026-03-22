@@ -25,34 +25,29 @@ By default, `should` clauses are optional whenever `must` or `filter` is present
 ```ts
 import { BoolQuery, MatchQuery, OP, TermQuery } from "@tryformation/querylight-ts";
 
-const query = new BoolQuery(
-  [
-    new MatchQuery("title", "phrase search", OP.AND, false, 3.0),
-    new MatchQuery("body", "phrase search", OP.AND, false, 1.5)
+const query = new BoolQuery({
+  should: [
+    new MatchQuery({ field: "title", text: "phrase search", operation: OP.AND, boost: 3.0 }),
+    new MatchQuery({ field: "body", text: "phrase search", operation: OP.AND, boost: 1.5 })
   ],
-  [],
-  [new TermQuery("section", "Queries")],
-  [new TermQuery("level", "advanced")]
-);
+  filter: [new TermQuery({ field: "section", text: "Queries" })],
+  mustNot: [new TermQuery({ field: "level", text: "advanced" })]
+});
 ```
 
 ## minimumShouldMatch
 
-Use the final constructor parameter when you want a specific number of `should` clauses to become mandatory.
+Use `minimumShouldMatch` when you want a specific number of `should` clauses to become mandatory.
 
 ```ts
-const query = new BoolQuery(
-  [
-    new MatchQuery("title", "vector"),
-    new MatchQuery("body", "search"),
-    new MatchQuery("tags", "ranking")
+const query = new BoolQuery({
+  should: [
+    new MatchQuery({ field: "title", text: "vector" }),
+    new MatchQuery({ field: "body", text: "search" }),
+    new MatchQuery({ field: "tags", text: "ranking" })
   ],
-  [],
-  [],
-  [],
-  undefined,
-  2
-);
+  minimumShouldMatch: 2
+});
 ```
 
 ## Good use cases

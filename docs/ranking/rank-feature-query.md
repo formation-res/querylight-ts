@@ -38,7 +38,7 @@ index.index({ id: "2", fields: { popularity: ["20"] } });
 index.index({ id: "3", fields: { popularity: ["50"] } });
 
 const hits = index.searchRequest({
-  query: new RankFeatureQuery("popularity")
+  query: new RankFeatureQuery({ field: "popularity" })
 });
 ```
 
@@ -49,7 +49,7 @@ const hits = index.searchRequest({
 Default behavior.
 
 ```ts
-new RankFeatureQuery("popularity", { pivot: 10 });
+new RankFeatureQuery({ field: "popularity", options: { pivot: 10 } });
 ```
 
 Useful when you want diminishing returns.
@@ -57,7 +57,7 @@ Useful when you want diminishing returns.
 ### Log
 
 ```ts
-new RankFeatureQuery("popularity", { type: "log", scalingFactor: 1 });
+new RankFeatureQuery({ field: "popularity", options: { type: "log", scalingFactor: 1 } });
 ```
 
 Useful when raw values grow very large.
@@ -65,11 +65,11 @@ Useful when raw values grow very large.
 ### Sigmoid
 
 ```ts
-new RankFeatureQuery("popularity", {
+new RankFeatureQuery({ field: "popularity", options: {
   type: "sigmoid",
   pivot: 10,
   exponent: 2
-});
+} });
 ```
 
 Useful when you want a stronger curve around a pivot.
@@ -77,7 +77,7 @@ Useful when you want a stronger curve around a pivot.
 ### Linear
 
 ```ts
-new RankFeatureQuery("popularity", { type: "linear", factor: 0.5 });
+new RankFeatureQuery({ field: "popularity", options: { type: "linear", factor: 0.5 } });
 ```
 
 Useful when the feature should scale directly.

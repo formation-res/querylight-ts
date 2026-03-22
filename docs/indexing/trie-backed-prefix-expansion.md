@@ -51,11 +51,11 @@ index.index({ id: "2", fields: { title: ["Query planner basics"] } });
 index.index({ id: "3", fields: { title: ["Vector search guide"] } });
 
 const explicitPrefixHits = index.searchRequest({
-  query: new PrefixQuery("title", "que")
+  query: new PrefixQuery({ field: "title", prefix: "que" })
 });
 
 const analyzedPrefixHits = index.searchRequest({
-  query: new MatchQuery("title", "que", OP.OR, true)
+  query: new MatchQuery({ field: "title", text: "que", operation: OP.OR, prefixMatch: true })
 });
 
 explicitPrefixHits.map(([id]) => id); // ["1", "2"]
@@ -64,7 +64,7 @@ analyzedPrefixHits.map(([id]) => id); // ["1", "2"]
 
 Both queries rely on the field's trie to expand `que` into indexed terms such as `querylight` and `query`. Document `3` does not match because none of its indexed terms start with `que`.
 
-If you search for `pla` with `new PrefixQuery("title", "pla")`, only document `2` matches because `planner` starts with `pla`.
+If you search for `pla` with `new PrefixQuery({ field: "title", prefix: "pla" })`, only document `2` matches because `planner` starts with `pla`.
 
 ## How it works
 

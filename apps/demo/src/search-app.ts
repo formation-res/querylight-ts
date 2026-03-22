@@ -691,23 +691,26 @@ function buildFacetFilterQueries(current: SearchState): QueryFilters {
   const filters: Query[] = [];
   const mustNot: TermQuery[] = [];
   if (current.section) {
-    filters.push(new TermQuery("section", current.section));
+    filters.push(new TermQuery({ field: "section", text: current.section }));
   }
   if (current.api) {
-    filters.push(new TermQuery("api", current.api));
+    filters.push(new TermQuery({ field: "api", text: current.api }));
   }
   if (current.tag) {
-    filters.push(new TermQuery("tags", current.tag));
+    filters.push(new TermQuery({ field: "tags", text: current.tag }));
   }
   const wordCountFacet = wordCountFacetByKey(current.wordCountFacet);
   if (wordCountFacet) {
-    filters.push(new RangeQuery("wordCount", {
-      ...(wordCountFacet.from == null ? {} : { gte: String(wordCountFacet.from) }),
-      ...(wordCountFacet.to == null ? {} : { lt: String(wordCountFacet.to) })
+    filters.push(new RangeQuery({
+      field: "wordCount",
+      range: {
+        ...(wordCountFacet.from == null ? {} : { gte: String(wordCountFacet.from) }),
+        ...(wordCountFacet.to == null ? {} : { lt: String(wordCountFacet.to) })
+      }
     }));
   }
   if (current.excludeAdvanced) {
-    mustNot.push(new TermQuery("level", "advanced"));
+    mustNot.push(new TermQuery({ field: "level", text: "advanced" }));
   }
   return { filters, mustNot };
 }
@@ -736,67 +739,67 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
   const trimmed = queryText.trim();
   const allowPrefixSuggestions = trimmed.length >= 2;
   const { filters, mustNot } = buildFacetFilterQueries(current);
-  const filterOnlyQuery = filters.length > 0 || mustNot.length > 0 ? new BoolQuery([], [], filters, mustNot) : new MatchAll();
+  const filterOnlyQuery = filters.length > 0 || mustNot.length > 0 ? new BoolQuery({ filter: filters, mustNot }) : new MatchAll();
 
   const baseTextQuery =
     trimmed.length === 0
       ? new MatchAll()
-      : new BoolQuery(
-          [
-            new MatchQuery("title", trimmed, current.operation, current.prefix, 7),
-            new MatchQuery("tagline", trimmed, current.operation, current.prefix, 2.5),
-            new MatchQuery("body", trimmed, current.operation, current.prefix, 2),
-            new MatchQuery("api", trimmed, OP.OR, current.prefix, 2.75),
-            new MatchQuery("tags", trimmed, OP.OR, current.prefix, 2.25)
+      : new BoolQuery({
+          should: [
+            new MatchQuery({ field: "title", text: trimmed, operation: current.operation, prefixMatch: current.prefix, boost: 7 }),
+            new MatchQuery({ field: "tagline", text: trimmed, operation: current.operation, prefixMatch: current.prefix, boost: 2.5 }),
+            new MatchQuery({ field: "body", text: trimmed, operation: current.operation, prefixMatch: current.prefix, boost: 2 }),
+            new MatchQuery({ field: "api", text: trimmed, operation: OP.OR, prefixMatch: current.prefix, boost: 2.75 }),
+            new MatchQuery({ field: "tags", text: trimmed, operation: OP.OR, prefixMatch: current.prefix, boost: 2.25 })
           ],
-          [],
-          filters,
+          filter: filters,
           mustNot
-        );
+        });
 
   const phraseQuery =
     trimmed.length === 0
       ? filterOnlyQuery
-      : new BoolQuery(
-          [
-            new MatchPhrase("title", quotedPhrase ?? trimmed, quotedPhrase ? 0 : 1, 8),
-            new MatchPhrase("body", quotedPhrase ?? trimmed, quotedPhrase ? 1 : 2, 3)
+      : new BoolQuery({
+          should: [
+            new MatchPhrase({ field: "title", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 0 : 1, boost: 8 }),
+            new MatchPhrase({ field: "body", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 1 : 2, boost: 3 })
           ],
-          [],
-          filters,
+          filter: filters,
           mustNot
-        );
+        });
 
   const hybridLexicalQuery =
     trimmed.length === 0
       ? filterOnlyQuery
-      : new BoolQuery(
-          [
-            new MatchPhrase("title", quotedPhrase ?? trimmed, quotedPhrase ? 0 : 1, 8),
-            new MatchPhrase("body", quotedPhrase ?? trimmed, quotedPhrase ? 1 : 2, 3),
+      : new BoolQuery({
+          should: [
+            new MatchPhrase({ field: "title", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 0 : 1, boost: 8 }),
+            new MatchPhrase({ field: "body", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 1 : 2, boost: 3 }),
             ...(quotedPhrase
               ? []
               : [
-                  new MatchQuery("title", trimmed, current.operation, false, 6),
-                  new MatchQuery("tagline", trimmed, current.operation, false, 2.5),
-                  new MatchQuery("body", trimmed, current.operation, false, 2),
-                  new MatchQuery("api", trimmed, OP.OR, false, 2.75),
-                  new MatchQuery("tags", trimmed, OP.OR, false, 2.25),
+                  new MatchQuery({ field: "title", text: trimmed, operation: current.operation, boost: 6 }),
+                  new MatchQuery({ field: "tagline", text: trimmed, operation: current.operation, boost: 2.5 }),
+                  new MatchQuery({ field: "body", text: trimmed, operation: current.operation, boost: 2 }),
+                  new MatchQuery({ field: "api", text: trimmed, operation: OP.OR, boost: 2.75 }),
+                  new MatchQuery({ field: "tags", text: trimmed, operation: OP.OR, boost: 2.25 }),
                   ...(allowPrefixSuggestions
-                    ? [new MatchQuery("title", trimmed, OP.OR, true, 4), new MatchQuery("suggest", trimmed, OP.OR, true, 3)]
+                    ? [
+                        new MatchQuery({ field: "title", text: trimmed, operation: OP.OR, prefixMatch: true, boost: 4 }),
+                        new MatchQuery({ field: "suggest", text: trimmed, operation: OP.OR, prefixMatch: true, boost: 3 })
+                      ]
                     : [])
                 ])
           ],
-          [],
-          filters,
+          filter: filters,
           mustNot
-        );
+        });
 
   const fuzzyHits =
     trimmed.length === 0
       ? []
       : active.fuzzy.searchRequest({
-          query: new MatchQuery("combined", trimmed, OP.OR, false, 1.5),
+          query: new MatchQuery({ field: "combined", text: trimmed, operation: OP.OR, boost: 1.5 }),
           limit: Number.MAX_SAFE_INTEGER
         });
 

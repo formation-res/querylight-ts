@@ -38,11 +38,11 @@ index.index({ id: "2", fields: { publishedAt: ["2025-01-05T00:00:00.000Z"] } });
 index.index({ id: "3", fields: { publishedAt: ["2025-02-01T00:00:00.000Z"] } });
 
 const hits = index.searchRequest({
-  query: new DistanceFeatureQuery(
-    "publishedAt",
-    "2025-01-04T00:00:00.000Z",
-    7 * 24 * 60 * 60 * 1000
-  )
+  query: new DistanceFeatureQuery({
+    field: "publishedAt",
+    origin: "2025-01-04T00:00:00.000Z",
+    pivot: 7 * 24 * 60 * 60 * 1000
+  })
 });
 ```
 

@@ -66,23 +66,20 @@ embeddingIndex.insert("1", [bigramVector("vector embeddings tutorial")]);
 embeddingIndex.insert("2", [bigramVector("filtered semantic retrieval")]);
 embeddingIndex.insert("3", [bigramVector("map polygons and geohashes")]);
 
-const baseQuery = new BoolQuery(
-  [],
-  [new MatchQuery("title", "vector search")],
-  [],
-  []
-);
+const baseQuery = new BoolQuery({
+  must: [new MatchQuery({ field: "title", text: "vector search" })]
+});
 
-const hits = index.search(new VectorRescoreQuery(
-  "embedding",
-  bigramVector("filtered vector retrieval"),
-  baseQuery,
-  {
+const hits = index.search(new VectorRescoreQuery({
+  field: "embedding",
+  vector: bigramVector("filtered vector retrieval"),
+  query: baseQuery,
+  options: {
     windowSize: 100,
     queryWeight: 1.0,
     rescoreQueryWeight: 1.0
   }
-));
+}));
 ```
 
 What happens:
@@ -127,22 +124,20 @@ import {
   rectangleToPolygon
 } from "@tryformation/querylight-ts";
 
-const baseQuery = new BoolQuery(
-  [],
-  [new MatchQuery("title", "coffee shop")],
-  [
-    new TermQuery("city", "berlin"),
-    new GeoPolygonQuery("location", rectangleToPolygon(13.35, 52.48, 13.45, 52.55))
-  ],
-  []
-);
+const baseQuery = new BoolQuery({
+  must: [new MatchQuery({ field: "title", text: "coffee shop" })],
+  filter: [
+    new TermQuery({ field: "city", text: "berlin" }),
+    new GeoPolygonQuery({ field: "location", polygon: rectangleToPolygon(13.35, 52.48, 13.45, 52.55 }))
+  ]
+});
 
-const hits = index.search(new VectorRescoreQuery(
-  "embedding",
-  bigramVector("quiet place for espresso and work"),
-  baseQuery,
-  { windowSize: 75 }
-));
+const hits = index.search(new VectorRescoreQuery({
+  field: "embedding",
+  vector: bigramVector("quiet place for espresso and work"),
+  query: baseQuery,
+  options: { windowSize: 75 }
+}));
 ```
 
 This does three useful things:

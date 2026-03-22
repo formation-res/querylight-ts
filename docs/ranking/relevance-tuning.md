@@ -80,11 +80,14 @@ Use `DisMaxQuery` when you want the strongest field to dominate:
 ```ts
 import { DisMaxQuery, MatchQuery, OP } from "@tryformation/querylight-ts";
 
-const query = new DisMaxQuery([
-  new MatchQuery("title", "portable search", OP.AND, false, 3.0),
-  new MatchQuery("tagline", "portable search", OP.AND, false, 2.0),
-  new MatchQuery("body", "portable search", OP.AND, false, 1.0)
-], 0.2);
+const query = new DisMaxQuery({
+  queries: [
+    new MatchQuery({ field: "title", text: "portable search", operation: OP.AND, boost: 3.0 }),
+    new MatchQuery({ field: "tagline", text: "portable search", operation: OP.AND, boost: 2.0 }),
+    new MatchQuery({ field: "body", text: "portable search", operation: OP.AND, boost: 1.0 })
+  ],
+  tieBreaker: 0.2
+});
 ```
 
 ## Soft-demote instead of excluding
@@ -94,11 +97,11 @@ Use `BoostingQuery` when a document is still acceptable but should lose rank bec
 ```ts
 import { BoostingQuery, MatchQuery, TermQuery } from "@tryformation/querylight-ts";
 
-const query = new BoostingQuery(
-  new MatchQuery("title", "querylight"),
-  new TermQuery("tags", "deprecated"),
-  0.25
-);
+const query = new BoostingQuery({
+  positive: new MatchQuery({ field: "title", text: "querylight" }),
+  negative: new TermQuery({ field: "tags", text: "deprecated" }),
+  negativeBoost: 0.25
+});
 ```
 
 ## Use numeric and date features directly
@@ -124,12 +127,12 @@ const index = new DocumentIndex({
   publishedAt: new DateFieldIndex()
 });
 
-const popularityBoost = new RankFeatureQuery("popularity");
-const recencyBoost = new DistanceFeatureQuery(
-  "publishedAt",
-  new Date("2025-01-01T00:00:00.000Z"),
-  7 * 24 * 60 * 60 * 1000
-);
+const popularityBoost = new RankFeatureQuery({ field: "popularity" });
+const recencyBoost = new DistanceFeatureQuery({
+  field: "publishedAt",
+  origin: new Date("2025-01-01T00:00:00.000Z"),
+  pivot: 7 * 24 * 60 * 60 * 1000
+});
 ```
 
 ## Use script scoring sparingly
@@ -145,10 +148,10 @@ That is useful when:
 ```ts
 import { ScriptScoreQuery, TermQuery } from "@tryformation/querylight-ts";
 
-const query = new ScriptScoreQuery(
-  new TermQuery("title", "querylight"),
-  ({ score, numericValue }) => score * (numericValue("popularity") ?? 1)
-);
+const query = new ScriptScoreQuery({
+  query: new TermQuery({ field: "title", text: "querylight" }),
+  script: ({ score, numericValue }) => score * (numericValue("popularity") ?? 1)
+});
 ```
 
 ## Tuning questions to ask

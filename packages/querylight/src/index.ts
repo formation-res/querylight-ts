@@ -98,15 +98,36 @@ export {
   VectorRescoreQuery
 } from "./query";
 export type {
+  BoolQueryParams,
+  BoostingQueryParams,
+  DisMaxQueryParams,
+  DistanceFeatureQueryParams,
+  ExistsQueryParams,
+  GeoPointQueryParams,
+  GeoPolygonQueryParams,
+  MatchAllParams,
+  MatchPhraseParams,
+  MatchQueryParams,
+  MultiMatchQueryParams,
+  PrefixQueryParams,
   RankFeatureLinearOptions,
   RankFeatureLogOptions,
+  RankFeatureQueryParams,
   RankFeatureOptions,
   RankFeatureSaturationOptions,
   RankFeatureSigmoidOptions,
+  RangeQueryParams,
+  RegexpQueryParams,
   ScriptExecutionContext,
   ScriptFilter,
+  ScriptQueryParams,
   ScriptScore,
-  VectorRescoreOptions
+  ScriptScoreQueryParams,
+  TermQueryParams,
+  TermsQueryParams,
+  VectorRescoreQueryParams,
+  VectorRescoreOptions,
+  WildcardQueryParams
 } from "./query";
 export type { Query } from "./shared";
 

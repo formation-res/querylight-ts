@@ -148,17 +148,21 @@ export function simpleTextSearch<T extends Record<string, unknown>>(
 
   const branchLimit = Math.max(20, from + limit * 3);
   const phraseText = quotedPhrase ?? trimmed;
-  const lexicalQuery = new BoolQuery([
-    ...index.primaryFields.map((field) => new MatchPhrase(field, phraseText, quotedPhrase ? 0 : 1, 8)),
-    ...index.secondaryFields.map((field) => new MatchPhrase(field, phraseText, quotedPhrase ? 1 : 2, 3)),
-    ...index.primaryFields.map((field) => new MatchQuery(field, trimmed, OP.AND, false, 6)),
-    ...index.secondaryFields.map((field) => new MatchQuery(field, trimmed, OP.AND, false, 2.5)),
-    new MatchQuery(index.primarySuggestField, trimmed, OP.OR, true, 4),
-    ...(index.secondaryFields.length > 0 ? [new MatchQuery(index.secondarySuggestField, trimmed, OP.OR, true, 2)] : [])
-  ]);
+  const lexicalQuery = new BoolQuery({
+    should: [
+      ...index.primaryFields.map((field) => new MatchPhrase({ field, text: phraseText, slop: quotedPhrase ? 0 : 1, boost: 8 })),
+      ...index.secondaryFields.map((field) => new MatchPhrase({ field, text: phraseText, slop: quotedPhrase ? 1 : 2, boost: 3 })),
+      ...index.primaryFields.map((field) => new MatchQuery({ field, text: trimmed, operation: OP.AND, boost: 6 })),
+      ...index.secondaryFields.map((field) => new MatchQuery({ field, text: trimmed, operation: OP.AND, boost: 2.5 })),
+      new MatchQuery({ field: index.primarySuggestField, text: trimmed, operation: OP.OR, prefixMatch: true, boost: 4 }),
+      ...(index.secondaryFields.length > 0
+        ? [new MatchQuery({ field: index.secondarySuggestField, text: trimmed, operation: OP.OR, prefixMatch: true, boost: 2 })]
+        : [])
+    ]
+  });
   const lexicalHits = index.documentIndex.searchRequest({ query: lexicalQuery, limit: branchLimit });
   const fuzzyHits = index.fuzzyIndex.searchRequest({
-    query: new MatchQuery(index.fuzzyField, trimmed, OP.OR, false, 1.5),
+    query: new MatchQuery({ field: index.fuzzyField, text: trimmed, operation: OP.OR, boost: 1.5 }),
     limit: branchLimit
   });
   const fusedHits = reciprocalRankFusion([lexicalHits, fuzzyHits], { rankConstant: 20, weights: [3, 1] });

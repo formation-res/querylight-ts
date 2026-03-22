@@ -34,7 +34,7 @@ That keeps the chart code simple.
 
 ```ts
 const subset = new Set(
-  index.search(new BoolQuery([], [], filters)).map(([id]) => id)
+  index.search(new BoolQuery({ filter: filters })).map(([id]) => id)
 );
 
 const categories = placeCategoryField.termsAggregation(8, subset);

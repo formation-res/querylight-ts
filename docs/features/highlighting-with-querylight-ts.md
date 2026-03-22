@@ -39,7 +39,7 @@ index.index({
   }
 });
 
-const query = new MatchQuery("body", "range filters");
+const query = new MatchQuery({ field: "body", text: "range filters" });
 const hits = index.searchRequest({ query, limit: 5 });
 
 const highlight = index.highlight(hits[0]![0], query, {

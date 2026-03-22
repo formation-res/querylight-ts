@@ -35,10 +35,10 @@ index.index({ id: "1", fields: { popularity: ["5"], title: ["querylight"] } });
 index.index({ id: "2", fields: { popularity: ["20"], title: ["querylight"] } });
 
 const hits = index.searchRequest({
-  query: new ScriptScoreQuery(
-    new TermQuery("title", "querylight"),
-    ({ score, numericValue }) => score * (numericValue("popularity") ?? 1)
-  )
+  query: new ScriptScoreQuery({
+    query: new TermQuery({ field: "title", text: "querylight" }),
+    script: ({ score, numericValue }) => score * (numericValue("popularity") ?? 1)
+  })
 });
 ```
 

@@ -34,7 +34,7 @@ index.index({ id: "1", fields: { popularity: ["5"], title: ["alpha"] } });
 index.index({ id: "2", fields: { popularity: ["20"], title: ["beta"] } });
 
 const hits = index.searchRequest({
-  query: new ScriptQuery(({ numericValue }) => (numericValue("popularity") ?? 0) >= 10)
+  query: new ScriptQuery({ script: ({ numericValue }) => (numericValue("popularity") ?? 0) >= 10 })
 });
 ```
 

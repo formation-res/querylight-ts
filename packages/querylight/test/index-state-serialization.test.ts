@@ -57,8 +57,8 @@ describe("index state serialization", () => {
 
     const loaded = index.loadState(index.indexState);
 
-    expect(index.searchRequest({ query: new MatchQuery("combined", "range", OP.OR), limit: 10 }).map(([id]) => id)).toContain("range-filters");
-    expect(loaded.searchRequest({ query: new MatchQuery("combined", "range", OP.OR), limit: 10 }).map(([id]) => id)).toContain("range-filters");
+    expect(index.searchRequest({ query: new MatchQuery({ field: "combined", text: "range", operation: OP.OR }), limit: 10 }).map(([id]) => id)).toContain("range-filters");
+    expect(loaded.searchRequest({ query: new MatchQuery({ field: "combined", text: "range", operation: OP.OR }), limit: 10 }).map(([id]) => id)).toContain("range-filters");
   });
 
   it("should preserve numeric and date indexes after loading state", () => {
@@ -84,9 +84,9 @@ describe("index state serialization", () => {
 
     const loaded = index.loadState(index.indexState);
 
-    expect(loaded.searchRequest({ query: new RankFeatureQuery("popularity") }).map(([id]) => id)).toEqual(["2", "1"]);
-    expect(loaded.searchRequest({ query: new RangeQuery("publishedAt", { gte: "2025-01-05T00:00:00.000Z" }) }).map(([id]) => id)).toEqual(["2"]);
-    expect(loaded.searchRequest({ query: new DistanceFeatureQuery("publishedAt", "2025-01-08T00:00:00.000Z", 7 * 24 * 60 * 60 * 1000) }).map(([id]) => id)).toEqual(["2", "1"]);
+    expect(loaded.searchRequest({ query: new RankFeatureQuery({ field: "popularity" }) }).map(([id]) => id)).toEqual(["2", "1"]);
+    expect(loaded.searchRequest({ query: new RangeQuery({ field: "publishedAt", range: { gte: "2025-01-05T00:00:00.000Z" } }) }).map(([id]) => id)).toEqual(["2"]);
+    expect(loaded.searchRequest({ query: new DistanceFeatureQuery({ field: "publishedAt", origin: "2025-01-08T00:00:00.000Z", pivot: 7 * 24 * 60 * 60 * 1000 }) }).map(([id]) => id)).toEqual(["2", "1"]);
 
     const loadedPopularity = loaded.getFieldIndex("popularity") as NumericFieldIndex;
     const loadedPublishedAt = loaded.getFieldIndex("publishedAt") as DateFieldIndex;

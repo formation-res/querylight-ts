@@ -55,6 +55,147 @@ export interface ScriptExecutionContext {
 export type ScriptFilter = (context: ScriptExecutionContext) => boolean;
 export type ScriptScore = (context: ScriptExecutionContext) => number;
 
+export interface BoolQueryParams {
+  should?: Query[];
+  must?: Query[];
+  filter?: Query[];
+  mustNot?: Query[];
+  boost?: number;
+  minimumShouldMatch?: number;
+}
+
+export interface TermQueryParams {
+  field: string;
+  text: string;
+  boost?: number;
+}
+
+export interface TermsQueryParams {
+  field: string;
+  terms: string[];
+  boost?: number;
+}
+
+export interface WildcardQueryParams {
+  field: string;
+  pattern: string;
+  boost?: number;
+}
+
+export interface RegexpQueryParams {
+  field: string;
+  pattern: string | RegExp;
+  boost?: number;
+}
+
+export interface ExistsQueryParams {
+  field: string;
+  boost?: number;
+}
+
+export interface RangeQueryParams {
+  field: string;
+  range?: {
+    lt?: string;
+    lte?: string;
+    gt?: string;
+    gte?: string;
+  };
+  boost?: number;
+}
+
+export interface MatchQueryParams {
+  field: string;
+  text: string;
+  operation?: OP;
+  prefixMatch?: boolean;
+  boost?: number;
+}
+
+export interface MultiMatchQueryParams {
+  fields: string[];
+  text: string;
+  operation?: OP;
+  prefixMatch?: boolean;
+  boost?: number;
+  fieldBoosts?: Record<string, number>;
+}
+
+export interface DisMaxQueryParams {
+  queries: Query[];
+  tieBreaker?: number;
+  boost?: number;
+}
+
+export interface MatchPhraseParams {
+  field: string;
+  text: string;
+  slop?: number;
+  boost?: number;
+}
+
+export interface PrefixQueryParams {
+  field: string;
+  prefix: string;
+  boost?: number;
+}
+
+export interface MatchAllParams {
+  boost?: number;
+}
+
+export interface BoostingQueryParams {
+  positive: Query;
+  negative: Query;
+  negativeBoost: number;
+  boost?: number;
+}
+
+export interface GeoPointQueryParams {
+  field: string;
+  latitude: number;
+  longitude: number;
+  boost?: number;
+}
+
+export interface GeoPolygonQueryParams {
+  field: string;
+  polygon: PolygonCoordinates;
+  boost?: number;
+}
+
+export interface DistanceFeatureQueryParams {
+  field: string;
+  origin: number | string | Date;
+  pivot: number;
+  boost?: number;
+}
+
+export interface RankFeatureQueryParams {
+  field: string;
+  options?: RankFeatureOptions;
+  boost?: number;
+}
+
+export interface ScriptQueryParams {
+  script: ScriptFilter;
+  boost?: number;
+}
+
+export interface ScriptScoreQueryParams {
+  query: Query;
+  script: ScriptScore;
+  boost?: number;
+}
+
+export interface VectorRescoreQueryParams {
+  field: string;
+  vector: Vector;
+  query: Query;
+  options?: VectorRescoreOptions;
+  boost?: number;
+}
+
 function parseNumericValue(value: string | number | Date): number | undefined {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : undefined;
@@ -110,15 +251,52 @@ function wildcardToRegExp(pattern: string): RegExp {
   return new RegExp(source);
 }
 
+function assertRequiredString(value: string | undefined, name: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`${name} should be a string`);
+  }
+  return value;
+}
+
+function assertRequiredQuery(value: Query | undefined, name: string): Query {
+  if (value == null) {
+    throw new Error(`${name} should be specified`);
+  }
+  return value;
+}
+
+function assertRequiredQueries(value: Query[] | undefined, name: string): Query[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${name} should be an array`);
+  }
+  return value;
+}
+
 export class BoolQuery implements Query {
+  private readonly should: Query[];
+  private readonly must: Query[];
+  private readonly filter: Query[];
+  private readonly mustNot: Query[];
+  public readonly boost: number | undefined;
+  private readonly minimumShouldMatch: number;
+
   constructor(
-    private readonly should: Query[] = [],
-    private readonly must: Query[] = [],
-    private readonly filter: Query[] = [],
-    private readonly mustNot: Query[] = [],
-    public readonly boost: number | undefined = undefined,
-    private readonly minimumShouldMatch = 0
-  ) {}
+    {
+      should = [],
+      must = [],
+      filter = [],
+      mustNot = [],
+      boost,
+      minimumShouldMatch = 0
+    }: BoolQueryParams = {}
+  ) {
+    this.should = should;
+    this.must = must;
+    this.filter = filter;
+    this.mustNot = mustNot;
+    this.boost = boost;
+    this.minimumShouldMatch = minimumShouldMatch;
+  }
 
   hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
     if (this.filter.length === 0 && this.should.length === 0 && this.must.length === 0 && this.mustNot.length === 0) {
@@ -207,11 +385,15 @@ export class BoolQuery implements Query {
 }
 
 export class TermQuery implements Query {
-  constructor(
-    private readonly field: string,
-    private readonly text: string,
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly field: string;
+  private readonly text: string;
+  public readonly boost: number | undefined;
+
+  constructor({ field, text, boost }: TermQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.text = assertRequiredString(text, "text");
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const hits = textFieldHits(
@@ -228,11 +410,18 @@ export class TermQuery implements Query {
 }
 
 export class TermsQuery implements Query {
-  constructor(
-    private readonly field: string,
-    private readonly terms: string[],
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly field: string;
+  private readonly terms: string[];
+  public readonly boost: number | undefined;
+
+  constructor({ field, terms, boost }: TermsQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    if (!Array.isArray(terms)) {
+      throw new Error("terms should be an array");
+    }
+    this.terms = terms;
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => {
@@ -256,12 +445,14 @@ export class TermsQuery implements Query {
 
 export class WildcardQuery implements Query {
   private readonly matcher: RegExp;
+  private readonly field: string;
+  private readonly pattern: string;
+  public readonly boost: number | undefined;
 
-  constructor(
-    private readonly field: string,
-    private readonly pattern: string,
-    public readonly boost: number | undefined = undefined
-  ) {
+  constructor({ field, pattern, boost }: WildcardQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.pattern = assertRequiredString(pattern, "pattern");
+    this.boost = boost;
     this.matcher = wildcardToRegExp(pattern);
   }
 
@@ -282,12 +473,12 @@ export class WildcardQuery implements Query {
 
 export class RegexpQuery implements Query {
   private readonly matcher: RegExp;
+  private readonly field: string;
+  public readonly boost: number | undefined;
 
-  constructor(
-    private readonly field: string,
-    pattern: string | RegExp,
-    public readonly boost: number | undefined = undefined
-  ) {
+  constructor({ field, pattern, boost }: RegexpQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.boost = boost;
     this.matcher = typeof pattern === "string"
       ? new RegExp(pattern)
       : new RegExp(pattern.source, pattern.flags.replaceAll("g", ""));
@@ -309,10 +500,13 @@ export class RegexpQuery implements Query {
 }
 
 export class ExistsQuery implements Query {
-  constructor(
-    private readonly field: string,
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly field: string;
+  public readonly boost: number | undefined;
+
+  constructor({ field, boost }: ExistsQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const hits = Object.values(documentIndex.documents)
@@ -327,16 +521,20 @@ export class ExistsQuery implements Query {
 }
 
 export class RangeQuery implements Query {
-  constructor(
-    private readonly field: string,
-    private readonly params: {
-      lt?: string;
-      lte?: string;
-      gt?: string;
-      gte?: string;
-    } = {},
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly field: string;
+  private readonly params: {
+    lt?: string;
+    lte?: string;
+    gt?: string;
+    gte?: string;
+  };
+  public readonly boost: number | undefined;
+
+  constructor({ field, range = {}, boost }: RangeQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.params = range;
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const fieldIndex = documentIndex.getFieldIndex(this.field);
@@ -354,13 +552,19 @@ export class RangeQuery implements Query {
 }
 
 export class MatchQuery implements Query {
-  constructor(
-    private readonly field: string,
-    private readonly text: string,
-    private readonly operation: OP = OP.AND,
-    private readonly prefixMatch = false,
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly field: string;
+  private readonly text: string;
+  private readonly operation: OP;
+  private readonly prefixMatch: boolean;
+  public readonly boost: number | undefined;
+
+  constructor({ field, text, operation = OP.AND, prefixMatch = false, boost }: MatchQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.text = assertRequiredString(text, "text");
+    this.operation = operation;
+    this.prefixMatch = prefixMatch;
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const hits = textFieldHits(
@@ -416,14 +620,33 @@ export class MatchQuery implements Query {
 }
 
 export class MultiMatchQuery implements Query {
+  private readonly fields: string[];
+  private readonly text: string;
+  private readonly operation: OP;
+  private readonly prefixMatch: boolean;
+  public readonly boost: number | undefined;
+  private readonly fieldBoosts: Record<string, number>;
+
   constructor(
-    private readonly fields: string[],
-    private readonly text: string,
-    private readonly operation: OP = OP.AND,
-    private readonly prefixMatch = false,
-    public readonly boost: number | undefined = undefined,
-    private readonly fieldBoosts: Record<string, number> = {}
-  ) {}
+    {
+      fields,
+      text,
+      operation = OP.AND,
+      prefixMatch = false,
+      boost,
+      fieldBoosts = {}
+    }: MultiMatchQueryParams
+  ) {
+    if (!Array.isArray(fields)) {
+      throw new Error("fields should be an array");
+    }
+    this.fields = fields;
+    this.text = assertRequiredString(text, "text");
+    this.operation = operation;
+    this.prefixMatch = prefixMatch;
+    this.boost = boost;
+    this.fieldBoosts = fieldBoosts;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const fieldIndexes = this.fields
@@ -450,23 +673,29 @@ export class MultiMatchQuery implements Query {
 
   highlightClauses(documentIndex: DocumentIndex) {
     return this.fields.flatMap((field) => (
-      new MatchQuery(field, this.text, this.operation, this.prefixMatch, this.fieldBoosts[field] ?? 1.0).highlightClauses()
+      new MatchQuery({
+        field,
+        text: this.text,
+        operation: this.operation,
+        prefixMatch: this.prefixMatch,
+        boost: this.fieldBoosts[field] ?? 1.0
+      }).highlightClauses()
     ));
   }
 }
 
 export class DisMaxQuery implements Query {
   private readonly tieBreaker: number;
+  private readonly queries: Query[];
+  public readonly boost: number | undefined;
 
-  constructor(
-    private readonly queries: Query[],
-    tieBreaker = 0,
-    public readonly boost: number | undefined = undefined
-  ) {
+  constructor({ queries, tieBreaker = 0, boost }: DisMaxQueryParams) {
+    this.queries = assertRequiredQueries(queries, "queries");
     if (!Number.isFinite(tieBreaker) || tieBreaker < 0 || tieBreaker > 1) {
       throw new Error("tieBreaker should be a finite number between 0 and 1");
     }
     this.tieBreaker = tieBreaker;
+    this.boost = boost;
   }
 
   hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
@@ -500,12 +729,17 @@ export class DisMaxQuery implements Query {
 }
 
 export class MatchPhrase implements Query {
-  constructor(
-    private readonly field: string,
-    private readonly text: string,
-    private readonly slop = 0,
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly field: string;
+  private readonly text: string;
+  private readonly slop: number;
+  public readonly boost: number | undefined;
+
+  constructor({ field, text, slop = 0, boost }: MatchPhraseParams) {
+    this.field = assertRequiredString(field, "field");
+    this.text = assertRequiredString(text, "text");
+    this.slop = slop;
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => {
@@ -526,11 +760,15 @@ export class MatchPhrase implements Query {
 }
 
 export class PrefixQuery implements Query {
-  constructor(
-    private readonly field: string,
-    private readonly prefix: string,
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly field: string;
+  private readonly prefix: string;
+  public readonly boost: number | undefined;
+
+  constructor({ field, prefix, boost }: PrefixQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.prefix = assertRequiredString(prefix, "prefix");
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const hits = textFieldHits(documentIndex, this.field, (fieldIndex) => fieldIndex.searchPrefix(this.prefix));
@@ -549,7 +787,11 @@ export class PrefixQuery implements Query {
 }
 
 export class MatchAll implements Query {
-  constructor(public readonly boost: number | undefined = undefined) {}
+  public readonly boost: number | undefined;
+
+  constructor({ boost }: MatchAllParams = {}) {
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     return applyBoost([...documentIndex.ids()].map((id): Hit => [id, 1.0]), normalizedBoost(this));
@@ -562,17 +804,18 @@ export class MatchAll implements Query {
 
 export class BoostingQuery implements Query {
   private readonly negativeBoost: number;
+  private readonly positive: Query;
+  private readonly negative: Query;
+  public readonly boost: number | undefined;
 
-  constructor(
-    private readonly positive: Query,
-    private readonly negative: Query,
-    negativeBoost: number,
-    public readonly boost: number | undefined = undefined
-  ) {
+  constructor({ positive, negative, negativeBoost, boost }: BoostingQueryParams) {
+    this.positive = assertRequiredQuery(positive, "positive");
+    this.negative = assertRequiredQuery(negative, "negative");
     if (!Number.isFinite(negativeBoost) || negativeBoost <= 0 || negativeBoost > 1) {
       throw new Error("negativeBoost should be a finite number > 0 and <= 1");
     }
     this.negativeBoost = negativeBoost;
+    this.boost = boost;
   }
 
   hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
@@ -590,12 +833,17 @@ export class BoostingQuery implements Query {
 }
 
 export class GeoPointQuery implements Query {
-  constructor(
-    private readonly field: string,
-    private readonly latitude: number,
-    private readonly longitude: number,
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly field: string;
+  private readonly latitude: number;
+  private readonly longitude: number;
+  public readonly boost: number | undefined;
+
+  constructor({ field, latitude, longitude, boost }: GeoPointQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.latitude = latitude;
+    this.longitude = longitude;
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const hits = geoFieldHits(
@@ -612,11 +860,15 @@ export class GeoPointQuery implements Query {
 }
 
 export class GeoPolygonQuery implements Query {
-  constructor(
-    private readonly field: string,
-    private readonly polygon: PolygonCoordinates,
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly field: string;
+  private readonly polygon: PolygonCoordinates;
+  public readonly boost: number | undefined;
+
+  constructor({ field, polygon, boost }: GeoPolygonQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.polygon = polygon;
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const hits = geoFieldHits(
@@ -635,13 +887,11 @@ export class GeoPolygonQuery implements Query {
 export class DistanceFeatureQuery implements Query {
   private readonly origin: number;
   private readonly pivot: number;
+  private readonly field: string;
+  public readonly boost: number | undefined;
 
-  constructor(
-    private readonly field: string,
-    origin: number | string | Date,
-    pivot: number,
-    public readonly boost: number | undefined = undefined
-  ) {
+  constructor({ field, origin, pivot, boost }: DistanceFeatureQueryParams) {
+    this.field = assertRequiredString(field, "field");
     const parsedOrigin = parseNumericValue(origin);
     if (parsedOrigin == null) {
       throw new Error("origin should be a finite number or parseable date");
@@ -651,6 +901,7 @@ export class DistanceFeatureQuery implements Query {
     }
     this.origin = parsedOrigin;
     this.pivot = pivot;
+    this.boost = boost;
   }
 
   hits(documentIndex: DocumentIndex): Hits {
@@ -675,11 +926,15 @@ export class DistanceFeatureQuery implements Query {
 }
 
 export class RankFeatureQuery implements Query {
-  constructor(
-    private readonly field: string,
-    private readonly options: RankFeatureOptions = {},
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly field: string;
+  private readonly options: RankFeatureOptions;
+  public readonly boost: number | undefined;
+
+  constructor({ field, options = {}, boost }: RankFeatureQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.options = options;
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const hits = Object.values(documentIndex.documents)
@@ -734,10 +989,16 @@ export class RankFeatureQuery implements Query {
 }
 
 export class ScriptQuery implements Query {
-  constructor(
-    private readonly script: ScriptFilter,
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly script: ScriptFilter;
+  public readonly boost: number | undefined;
+
+  constructor({ script, boost }: ScriptQueryParams) {
+    if (typeof script !== "function") {
+      throw new Error("script should be a function");
+    }
+    this.script = script;
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex): Hits {
     const hits = Object.values(documentIndex.documents)
@@ -752,11 +1013,18 @@ export class ScriptQuery implements Query {
 }
 
 export class ScriptScoreQuery implements Query {
-  constructor(
-    private readonly query: Query,
-    private readonly script: ScriptScore,
-    public readonly boost: number | undefined = undefined
-  ) {}
+  private readonly query: Query;
+  private readonly script: ScriptScore;
+  public readonly boost: number | undefined;
+
+  constructor({ query, script, boost }: ScriptScoreQueryParams) {
+    this.query = assertRequiredQuery(query, "query");
+    if (typeof script !== "function") {
+      throw new Error("script should be a function");
+    }
+    this.script = script;
+    this.boost = boost;
+  }
 
   hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Hits {
     const hits = this.query.hits(documentIndex, context)
@@ -783,18 +1051,28 @@ export class VectorRescoreQuery implements Query {
   private readonly windowSize: number;
   private readonly queryWeight: number;
   private readonly rescoreQueryWeight: number;
+  private readonly field: string;
+  private readonly vector: Vector;
+  private readonly query: Query;
+  public readonly boost: number | undefined;
 
   constructor(
-    private readonly field: string,
-    private readonly vector: Vector,
-    private readonly query: Query,
     {
+      field,
+      vector,
+      query,
+      options: {
       windowSize = 50,
       queryWeight = 1.0,
       rescoreQueryWeight = 1.0
-    }: VectorRescoreOptions = {},
-    public readonly boost: number | undefined = undefined
+      } = {},
+      boost
+    }: VectorRescoreQueryParams
   ) {
+    this.field = assertRequiredString(field, "field");
+    this.vector = vector;
+    this.query = assertRequiredQuery(query, "query");
+    this.boost = boost;
     if (!Number.isInteger(windowSize) || windowSize < 0) {
       throw new Error("windowSize should be an integer >= 0");
     }

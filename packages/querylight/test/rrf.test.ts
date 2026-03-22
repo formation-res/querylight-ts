@@ -48,7 +48,7 @@ describe("reciprocal rank fusion", () => {
       vectorIndex.insert(doc.id, [bigramVector(doc.fields.title[0]!)]);
     });
 
-    const lexical = textIndex.search(new MatchQuery("title", "coffee guide"));
+    const lexical = textIndex.search(new MatchQuery({ field: "title", text: "coffee guide" }));
     const vector = vectorIndex.query(bigramVector("cofee gide"), 3);
     const fused = reciprocalRankFusion([lexical, vector], { rankConstant: 20 });
 
@@ -84,9 +84,9 @@ describe("reciprocal rank fusion", () => {
       }
     });
 
-    const lexical = index.search(new MatchQuery("title", "specialty coffee"));
+    const lexical = index.search(new MatchQuery({ field: "title", text: "specialty coffee" }));
     const geo = index.search(
-      new GeoPolygonQuery("location", rectangleToPolygon(13.403, 52.519, 13.406, 52.522))
+      new GeoPolygonQuery({ field: "location", polygon: rectangleToPolygon(13.403, 52.519, 13.406, 52.522) })
     );
     const fused = reciprocalRankFusion([lexical, geo], { rankConstant: 10 });
 
@@ -100,8 +100,8 @@ describe("reciprocal rank fusion", () => {
     index.index({ id: "2", fields: { title: ["vector search tutorial"] } });
     index.index({ id: "3", fields: { title: ["geo filters and faceting"] } });
 
-    const broad = index.search(new MatchQuery("title", "vector search", undefined, false));
-    const filtered = index.search(new BoolQuery([], [], [new MatchQuery("title", "filters")], [], undefined));
+    const broad = index.search(new MatchQuery({ field: "title", text: "vector search" }));
+    const filtered = index.search(new BoolQuery({ filter: [new MatchQuery({ field: "title", text: "filters" })] }));
     const fused = reciprocalRankFusion([broad, filtered], { rankConstant: 5 });
 
     expect(fused[0]?.[0]).toBe("1");

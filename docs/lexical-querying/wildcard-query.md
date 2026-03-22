@@ -32,7 +32,7 @@ index.index({ id: "2", fields: { title: ["query planner"] } });
 index.index({ id: "3", fields: { title: ["vector search"] } });
 
 const hits = index.searchRequest({
-  query: new WildcardQuery("title", "que*")
+  query: new WildcardQuery({ field: "title", pattern: "que*" })
 });
 ```
 

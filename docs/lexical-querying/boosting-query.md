@@ -29,11 +29,11 @@ This is different from `mustNot`.
 ```ts
 import { BoostingQuery, MatchQuery, TermQuery } from "@tryformation/querylight-ts";
 
-const query = new BoostingQuery(
-  new MatchQuery("title", "querylight"),
-  new TermQuery("tags", "deprecated"),
-  0.2
-);
+const query = new BoostingQuery({
+  positive: new MatchQuery({ field: "title", text: "querylight" }),
+  negative: new TermQuery({ field: "tags", text: "deprecated" }),
+  negativeBoost: 0.2
+});
 ```
 
 Here, documents matching `title:querylight` still qualify. If they also have the `deprecated` tag, their score is multiplied by `0.2`.
@@ -52,11 +52,11 @@ If you already know a document should never appear, use `mustNot`.
 If the document is still acceptable but should lose ranking priority, use `BoostingQuery`.
 
 ```ts
-const query = new BoostingQuery(
-  new MatchQuery("body", "vector search"),
-  new BoolQuery([], [], [new TermQuery("status", "draft")]),
-  0.3
-);
+const query = new BoostingQuery({
+  positive: new MatchQuery({ field: "body", text: "vector search" }),
+  negative: new BoolQuery({ filter: [new TermQuery({ field: "status", text: "draft" })] }),
+  negativeBoost: 0.3
+});
 ```
 
 ## Tuning advice

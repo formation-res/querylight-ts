@@ -18,7 +18,7 @@ order: 10
 ```ts
 import { TermQuery } from "@tryformation/querylight-ts";
 
-const query = new TermQuery("tags", "aggregation");
+const query = new TermQuery({ field: "tags", text: "aggregation" });
 ```
 
 ## TermsQuery
@@ -28,7 +28,7 @@ const query = new TermQuery("tags", "aggregation");
 ```ts
 import { TermsQuery } from "@tryformation/querylight-ts";
 
-const query = new TermsQuery("tags", ["aggregation", "highlighting"]);
+const query = new TermsQuery({ field: "tags", terms: ["aggregation", "highlighting"] });
 ```
 
 ## PrefixQuery
@@ -40,7 +40,7 @@ It is useful for autocomplete-style retrieval when you want prefix lookup to be 
 ```ts
 import { PrefixQuery } from "@tryformation/querylight-ts";
 
-const query = new PrefixQuery("title", "agg");
+const query = new PrefixQuery({ field: "title", prefix: "agg" });
 ```
 
 ## ExistsQuery
@@ -50,7 +50,7 @@ const query = new PrefixQuery("title", "agg");
 ```ts
 import { ExistsQuery } from "@tryformation/querylight-ts";
 
-const query = new ExistsQuery("location");
+const query = new ExistsQuery({ field: "location" });
 ```
 
 ## MatchQuery
@@ -60,8 +60,8 @@ const query = new ExistsQuery("location");
 ```ts
 import { MatchQuery, OP } from "@tryformation/querylight-ts";
 
-const bodyQuery = new MatchQuery("body", "vector search", OP.AND, false, 2.0);
-const prefixQuery = new MatchQuery("title", "agg", OP.OR, true);
+const bodyQuery = new MatchQuery({ field: "body", text: "vector search", operation: OP.AND, boost: 2.0 });
+const prefixQuery = new MatchQuery({ field: "title", text: "agg", operation: OP.OR, prefixMatch: true });
 ```
 
 ## MultiMatchQuery
@@ -71,7 +71,7 @@ const prefixQuery = new MatchQuery("title", "agg", OP.OR, true);
 ```ts
 import { MultiMatchQuery } from "@tryformation/querylight-ts";
 
-const query = new MultiMatchQuery(["title", "body"], "vector search");
+const query = new MultiMatchQuery({ fields: ["title", "body"], text: "vector search" });
 ```
 
 ## When to prefer which

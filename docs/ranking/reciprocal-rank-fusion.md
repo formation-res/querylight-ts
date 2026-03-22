@@ -41,7 +41,7 @@ textIndex.index({ id: "2", fields: { title: ["coffee shops in berlin"] } });
 vectorIndex.insert("1", [bigramVector("specialty coffee brewing")]);
 vectorIndex.insert("2", [bigramVector("coffee shops in berlin")]);
 
-const lexicalHits = textIndex.search(new MatchQuery("title", "coffee brewing"));
+const lexicalHits = textIndex.search(new MatchQuery({ field: "title", text: "coffee brewing" }));
 const vectorHits = vectorIndex.query(bigramVector("cofee bruwing"), 10);
 
 const fusedHits = reciprocalRankFusion([lexicalHits, vectorHits]);
@@ -56,8 +56,8 @@ import {
   reciprocalRankFusion
 } from "@tryformation/querylight-ts";
 
-const lexicalHits = index.search(new MatchQuery("title", "specialty coffee"));
-const geoHits = index.search(new GeoPointQuery("location", 52.52, 13.405));
+const lexicalHits = index.search(new MatchQuery({ field: "title", text: "specialty coffee" }));
+const geoHits = index.search(new GeoPointQuery({ field: "location", latitude: 52.52, longitude: 13.405 }));
 
 const fusedHits = reciprocalRankFusion([lexicalHits, geoHits], {
   rankConstant: 20

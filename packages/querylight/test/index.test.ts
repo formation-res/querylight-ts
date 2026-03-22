@@ -24,6 +24,6 @@ describe("index", () => {
 
   it("should index documents", () => {
     const index = testIndex();
-    expect(index.search(new MatchQuery("title", "Elasticsearch"))).toHaveLength(1);
+    expect(index.search(new MatchQuery({ field: "title", text: "Elasticsearch" }))).toHaveLength(1);
   });
 });

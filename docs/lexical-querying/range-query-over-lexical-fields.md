@@ -18,9 +18,9 @@ order: 40
 ```ts
 import { BoolQuery, RangeQuery } from "@tryformation/querylight-ts";
 
-const query = new BoolQuery([], [], [
-  new RangeQuery("order", { gte: "03", lte: "07" })
-]);
+const query = new BoolQuery({
+  filter: [new RangeQuery({ field: "order", range: { gte: "03", lte: "07" } })]
+});
 ```
 
 ## Practical note

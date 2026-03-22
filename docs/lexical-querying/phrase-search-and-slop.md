@@ -18,7 +18,7 @@ order: 30
 ```ts
 import { MatchPhrase } from "@tryformation/querylight-ts";
 
-const exact = new MatchPhrase("body", "vector search");
+const exact = new MatchPhrase({ field: "body", text: "vector search" });
 ```
 
 ## Phrase with slop
@@ -26,7 +26,7 @@ const exact = new MatchPhrase("body", "vector search");
 Slop allows nearby terms to count even when there is a little distance between them.
 
 ```ts
-const tolerant = new MatchPhrase("body", "portable json index state", 2, 2.0);
+const tolerant = new MatchPhrase({ field: "body", text: "portable json index state", slop: 2, boost: 2.0 });
 ```
 
 ## Good queries to try in the demo

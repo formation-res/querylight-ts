@@ -31,13 +31,13 @@ For a local analytics flow you usually need:
 
 ```ts
 const subset = new Set(
-  index.search(new BoolQuery([], [], [
-    new TermsQuery("city", ["Berlin", "Nairobi"]),
-    new RangeQuery("observedAt", {
+  index.search(new BoolQuery({ filter: [
+    new TermsQuery({ field: "city", terms: ["Berlin", "Nairobi"] }),
+    new RangeQuery({ field: "observedAt", range: {
       gte: "2024-06-01T00:00:00.000Z",
       lte: "2024-06-10T23:59:59.000Z"
-    })
-  ])).map(([id]) => id)
+    } })
+  ] })).map(([id]) => id)
 );
 ```
 

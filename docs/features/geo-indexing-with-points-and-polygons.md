@@ -18,7 +18,7 @@ order: 40
 ```ts
 import { GeoPointQuery } from "@tryformation/querylight-ts";
 
-const query = new GeoPointQuery("location", 52.52, 13.405);
+const query = new GeoPointQuery({ field: "location", latitude: 52.52, longitude: 13.405 });
 ```
 
 ## Polygon query
@@ -26,10 +26,10 @@ const query = new GeoPointQuery("location", 52.52, 13.405);
 ```ts
 import { GeoPolygonQuery, rectangleToPolygon } from "@tryformation/querylight-ts";
 
-const query = new GeoPolygonQuery(
-  "location",
-  rectangleToPolygon(-10, 48, 25, 61)
-);
+const query = new GeoPolygonQuery({
+  field: "location",
+  polygon: rectangleToPolygon(-10, 48, 25, 61)
+});
 ```
 
 The demo maps documentation topics to example points so the geo API can be explored from the same browser.

@@ -47,7 +47,7 @@ index.index({
 });
 
 const hits = index.searchRequest({
-  query: new MatchQuery("suggest", "ran"),
+  query: new MatchQuery({ field: "suggest", text: "ran" }),
   limit: 5
 });
 ```

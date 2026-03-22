@@ -115,7 +115,7 @@ function toHitsSubset(index: DocumentIndex, filters: Array<TermQuery | TermsQuer
   if (filters.length === 0) {
     return index.ids();
   }
-  return new Set(index.search(new BoolQuery([], [], filters)).map(([id]) => id));
+  return new Set(index.search(new BoolQuery({ filter: filters })).map(([id]) => id));
 }
 
 function getNumericField(index: DocumentIndex, field: string): NumericFieldIndex {
@@ -397,7 +397,7 @@ function renderDashboard(payload: DashboardDataPayload): string {
   temperatureC: new NumericFieldIndex()
 });</code></pre>
               <pre class="dashboard-code-block"><code>const subset = new Set(
-  index.search(new BoolQuery([], [], filters)).map(([id]) =&gt; id)
+  index.search(new BoolQuery({ filter: filters })).map(([id]) =&gt; id)
 );
 const buckets = temperatureField.histogram(2, subset);</code></pre>
             </div>
@@ -709,9 +709,9 @@ function createWorldBankSection(
     const startYear = Number(startSelect.value);
     const endYear = Number(endSelect.value);
     const filters = [
-      new TermQuery("indicatorId", indicatorSelect.value),
-      new TermsQuery("country", activeCountries),
-      new RangeQuery("year", { gte: String(Math.min(startYear, endYear)), lte: String(Math.max(startYear, endYear)) })
+      new TermQuery({ field: "indicatorId", text: indicatorSelect.value }),
+      new TermsQuery({ field: "country", terms: activeCountries }),
+      new RangeQuery({ field: "year", range: { gte: String(Math.min(startYear, endYear)), lte: String(Math.max(startYear, endYear)) } })
     ];
     const subset = toHitsSubset(runtime.index, filters);
     const records = recordsForSubset(subset, runtime.byId).sort((left, right) => left.year - right.year);
@@ -878,11 +878,11 @@ function createEarthquakeSection(
     setSectionLoaded(section, runtime.builtAt);
 
     const filters = [
-      new RangeQuery("magnitude", { gte: magnitudeInput.value }),
-      new RangeQuery("depthKm", { lte: depthInput.value })
+      new RangeQuery({ field: "magnitude", range: { gte: magnitudeInput.value } }),
+      new RangeQuery({ field: "depthKm", range: { lte: depthInput.value } })
     ];
     if (placeSelect.value !== "all") {
-      filters.push(new TermQuery("placeCategory", placeSelect.value));
+      filters.push(new TermQuery({ field: "placeCategory", text: placeSelect.value }));
     }
 
     const subset = toHitsSubset(runtime.index, filters);
@@ -1049,8 +1049,8 @@ function createWeatherSection(
     const start = `${startSelect.value}T00:00:00.000Z`;
     const end = `${endSelect.value}T23:59:59.000Z`;
     const filters = [
-      new TermsQuery("city", activeCities),
-      new RangeQuery("observedAt", { gte: start, lte: end })
+      new TermsQuery({ field: "city", terms: activeCities }),
+      new RangeQuery({ field: "observedAt", range: { gte: start, lte: end } })
     ];
     const subset = toHitsSubset(runtime.index, filters);
     const records = recordsForSubset(subset, runtime.byId).sort((left, right) => left.observedAt.localeCompare(right.observedAt));
@@ -1104,8 +1104,8 @@ function createWeatherSection(
       hours.map((hour, hourIndex) => {
         const cellSubset = toHitsSubset(runtime.index, [
           ...filters,
-          new TermQuery("city", city),
-          new TermQuery("hourOfDay", hour)
+          new TermQuery({ field: "city", text: city }),
+          new TermQuery({ field: "hourOfDay", text: hour })
         ]);
         return [hourIndex, cityIndex, getNumericField(runtime.index, metric.field).avg(cellSubset) ?? 0];
       })

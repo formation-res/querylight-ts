@@ -46,7 +46,7 @@ describe("queries", () => {
       const index = quotesIndex(algorithm);
       expect(Object.keys(index.documents).length).toBeGreaterThan(0);
       const results = index.searchRequest({
-        query: new BoolQuery([new MatchQuery("description", "to be")])
+        query: new BoolQuery({ should: [new MatchQuery({ field: "description", text: "to be" })] })
       });
       expect(results.length).toBeGreaterThan(0);
     });
@@ -55,7 +55,7 @@ describe("queries", () => {
   it("should do phrase search", () => {
     Object.values(RankingAlgorithm).forEach((algorithm) => {
       const index = quotesIndex(algorithm);
-      expect(index.searchRequest({ query: new MatchPhrase("description", "to be or not to be") })).toHaveLength(1);
+      expect(index.searchRequest({ query: new MatchPhrase({ field: "description", text: "to be or not to be" }) })).toHaveLength(1);
     });
   });
 
@@ -63,10 +63,12 @@ describe("queries", () => {
     Object.values(RankingAlgorithm).forEach((algorithm) => {
       const index = quotesIndex(algorithm);
       const [id] = index.searchRequest({
-        query: new BoolQuery([
-          new MatchQuery("description", "to be", undefined, false, 0.5),
-          new MatchQuery("description", "basic", undefined, false, 20.0)
-        ])
+        query: new BoolQuery({
+          should: [
+            new MatchQuery({ field: "description", text: "to be", boost: 0.5 }),
+            new MatchQuery({ field: "description", text: "basic", boost: 20.0 })
+          ]
+        })
       })[0]!;
       expect(index.get(id)?.fields.title?.[0].startsWith("Philip K. Dick")).toBe(true);
     });
@@ -75,8 +77,8 @@ describe("queries", () => {
   it("should include prefixes", () => {
     Object.values(RankingAlgorithm).forEach((algorithm) => {
       const index = quotesIndex(algorithm);
-      expect(index.searchRequest({ query: new MatchQuery("description", "ba") })).toHaveLength(0);
-      expect(index.searchRequest({ query: new MatchQuery("description", "ba", undefined, true) }).length).toBeGreaterThan(0);
+      expect(index.searchRequest({ query: new MatchQuery({ field: "description", text: "ba" }) })).toHaveLength(0);
+      expect(index.searchRequest({ query: new MatchQuery({ field: "description", text: "ba", prefixMatch: true }) }).length).toBeGreaterThan(0);
     });
   });
 
@@ -86,9 +88,9 @@ describe("queries", () => {
     index.index({ id: "2", fields: { title: ["query planner"] } });
     index.index({ id: "3", fields: { title: ["light query"] } });
 
-    expect(index.searchRequest({ query: new PrefixQuery("title", "que") }).map(([id]) => id).sort()).toEqual(["1", "2", "3"]);
+    expect(index.searchRequest({ query: new PrefixQuery({ field: "title", prefix: "que" }) }).map(([id]) => id).sort()).toEqual(["1", "2", "3"]);
 
-    const result = index.highlight("1", new PrefixQuery("title", "que"), { fields: ["title"] });
+    const result = index.highlight("1", new PrefixQuery({ field: "title", prefix: "que" }), { fields: ["title"] });
     expect(result.fields[0]?.fragments[0]?.spans[0]?.kind).toBe("prefix");
   });
 
@@ -97,7 +99,7 @@ describe("queries", () => {
     index.index({ id: "1", fields: { title: ["alpha beta"] } });
     index.index({ id: "2", fields: { title: ["alpha gamma"] } });
 
-    expect(index.searchRequest({ query: new MatchQuery("title", "alpha beta", OP.AND) }).map(([id]) => id)).toEqual(["1"]);
+    expect(index.searchRequest({ query: new MatchQuery({ field: "title", text: "alpha beta", operation: OP.AND }) }).map(([id]) => id)).toEqual(["1"]);
   });
 
   it("should support exact any-of terms queries", () => {
@@ -107,7 +109,7 @@ describe("queries", () => {
     index.index({ id: "3", fields: { tags: ["gamma"] } });
     index.index({ id: "4", fields: { tags: ["alpha", "beta"] } });
 
-    expect(index.searchRequest({ query: new TermsQuery("tags", ["alpha", "beta"]) }).map(([id]) => id).sort()).toEqual(["1", "2", "4"]);
+    expect(index.searchRequest({ query: new TermsQuery({ field: "tags", terms: ["alpha", "beta"] }) }).map(([id]) => id).sort()).toEqual(["1", "2", "4"]);
   });
 
   it("should support wildcard term queries", () => {
@@ -117,7 +119,7 @@ describe("queries", () => {
     index.index({ id: "3", fields: { title: ["light query"] } });
     index.index({ id: "4", fields: { title: ["vector search"] } });
 
-    expect(index.searchRequest({ query: new WildcardQuery("title", "que*") }).map(([id]) => id).sort()).toEqual(["1", "2", "3"]);
+    expect(index.searchRequest({ query: new WildcardQuery({ field: "title", pattern: "que*" }) }).map(([id]) => id).sort()).toEqual(["1", "2", "3"]);
   });
 
   it("should support regex term queries", () => {
@@ -127,7 +129,7 @@ describe("queries", () => {
     index.index({ id: "3", fields: { title: ["light query"] } });
     index.index({ id: "4", fields: { title: ["vector search"] } });
 
-    expect(index.searchRequest({ query: new RegexpQuery("title", "^quer") }).map(([id]) => id).sort()).toEqual(["1", "2", "3"]);
+    expect(index.searchRequest({ query: new RegexpQuery({ field: "title", pattern: "^quer" }) }).map(([id]) => id).sort()).toEqual(["1", "2", "3"]);
   });
 
   it("should support exists queries", () => {
@@ -136,7 +138,7 @@ describe("queries", () => {
     index.index({ id: "2", fields: { title: ["beta"], tags: ["tagged"] } });
     index.index({ id: "3", fields: { title: ["gamma"], tags: [] } });
 
-    expect(index.searchRequest({ query: new ExistsQuery("tags") }).map(([id]) => id)).toEqual(["2"]);
+    expect(index.searchRequest({ query: new ExistsQuery({ field: "tags" }) }).map(([id]) => id)).toEqual(["2"]);
   });
 
   it("should support multi match queries across fields", () => {
@@ -145,7 +147,7 @@ describe("queries", () => {
     index.index({ id: "2", fields: { title: ["portable toolkit"], body: ["querylight search"] } });
     index.index({ id: "3", fields: { title: ["portable"], body: ["nothing relevant"] } });
 
-    expect(index.searchRequest({ query: new MultiMatchQuery(["title", "body"], "querylight portable") }).map(([id]) => id)).toEqual(["1", "2"]);
+    expect(index.searchRequest({ query: new MultiMatchQuery({ fields: ["title", "body"], text: "querylight portable" }) }).map(([id]) => id)).toEqual(["1", "2"]);
   });
 
   it("should prefer the best clause in dis max and blend with the tie breaker", () => {
@@ -153,10 +155,13 @@ describe("queries", () => {
     index.index({ id: "1", fields: { title: ["alpha"], body: ["nothing"] } });
     index.index({ id: "2", fields: { title: ["alpha"], body: ["alpha"] } });
 
-    const query = new DisMaxQuery([
-      new TermQuery("title", "alpha", 2.0),
-      new TermQuery("body", "alpha", 1.0)
-    ], 0.5);
+    const query = new DisMaxQuery({
+      queries: [
+        new TermQuery({ field: "title", text: "alpha", boost: 2.0 }),
+        new TermQuery({ field: "body", text: "alpha", boost: 1.0 })
+      ],
+      tieBreaker: 0.5
+    });
 
     expect(index.searchRequest({ query }).map(([id]) => id)).toEqual(["2", "1"]);
   });
@@ -166,11 +171,11 @@ describe("queries", () => {
     index.index({ id: "1", fields: { title: ["alpha"], tags: ["featured"] } });
     index.index({ id: "2", fields: { title: ["alpha"], tags: ["deprecated"] } });
 
-    const query = new BoostingQuery(
-      new TermQuery("title", "alpha"),
-      new TermQuery("tags", "deprecated"),
-      0.2
-    );
+    const query = new BoostingQuery({
+      positive: new TermQuery({ field: "title", text: "alpha" }),
+      negative: new TermQuery({ field: "tags", text: "deprecated" }),
+      negativeBoost: 0.2
+    });
 
     expect(index.searchRequest({ query }).map(([id]) => id)).toEqual(["1", "2"]);
   });
@@ -181,8 +186,8 @@ describe("queries", () => {
     index.index({ id: "2", fields: { price: ["15"] } });
     index.index({ id: "3", fields: { price: ["40"] } });
 
-    expect(index.searchRequest({ query: new RangeQuery("price", { gte: "12", lt: "20" }) }).map(([id]) => id)).toEqual(["2"]);
-    expect(index.searchRequest({ query: new DistanceFeatureQuery("price", 12, 10) }).map(([id]) => id)).toEqual(["1", "2", "3"]);
+    expect(index.searchRequest({ query: new RangeQuery({ field: "price", range: { gte: "12", lt: "20" } }) }).map(([id]) => id)).toEqual(["2"]);
+    expect(index.searchRequest({ query: new DistanceFeatureQuery({ field: "price", origin: 12, pivot: 10 }) }).map(([id]) => id)).toEqual(["1", "2", "3"]);
   });
 
   it("should support date distance features with date indexes", () => {
@@ -192,7 +197,7 @@ describe("queries", () => {
     index.index({ id: "3", fields: { publishedAt: ["2025-02-01T00:00:00.000Z"] } });
 
     expect(index.searchRequest({
-      query: new DistanceFeatureQuery("publishedAt", "2025-01-04T00:00:00.000Z", 7 * 24 * 60 * 60 * 1000)
+      query: new DistanceFeatureQuery({ field: "publishedAt", origin: "2025-01-04T00:00:00.000Z", pivot: 7 * 24 * 60 * 60 * 1000 })
     }).map(([id]) => id)).toEqual(["2", "1", "3"]);
   });
 
@@ -202,7 +207,7 @@ describe("queries", () => {
     index.index({ id: "2", fields: { popularity: ["20"] } });
     index.index({ id: "3", fields: { popularity: ["50"] } });
 
-    expect(index.searchRequest({ query: new RankFeatureQuery("popularity") }).map(([id]) => id)).toEqual(["3", "2", "1"]);
+    expect(index.searchRequest({ query: new RankFeatureQuery({ field: "popularity" }) }).map(([id]) => id)).toEqual(["3", "2", "1"]);
   });
 
   it("should support script queries", () => {
@@ -211,7 +216,7 @@ describe("queries", () => {
     index.index({ id: "2", fields: { popularity: ["20"], title: ["beta"] } });
 
     expect(index.searchRequest({
-      query: new ScriptQuery(({ numericValue }) => (numericValue("popularity") ?? 0) >= 10)
+      query: new ScriptQuery({ script: ({ numericValue }) => (numericValue("popularity") ?? 0) >= 10 })
     }).map(([id]) => id)).toEqual(["2"]);
   });
 
@@ -220,10 +225,10 @@ describe("queries", () => {
     index.index({ id: "1", fields: { popularity: ["5"], title: ["alpha alpha"] } });
     index.index({ id: "2", fields: { popularity: ["20"], title: ["alpha"] } });
 
-    const query = new ScriptScoreQuery(
-      new TermQuery("title", "alpha"),
-      ({ score, numericValue }) => score * (numericValue("popularity") ?? 1)
-    );
+    const query = new ScriptScoreQuery({
+      query: new TermQuery({ field: "title", text: "alpha" }),
+      script: ({ score, numericValue }) => score * (numericValue("popularity") ?? 1)
+    });
 
     expect(index.searchRequest({ query }).map(([id]) => id)).toEqual(["2", "1"]);
   });
@@ -232,7 +237,7 @@ describe("queries", () => {
     const index = new DocumentIndex({ title: new TextFieldIndex() });
     index.index({ id: "1", fields: { title: ["RangeQuery Over Lexical Fields"] } });
 
-    const result = index.highlight("1", new MatchQuery("title", "rangequery"), { fields: ["title"] });
+    const result = index.highlight("1", new MatchQuery({ field: "title", text: "rangequery" }), { fields: ["title"] });
 
     expect(result.fields[0]?.fragments[0]?.parts.some((part) => part.highlighted)).toBe(true);
     expect(result.fields[0]?.fragments[0]?.text).toContain("RangeQuery");
@@ -242,7 +247,7 @@ describe("queries", () => {
     const index = new DocumentIndex({ body: new TextFieldIndex() });
     index.index({ id: "1", fields: { body: ["Range filters work well for sortable values."] } });
 
-    const result = index.highlight("1", new MatchPhrase("body", "range filters"), { fields: ["body"] });
+    const result = index.highlight("1", new MatchPhrase({ field: "body", text: "range filters" }), { fields: ["body"] });
 
     expect(result.fields[0]?.fragments[0]?.parts.filter((part) => part.highlighted).map((part) => part.text).join("")).toContain("Range filters");
   });
@@ -252,7 +257,7 @@ describe("queries", () => {
     const index = new DocumentIndex({ title: new TextFieldIndex(fuzzyAnalyzer, fuzzyAnalyzer) });
     index.index({ id: "1", fields: { title: ["vector search"] } });
 
-    const result = index.highlight("1", new MatchQuery("title", "vectro", OP.OR), { fields: ["title"] });
+    const result = index.highlight("1", new MatchQuery({ field: "title", text: "vectro", operation: OP.OR }), { fields: ["title"] });
 
     expect(result.fields[0]?.fragments[0]?.parts.some((part) => part.highlighted && part.text.includes("vector"))).toBe(true);
     expect(result.fields[0]?.fragments[0]?.spans[0]?.kind).toBe("fuzzy");
@@ -272,16 +277,29 @@ describe("queries", () => {
     (index.getFieldIndex("embedding") as VectorFieldIndex).insert("2", [bigramVector("espresso brewing tutorial")]);
     (index.getFieldIndex("embedding") as VectorFieldIndex).insert("3", [bigramVector("espresso brewing tutorial")]);
 
-    const baseQuery = new MatchQuery("title", "coffee guide");
+    const baseQuery = new MatchQuery({ field: "title", text: "coffee guide" });
     expect(index.search(baseQuery).map(([id]) => id)).toEqual(["1", "2", "3"]);
 
-    const rescored = index.search(new VectorRescoreQuery(
-      "embedding",
-      bigramVector("espresso brewing tutorial"),
-      baseQuery,
-      { windowSize: 2 }
-    ));
+    const rescored = index.search(new VectorRescoreQuery({
+      field: "embedding",
+      vector: bigramVector("espresso brewing tutorial"),
+      query: baseQuery,
+      options: { windowSize: 2 }
+    }));
 
     expect(rescored.map(([id]) => id)).toEqual(["2", "1", "3"]);
+  });
+
+  it("should validate required object params", () => {
+    expect(() => new MatchQuery({ text: "foo" } as never)).toThrow("field should be a string");
+    expect(() => new TermQuery({ field: "title" } as never)).toThrow("text should be a string");
+  });
+
+  it("should keep default options when using value-object params", () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex() });
+    index.index({ id: "1", fields: { title: ["alpha beta"] } });
+    index.index({ id: "2", fields: { title: ["alpha"] } });
+
+    expect(index.searchRequest({ query: new MatchQuery({ field: "title", text: "alpha beta" }) }).map(([id]) => id)).toEqual(["1"]);
   });
 });

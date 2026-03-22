@@ -19,13 +19,13 @@ describe("ranking", () => {
   it("should work for both algorithms", () => {
     const tfidf = createIndex(RankingAlgorithm.TFIDF);
     const bm25 = createIndex(RankingAlgorithm.BM25);
-    expect(tfidf.search(new MatchQuery("text", "foo"))[0]?.[0]).toBe("1");
-    expect(bm25.search(new MatchQuery("text", "foo"))[0]?.[0]).toBe("1");
+    expect(tfidf.search(new MatchQuery({ field: "text", text: "foo" }))[0]?.[0]).toBe("1");
+    expect(bm25.search(new MatchQuery({ field: "text", text: "foo" }))[0]?.[0]).toBe("1");
   });
 
   it("bm25 scores should match lucene", () => {
     const bm25 = createIndex(RankingAlgorithm.BM25);
-    const results = bm25.search(new MatchQuery("text", "foo"));
+    const results = bm25.search(new MatchQuery({ field: "text", text: "foo" }));
     expect(results).toHaveLength(2);
     expect(results[0]?.[0]).toBe("1");
     expect(results[0]?.[1]).toBeCloseTo(0.7385771316718703, 6);
