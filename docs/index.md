@@ -15,7 +15,6 @@ This index mirrors the documentation table of contents used by the demo.
 
 ## Overview
 
-- [API Reference](/docs/api/)
 - [Introducing Querylight TS](./overview/introduction.md)
 - [What Querylight TS Covers](./overview/what-querylight-ts-covers.md)
 - [Getting Started with Browser Search](./overview/getting-started-with-browser-search.md)

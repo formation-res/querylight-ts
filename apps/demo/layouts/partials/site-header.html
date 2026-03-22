@@ -9,7 +9,6 @@
       </div>
       <nav class="flex flex-wrap gap-2">
         <a href="/" class="chip-button {{ if eq $current "/" }}nav-result-active{{ end }}">Docs Search</a>
-        <a href="/docs/" class="chip-button {{ if and (hasPrefix $current "/docs/") (not (hasPrefix $current "/docs/api/")) }}nav-result-active{{ end }}">Documentation</a>
         <a href="/docs/api/" class="chip-button {{ if hasPrefix $current "/docs/api/" }}nav-result-active{{ end }}">API Reference</a>
         <a href="/dashboard/" class="chip-button {{ if hasPrefix $current "/dashboard/" }}nav-result-active{{ end }}">Dashboard</a>
       </nav>

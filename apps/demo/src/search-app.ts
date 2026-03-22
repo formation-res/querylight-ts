@@ -221,7 +221,6 @@ const DOC_SECTION_ORDER = [
   "Demo Internals",
   "Operations"
 ];
-const TOC_SECTION_STORAGE_KEY = "querylight-demo:toc-sections";
 const DOCS_HOME_ICON = `
   <svg viewBox="0 0 24 24" aria-hidden="true" class="size-4">
     <path
@@ -580,28 +579,12 @@ async function createRuntimeContext(demoData: DemoDataPayload): Promise<RuntimeC
 
 function createNavSections(context: RuntimeContext): NavSection[] {
   return context.sections
+    .filter((section) => section !== "API Reference")
     .map((section) => ({
       name: section,
       docs: context.docs.filter((doc) => doc.section === section).sort((left, right) => left.order - right.order || left.title.localeCompare(right.title))
     }))
     .filter((section) => section.docs.length > 0);
-}
-
-function readCollapsedTocSections(allSectionNames: string[]): Set<string> {
-  try {
-    const raw = window.localStorage.getItem(TOC_SECTION_STORAGE_KEY);
-    if (!raw) {
-      return new Set(allSectionNames);
-    }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? new Set(parsed.filter((value): value is string => typeof value === "string")) : new Set();
-  } catch {
-    return new Set(allSectionNames);
-  }
-}
-
-function writeCollapsedTocSections(sections: Set<string>): void {
-  window.localStorage.setItem(TOC_SECTION_STORAGE_KEY, JSON.stringify([...sections]));
 }
 
 let browserEmbeddingExtractorPromise: Promise<(value: string) => Promise<number[]>> | null = null;
@@ -940,7 +923,6 @@ function createShell(context: RuntimeContext): void {
   const buildTimeLabel = formatRelativeBuildTime(BUILD_TIMESTAMP);
   const currentPath = window.location.pathname;
   const docsSearchClass = currentPath === "/" ? " nav-result-active" : "";
-  const documentationClass = currentPath.startsWith("/docs/") && !currentPath.startsWith("/docs/api/") ? " nav-result-active" : "";
   const apiReferenceClass = currentPath.startsWith("/docs/api/") ? " nav-result-active" : "";
 
   requireApp().innerHTML = `
@@ -957,7 +939,6 @@ function createShell(context: RuntimeContext): void {
           </div>
           <div class="flex flex-wrap gap-2">
             <a href="/" class="chip-button${docsSearchClass}">Docs Search</a>
-            <a href="/docs/" class="chip-button${documentationClass}">Documentation</a>
             <a href="/docs/api/" class="chip-button${apiReferenceClass}">API Reference</a>
             <a href="/dashboard/" class="chip-button">Dashboard</a>
           </div>
@@ -1723,20 +1704,12 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   const eventController = new AbortController();
   const { signal } = eventController;
 
-  const sectionNames = createNavSections(context).map((section) => section.name);
-  const collapsedSections = readCollapsedTocSections(sectionNames);
   const setSectionCollapsed = (sectionName: string, collapsed: boolean) => {
     const sectionNode = tocNode.querySelector<HTMLDetailsElement>(`[data-section-shell="${CSS.escape(sectionName)}"]`);
     if (!sectionNode) {
       return;
     }
     sectionNode.open = !collapsed;
-    if (collapsed) {
-      collapsedSections.add(sectionName);
-    } else {
-      collapsedSections.delete(sectionName);
-    }
-    writeCollapsedTocSections(collapsedSections);
   };
 
   const expandSectionForDoc = (docId: string) => {
@@ -1748,19 +1721,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   };
 
   tocNode.querySelectorAll<HTMLDetailsElement>("[data-section-shell]").forEach((sectionNode) => {
-    const sectionName = sectionNode.dataset.sectionShell ?? "";
-    sectionNode.open = !collapsedSections.has(sectionName);
-    sectionNode.addEventListener("toggle", () => {
-      if (!sectionName) {
-        return;
-      }
-      if (sectionNode.open) {
-        collapsedSections.delete(sectionName);
-      } else {
-        collapsedSections.add(sectionName);
-      }
-      writeCollapsedTocSections(collapsedSections);
-    }, { signal });
+    sectionNode.open = false;
   });
 
   const setMobilePanel = (panel: "none" | "toc" | "filters") => {

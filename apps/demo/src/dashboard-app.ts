@@ -355,7 +355,6 @@ function renderDashboard(payload: DashboardDataPayload): string {
           </div>
           <div class="flex flex-wrap gap-2">
             <a href="/" class="chip-button">Docs Search</a>
-            <a href="/docs/" class="chip-button">Documentation</a>
             <a href="/docs/api/" class="chip-button">API Reference</a>
             <a href="/dashboard/" class="chip-button nav-result-active">Dashboard</a>
           </div>
