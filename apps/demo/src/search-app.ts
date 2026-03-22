@@ -1056,7 +1056,7 @@ function createShell(context: RuntimeContext): void {
       </section>
 
       <footer class="surface mt-5 px-5 py-4 sm:px-6">
-        <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div class="flex flex-wrap items-center gap-3">
             <a
               class="chip-button"
