@@ -2131,7 +2131,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       const rawHref = anchorTarget.getAttribute("href") ?? anchorTarget.href;
       const activeDoc = activeDocId ? context.byId.get(activeDocId) : null;
       const normalizedHref = activeDoc ? resolveDocLink(activeDoc.path, rawHref) : rawHref;
-      const targetUrl = new URL(normalizedHref, window.location.origin);
+      const targetUrl = new URL(normalizedHref, window.location.href);
       if (targetUrl.origin === window.location.origin && isSearchRoute(targetUrl.pathname)) {
         if (targetUrl.pathname === "/") {
           event.preventDefault();

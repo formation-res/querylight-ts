@@ -209,6 +209,29 @@ test("ask the docs returns semantic matches with backend fallback messaging", as
   await expect.poll(async () => centerView.locator('[data-open-doc="true"]').count()).toBeGreaterThan(0);
 });
 
+test("ask the docs jump to section keeps the current docs page", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator("#experience-ask").click();
+  await page.locator("#query").fill("how do I use vector search");
+  await page.locator("#submit-query").click();
+
+  const centerView = page.locator("#center-view");
+  await expect(centerView).toContainText("Ask The Docs", { timeout: 20_000 });
+
+  const firstResult = centerView.locator('[data-open-doc="true"]').first();
+  await firstResult.click();
+
+  await expect(page).toHaveURL(/\/docs\/.+#chunk-anchor-/);
+  await expect(centerView).toContainText("Jump to section");
+
+  const currentPath = new URL(page.url()).pathname;
+  await centerView.getByRole("link", { name: "Jump to section" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`${currentPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}#chunk-anchor-`));
+  await expect(centerView).not.toContainText("Explore the docs");
+});
+
 test("narrower text queries still show significant term suggestions", async ({ page }) => {
   await page.goto("/");
 
