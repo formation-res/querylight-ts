@@ -4,44 +4,52 @@ import { type Hit, type Hits, QueryContext, andHits, applyBoost, geoFieldHits, i
 import { type Document, type Query } from "./shared";
 import { type Vector, VectorFieldIndex } from "./vector";
 
+/** Boolean operator used by text queries that combine multiple analyzed terms. */
 export enum OP {
   AND = "AND",
   OR = "OR"
 }
 
+/** Tuning knobs for {@link VectorRescoreQuery}. */
 export interface VectorRescoreOptions {
   windowSize?: number;
   queryWeight?: number;
   rescoreQueryWeight?: number;
 }
 
+/** Saturation-style rank feature scoring configuration. */
 export interface RankFeatureSaturationOptions {
   type?: "saturation";
   pivot?: number;
 }
 
+/** Logarithmic rank feature scoring configuration. */
 export interface RankFeatureLogOptions {
   type: "log";
   scalingFactor?: number;
 }
 
+/** Sigmoid rank feature scoring configuration. */
 export interface RankFeatureSigmoidOptions {
   type: "sigmoid";
   pivot: number;
   exponent?: number;
 }
 
+/** Linear rank feature scoring configuration. */
 export interface RankFeatureLinearOptions {
   type: "linear";
   factor?: number;
 }
 
+/** Supported rank feature scoring modes. */
 export type RankFeatureOptions =
   | RankFeatureSaturationOptions
   | RankFeatureLogOptions
   | RankFeatureSigmoidOptions
   | RankFeatureLinearOptions;
 
+/** Runtime values exposed to {@link ScriptQuery} and {@link ScriptScoreQuery} callbacks. */
 export interface ScriptExecutionContext {
   documentIndex: DocumentIndex;
   document: Document;
@@ -52,9 +60,12 @@ export interface ScriptExecutionContext {
   numericValue(field: string): number | undefined;
 }
 
+/** Predicate callback used by {@link ScriptQuery}. */
 export type ScriptFilter = (context: ScriptExecutionContext) => boolean;
+/** Scoring callback used by {@link ScriptScoreQuery}. */
 export type ScriptScore = (context: ScriptExecutionContext) => number;
 
+/** Parameters for constructing a {@link BoolQuery}. */
 export interface BoolQueryParams {
   should?: Query[];
   must?: Query[];
@@ -64,35 +75,41 @@ export interface BoolQueryParams {
   minimumShouldMatch?: number;
 }
 
+/** Parameters for constructing a {@link TermQuery}. */
 export interface TermQueryParams {
   field: string;
   text: string;
   boost?: number;
 }
 
+/** Parameters for constructing a {@link TermsQuery}. */
 export interface TermsQueryParams {
   field: string;
   terms: string[];
   boost?: number;
 }
 
+/** Parameters for constructing a {@link WildcardQuery}. */
 export interface WildcardQueryParams {
   field: string;
   pattern: string;
   boost?: number;
 }
 
+/** Parameters for constructing a {@link RegexpQuery}. */
 export interface RegexpQueryParams {
   field: string;
   pattern: string | RegExp;
   boost?: number;
 }
 
+/** Parameters for constructing an {@link ExistsQuery}. */
 export interface ExistsQueryParams {
   field: string;
   boost?: number;
 }
 
+/** Parameters for constructing a {@link RangeQuery}. */
 export interface RangeQueryParams {
   field: string;
   range?: {
@@ -104,6 +121,7 @@ export interface RangeQueryParams {
   boost?: number;
 }
 
+/** Parameters for constructing a {@link MatchQuery}. */
 export interface MatchQueryParams {
   field: string;
   text: string;
@@ -112,6 +130,7 @@ export interface MatchQueryParams {
   boost?: number;
 }
 
+/** Parameters for constructing a {@link MultiMatchQuery}. */
 export interface MultiMatchQueryParams {
   fields: string[];
   text: string;
@@ -121,12 +140,14 @@ export interface MultiMatchQueryParams {
   fieldBoosts?: Record<string, number>;
 }
 
+/** Parameters for constructing a {@link DisMaxQuery}. */
 export interface DisMaxQueryParams {
   queries: Query[];
   tieBreaker?: number;
   boost?: number;
 }
 
+/** Parameters for constructing a {@link MatchPhrase}. */
 export interface MatchPhraseParams {
   field: string;
   text: string;
@@ -134,16 +155,19 @@ export interface MatchPhraseParams {
   boost?: number;
 }
 
+/** Parameters for constructing a {@link PrefixQuery}. */
 export interface PrefixQueryParams {
   field: string;
   prefix: string;
   boost?: number;
 }
 
+/** Parameters for constructing a {@link MatchAll}. */
 export interface MatchAllParams {
   boost?: number;
 }
 
+/** Parameters for constructing a {@link BoostingQuery}. */
 export interface BoostingQueryParams {
   positive: Query;
   negative: Query;
@@ -151,6 +175,7 @@ export interface BoostingQueryParams {
   boost?: number;
 }
 
+/** Parameters for constructing a {@link GeoPointQuery}. */
 export interface GeoPointQueryParams {
   field: string;
   latitude: number;
@@ -158,12 +183,14 @@ export interface GeoPointQueryParams {
   boost?: number;
 }
 
+/** Parameters for constructing a {@link GeoPolygonQuery}. */
 export interface GeoPolygonQueryParams {
   field: string;
   polygon: PolygonCoordinates;
   boost?: number;
 }
 
+/** Parameters for constructing a {@link DistanceFeatureQuery}. */
 export interface DistanceFeatureQueryParams {
   field: string;
   origin: number | string | Date;
@@ -171,23 +198,27 @@ export interface DistanceFeatureQueryParams {
   boost?: number;
 }
 
+/** Parameters for constructing a {@link RankFeatureQuery}. */
 export interface RankFeatureQueryParams {
   field: string;
   options?: RankFeatureOptions;
   boost?: number;
 }
 
+/** Parameters for constructing a {@link ScriptQuery}. */
 export interface ScriptQueryParams {
   script: ScriptFilter;
   boost?: number;
 }
 
+/** Parameters for constructing a {@link ScriptScoreQuery}. */
 export interface ScriptScoreQueryParams {
   query: Query;
   script: ScriptScore;
   boost?: number;
 }
 
+/** Parameters for constructing a {@link VectorRescoreQuery}. */
 export interface VectorRescoreQueryParams {
   field: string;
   vector: Vector;
@@ -272,6 +303,7 @@ function assertRequiredQueries(value: Query[] | undefined, name: string): Query[
   return value;
 }
 
+/** Boolean composition query with Elasticsearch-style should/must/filter/mustNot semantics. */
 export class BoolQuery implements Query {
   private readonly should: Query[];
   private readonly must: Query[];
@@ -384,6 +416,7 @@ export class BoolQuery implements Query {
   }
 }
 
+/** Exact term-level query against a single text field. */
 export class TermQuery implements Query {
   private readonly field: string;
   private readonly text: string;
@@ -409,6 +442,7 @@ export class TermQuery implements Query {
   }
 }
 
+/** Any-of exact term query against a single text field. */
 export class TermsQuery implements Query {
   private readonly field: string;
   private readonly terms: string[];
@@ -443,6 +477,7 @@ export class TermsQuery implements Query {
   }
 }
 
+/** Wildcard pattern query over indexed terms. */
 export class WildcardQuery implements Query {
   private readonly matcher: RegExp;
   private readonly field: string;
@@ -471,6 +506,7 @@ export class WildcardQuery implements Query {
   }
 }
 
+/** Regular-expression query over indexed terms. */
 export class RegexpQuery implements Query {
   private readonly matcher: RegExp;
   private readonly field: string;
@@ -499,6 +535,7 @@ export class RegexpQuery implements Query {
   }
 }
 
+/** Filter that matches documents where a field has at least one stored value. */
 export class ExistsQuery implements Query {
   private readonly field: string;
   public readonly boost: number | undefined;
@@ -520,6 +557,7 @@ export class ExistsQuery implements Query {
   }
 }
 
+/** Range query for lexical, numeric, or date fields. */
 export class RangeQuery implements Query {
   private readonly field: string;
   private readonly params: {
@@ -551,6 +589,7 @@ export class RangeQuery implements Query {
   }
 }
 
+/** Full-text query against one field using analyzed terms and optional prefix expansion. */
 export class MatchQuery implements Query {
   private readonly field: string;
   private readonly text: string;
@@ -619,6 +658,7 @@ export class MatchQuery implements Query {
   }
 }
 
+/** Full-text query that allows analyzed terms to match across multiple fields. */
 export class MultiMatchQuery implements Query {
   private readonly fields: string[];
   private readonly text: string;
@@ -684,6 +724,7 @@ export class MultiMatchQuery implements Query {
   }
 }
 
+/** Best-field query that keeps the strongest clause dominant with an optional tie breaker. */
 export class DisMaxQuery implements Query {
   private readonly tieBreaker: number;
   private readonly queries: Query[];
@@ -728,6 +769,7 @@ export class DisMaxQuery implements Query {
   }
 }
 
+/** Phrase query with optional slop. */
 export class MatchPhrase implements Query {
   private readonly field: string;
   private readonly text: string;
@@ -759,6 +801,7 @@ export class MatchPhrase implements Query {
   }
 }
 
+/** Prefix lookup query over trie-backed text fields. */
 export class PrefixQuery implements Query {
   private readonly field: string;
   private readonly prefix: string;
@@ -786,6 +829,7 @@ export class PrefixQuery implements Query {
   }
 }
 
+/** Query that matches every indexed document. */
 export class MatchAll implements Query {
   public readonly boost: number | undefined;
 
@@ -802,6 +846,7 @@ export class MatchAll implements Query {
   }
 }
 
+/** Query wrapper that softly demotes hits matching a negative clause. */
 export class BoostingQuery implements Query {
   private readonly negativeBoost: number;
   private readonly positive: Query;
@@ -832,6 +877,7 @@ export class BoostingQuery implements Query {
   }
 }
 
+/** Geo query that matches documents containing a point. */
 export class GeoPointQuery implements Query {
   private readonly field: string;
   private readonly latitude: number;
@@ -859,6 +905,7 @@ export class GeoPointQuery implements Query {
   }
 }
 
+/** Geo query that matches documents intersecting a polygon. */
 export class GeoPolygonQuery implements Query {
   private readonly field: string;
   private readonly polygon: PolygonCoordinates;
@@ -884,6 +931,7 @@ export class GeoPolygonQuery implements Query {
   }
 }
 
+/** Numeric/date feature query that boosts values closest to an origin. */
 export class DistanceFeatureQuery implements Query {
   private readonly origin: number;
   private readonly pivot: number;
@@ -925,6 +973,7 @@ export class DistanceFeatureQuery implements Query {
   }
 }
 
+/** Numeric feature query for saturation, log, sigmoid, or linear boosting. */
 export class RankFeatureQuery implements Query {
   private readonly field: string;
   private readonly options: RankFeatureOptions;
@@ -988,6 +1037,7 @@ export class RankFeatureQuery implements Query {
   }
 }
 
+/** Custom JavaScript predicate query. */
 export class ScriptQuery implements Query {
   private readonly script: ScriptFilter;
   public readonly boost: number | undefined;
@@ -1012,6 +1062,7 @@ export class ScriptQuery implements Query {
   }
 }
 
+/** Query wrapper that replaces the base score with a custom script score. */
 export class ScriptScoreQuery implements Query {
   private readonly query: Query;
   private readonly script: ScriptScore;
@@ -1047,6 +1098,7 @@ export class ScriptScoreQuery implements Query {
   }
 }
 
+/** Hybrid query that reranks the top lexical window with vector similarity. */
 export class VectorRescoreQuery implements Query {
   private readonly windowSize: number;
   private readonly queryWeight: number;

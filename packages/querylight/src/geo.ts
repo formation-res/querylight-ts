@@ -1,7 +1,11 @@
+/** `[longitude, latitude]` coordinate pair. */
 export type Position = [number, number];
+/** Polygon coordinates in GeoJSON-compatible ring form. */
 export type PolygonCoordinates = Position[][];
+/** Multi-polygon coordinates in GeoJSON-compatible form. */
 export type MultiPolygonCoordinates = PolygonCoordinates[];
 
+/** Supported geometry shapes for geo indexing and querying. */
 export type Geometry =
   | { type: "Point"; coordinates: Position }
   | { type: "Polygon"; coordinates: PolygonCoordinates }
@@ -10,6 +14,7 @@ export type Geometry =
 const BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz";
 const BITS = [16, 8, 4, 2, 1] as const;
 
+/** Bounding box in longitude/latitude coordinates. */
 export interface BoundingBox {
   minLon: number;
   minLat: number;
@@ -100,6 +105,7 @@ function polygonsOverlap(left: PolygonCoordinates, right: PolygonCoordinates): b
   return pointInPolygon(leftOuter[0] ?? [0, 0], right) || pointInPolygon(rightOuter[0] ?? [0, 0], left);
 }
 
+/** Returns `true` when a geometry contains the given latitude/longitude point. */
 export function geometryContainsPoint(geometry: Geometry, latitude: number, longitude: number): boolean {
   if (geometry.type === "Point") {
     return geometry.coordinates[0] === longitude && geometry.coordinates[1] === latitude;
@@ -110,6 +116,7 @@ export function geometryContainsPoint(geometry: Geometry, latitude: number, long
   return geometry.coordinates.some((polygon) => pointInPolygon([longitude, latitude], polygon));
 }
 
+/** Returns `true` when a geometry intersects the provided polygon. */
 export function geometryIntersectsPolygon(geometry: Geometry, polygon: PolygonCoordinates): boolean {
   if (geometry.type === "Point") {
     return pointInPolygon(geometry.coordinates, polygon);
@@ -120,6 +127,7 @@ export function geometryIntersectsPolygon(geometry: Geometry, polygon: PolygonCo
   return geometry.coordinates.some((item) => polygonsOverlap(item, polygon));
 }
 
+/** Builds a rectangular polygon from min/max lon/lat bounds. */
 export function rectangleToPolygon(minLon: number, minLat: number, maxLon: number, maxLat: number): PolygonCoordinates {
   return [[
     [minLon, minLat],
@@ -130,6 +138,7 @@ export function rectangleToPolygon(minLon: number, minLat: number, maxLon: numbe
   ]];
 }
 
+/** Encodes a latitude/longitude coordinate into a geohash string. */
 export function encodeGeohash(latitude: number, longitude: number, precision: number): string {
   if (precision < 1 || precision > 12) {
     throw new Error("length must be between 1 and 12");
@@ -171,6 +180,7 @@ export function encodeGeohash(latitude: number, longitude: number, precision: nu
   return hash;
 }
 
+/** Decodes a geohash to its bounding box. */
 export function decodeGeohashBounds(hash: string): BoundingBox {
   let isEven = true;
   let latRange: [number, number] = [-90, 90];
@@ -206,6 +216,7 @@ export function decodeGeohashBounds(hash: string): BoundingBox {
   };
 }
 
+/** Decodes a geohash to the center point of its bounding box. */
 export function decodeGeohash(hash: string): Position {
   const bounds = decodeGeohashBounds(hash);
   return [
@@ -214,6 +225,7 @@ export function decodeGeohash(hash: string): Position {
   ];
 }
 
+/** Returns `true` when a point falls inside the geohash cell. */
 export function geohashContains(hash: string, latitude: number, longitude: number): boolean {
   const bounds = decodeGeohashBounds(hash);
   return latitude >= bounds.minLat && latitude <= bounds.maxLat && longitude >= bounds.minLon && longitude <= bounds.maxLon;
@@ -263,6 +275,7 @@ function geohashIntersectsPolygon(hash: string, polygon: PolygonCoordinates): bo
   return polygonsOverlap(geohashPolygon(hash), polygon);
 }
 
+/** Returns the neighboring geohash directly east of the provided hash. */
 export function eastGeohash(hash: string): string {
   const bounds = decodeGeohashBounds(hash);
   const lonDiff = bounds.maxLon - bounds.minLon;
@@ -277,6 +290,7 @@ export function eastGeohash(hash: string): string {
   return encodeGeohash(lat, lon, hash.length);
 }
 
+/** Returns the neighboring geohash directly north of the provided hash. */
 export function northGeohash(hash: string): string {
   const bounds = decodeGeohashBounds(hash);
   const latDiff = bounds.maxLat - bounds.minLat;
@@ -308,6 +322,7 @@ function collectGeohashesForPolygon(polygon: PolygonCoordinates, precision: numb
   return covered;
 }
 
+/** Collects geohashes that cover or intersect the provided geometry. */
 export function geohashesForGeometry(geometry: Geometry, precision: number): Set<string> {
   if (geometry.type === "Point") {
     return new Set([encodeGeohash(geometry.coordinates[1], geometry.coordinates[0], precision)]);
@@ -324,6 +339,7 @@ export function geohashesForGeometry(geometry: Geometry, precision: number): Set
   return hashes;
 }
 
+/** Returns `true` when a geometry intersects the provided geohash cell. */
 export function geometryIntersectsGeohash(geometry: Geometry, hash: string): boolean {
   const bounds = decodeGeohashBounds(hash);
   const geometryBounds = boundsForGeometry(geometry);

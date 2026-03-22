@@ -1,7 +1,9 @@
+/** Text preprocessor applied before tokenization. */
 export interface TextFilter {
   filter(text: string): string;
 }
 
+/** Token with original source offsets for highlighting and phrase work. */
 export interface AnalyzedToken {
   term: string;
   startOffset: number;
@@ -9,22 +11,26 @@ export interface AnalyzedToken {
   position: number;
 }
 
+/** Lowercases input text before tokenization. */
 export class LowerCaseTextFilter implements TextFilter {
   filter(text: string): string {
     return text.toLowerCase();
   }
 }
 
+/** Tokenizer that turns raw text into token strings. */
 export interface Tokenizer {
   tokenize(text: string): string[];
 }
 
+/** Tokenizer that keeps the full input as a single token. */
 export class KeywordTokenizer implements Tokenizer {
   tokenize(text: string): string[] {
     return [text];
   }
 }
 
+/** Whitespace tokenizer for ordinary text analysis. */
 export class SplittingTokenizer implements Tokenizer {
   private readonly re = /\s+/m;
 
@@ -33,10 +39,12 @@ export class SplittingTokenizer implements Tokenizer {
   }
 }
 
+/** Token postprocessor applied after tokenization. */
 export interface TokenFilter {
   filter(tokens: string[]): string[];
 }
 
+/** Produces character n-grams from token streams. */
 export class NgramTokenFilter implements TokenFilter {
   constructor(public readonly ngramSize: number) {}
 
@@ -52,6 +60,7 @@ export class NgramTokenFilter implements TokenFilter {
   }
 }
 
+/** Produces edge n-grams from the start and end of each token. */
 export class EdgeNgramsTokenFilter implements TokenFilter {
   constructor(
     public readonly minLength: number,
@@ -75,6 +84,7 @@ export class EdgeNgramsTokenFilter implements TokenFilter {
   }
 }
 
+/** Removes apostrophes and elision markers. */
 export class ElisionTextFilter implements TextFilter {
   private readonly elisionRe = /['’]/g;
 
@@ -83,6 +93,7 @@ export class ElisionTextFilter implements TextFilter {
   }
 }
 
+/** Replaces punctuation with spaces before tokenization. */
 export class InterpunctionTextFilter implements TextFilter {
   private readonly interpunctionRe = /[\\\]\['"!,.@#$%^&*()_+\-={}|><`~±§?;:/]/g;
 
@@ -91,6 +102,7 @@ export class InterpunctionTextFilter implements TextFilter {
   }
 }
 
+/** Configurable analyzer pipeline used by text indexes and query parsing. */
 export class Analyzer {
   constructor(
     public readonly textFilters: TextFilter[] = [

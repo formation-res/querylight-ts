@@ -2,8 +2,10 @@ import { Analyzer } from "./analysis";
 import { type RandomSource } from "./random";
 import { type FieldIndex, type Hit, type Hits, type IndexState, type IndexStateBase } from "./shared";
 
+/** Dense numeric vector used for ANN indexing and reranking. */
 export type Vector = number[];
 
+/** Serialized state for {@link VectorFieldIndex}. */
 export interface VectorFieldIndexState extends IndexStateBase {
   kind: "VectorFieldIndexState";
   numHashTables: number;
@@ -12,6 +14,7 @@ export interface VectorFieldIndexState extends IndexStateBase {
   randomVectorsList: Vector[][];
 }
 
+/** Locality-sensitive hash based vector index for approximate nearest-neighbor retrieval. */
 export class VectorFieldIndex implements FieldIndex {
   private readonly vectors = new Map<string, Vector[]>();
   private readonly allBuckets: Array<Map<number, Array<[string, Vector]>>> = [];
@@ -113,6 +116,7 @@ export class VectorFieldIndex implements FieldIndex {
   }
 }
 
+/** Computes cosine similarity for two equal-length vectors. */
 export function cosineSimilarity(v1: Vector, v2: Vector): number {
   if (v1.length !== v2.length) {
     throw new Error("Vectors must be of the same size");
@@ -128,15 +132,18 @@ export function cosineSimilarity(v1: Vector, v2: Vector): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+/** Creates a random vector of the requested dimensionality. */
 export function generateRandomVector(dimensions: number, random: RandomSource = Math.random): Vector {
   return Array.from({ length: dimensions }, () => random());
 }
 
+/** Returns a unit-length copy of the provided vector. */
 export function normalizeVector(vector: Vector): Vector {
   const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
   return vector.map((value) => value / norm);
 }
 
+/** Hashes a vector against a list of random projection vectors. */
 export function hashFunction(vector: Vector, randomVectors: Vector[]): number {
   let hash = 0;
   for (let i = 0; i < randomVectors.length; i += 1) {
@@ -148,6 +155,7 @@ export function hashFunction(vector: Vector, randomVectors: Vector[]): number {
   return hash;
 }
 
+/** Populates LSH buckets for a single vector per id. */
 export function populateLSHBuckets(vectors: Record<string, Vector>, randomVectors: Vector[]): Map<number, Array<[string, Vector]>> {
   const buckets = new Map<number, Array<[string, Vector]>>();
   for (const [id, vector] of Object.entries(vectors)) {
@@ -159,6 +167,7 @@ export function populateLSHBuckets(vectors: Record<string, Vector>, randomVector
   return buckets;
 }
 
+/** Creates a fixed-size bigram-count vector from analyzed text or tokens. */
 export function bigramVector(tokens: string[]): Vector;
 export function bigramVector(text: string, analyzer?: Analyzer): Vector;
 export function bigramVector(input: string[] | string, analyzer: Analyzer = new Analyzer()): Vector {

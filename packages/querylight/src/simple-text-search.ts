@@ -3,12 +3,14 @@ import { DocumentIndex, TextFieldIndex } from "./document-index";
 import { BoolQuery, MatchPhrase, MatchQuery, OP } from "./query";
 import { type Hits, RankingAlgorithm, reciprocalRankFusion } from "./shared";
 
+/** Request object for {@link simpleTextSearch}. */
 export interface SimpleTextSearchRequest {
   query: string;
   from?: number;
   limit?: number;
 }
 
+/** Options for building a beginner-friendly text search bundle. */
 export interface CreateSimpleTextSearchIndexOptions<T extends Record<string, unknown>> {
   documents: T[];
   primaryFields: (Extract<keyof T, string>)[];
@@ -17,6 +19,7 @@ export interface CreateSimpleTextSearchIndexOptions<T extends Record<string, unk
   ranking?: RankingAlgorithm;
 }
 
+/** Bundle returned by {@link createSimpleTextSearchIndex}. */
 export interface SimpleTextSearchIndex<T extends Record<string, unknown> = Record<string, unknown>> {
   documentIndex: DocumentIndex;
   fuzzyIndex: DocumentIndex;
@@ -60,6 +63,7 @@ function ensureFieldList(name: string, fields: string[]): void {
   }
 }
 
+/** Builds a ready-to-use lexical, suggest, and fuzzy search bundle from plain JSON documents. */
 export function createSimpleTextSearchIndex<T extends Record<string, unknown>>(
   {
     documents,
@@ -136,6 +140,7 @@ export function createSimpleTextSearchIndex<T extends Record<string, unknown>>(
   };
 }
 
+/** Runs the default simple-text-search strategy against a bundle created by {@link createSimpleTextSearchIndex}. */
 export function simpleTextSearch<T extends Record<string, unknown>>(
   index: SimpleTextSearchIndex<T>,
   { query, from = 0, limit = 20 }: SimpleTextSearchRequest

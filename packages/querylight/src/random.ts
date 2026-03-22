@@ -1,5 +1,7 @@
+/** Zero-argument random-number source returning values in `[0, 1)`. */
 export type RandomSource = () => number;
 
+/** Creates a deterministic pseudo-random number generator from a numeric seed. */
 export function createSeededRandom(seed: number): RandomSource {
   let state = seed >>> 0;
   return () => {

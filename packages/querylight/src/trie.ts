@@ -1,8 +1,10 @@
+/** Serialized trie node state. */
 export interface TrieNodeState {
   children: Record<string, TrieNodeState>;
   isLeaf: boolean;
 }
 
+/** Mutable trie node used by {@link SimpleStringTrie}. */
 export class TrieNode {
   children: Map<string, TrieNode>;
   isLeaf: boolean;
@@ -42,6 +44,7 @@ export class TrieNode {
   }
 }
 
+/** Simple trie implementation for prefix lookup and completion. */
 export class SimpleStringTrie {
   constructor(public readonly root: TrieNode = new TrieNode()) {}
 

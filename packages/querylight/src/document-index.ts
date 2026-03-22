@@ -380,6 +380,7 @@ function createFragmentParts(text: string, spans: HighlightSpan[]) {
   return parts.filter((part) => part.text.length > 0);
 }
 
+/** Top-level document store that coordinates field indexes, search, highlighting, and serialization. */
 export class DocumentIndex {
   constructor(
     public readonly mapping: Record<string, FieldIndex>,
@@ -481,6 +482,7 @@ export class DocumentIndex {
   }
 }
 
+/** Lexical field index with analyzers, ranking, phrase matching, prefix lookup, and aggregations. */
 export class TextFieldIndex implements FieldIndex {
   private readonly termCounts: Map<string, number>;
   private readonly reverseMap: Map<string, TermPos[]>;
@@ -793,6 +795,7 @@ export class TextFieldIndex implements FieldIndex {
   }
 }
 
+/** GeoJSON field index backed by geohashes for point and polygon querying. */
 export class GeoFieldIndex implements FieldIndex {
   private readonly geohashMap: Map<string, string[]>;
   private readonly documents: Record<string, string>;
@@ -873,6 +876,7 @@ export class GeoFieldIndex implements FieldIndex {
   }
 }
 
+/** Structured numeric field index with range filters and numeric aggregations. */
 export class NumericFieldIndex implements FieldIndex {
   private readonly documents: Record<string, number[]>;
 
@@ -945,6 +949,7 @@ export class NumericFieldIndex implements FieldIndex {
   }
 }
 
+/** Structured date field index with range filters and date histograms. */
 export class DateFieldIndex implements FieldIndex {
   private readonly documents: Record<string, number[]>;
 
