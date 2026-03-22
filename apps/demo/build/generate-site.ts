@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 import { buildDashboardDataPayload, type DashboardDataPayload } from "./dashboard-data";
 import { buildDemoDataPayload, type DemoDataPayload, type DocEntry } from "./demo-data";
 import { serializeHeadingPath } from "../src/semantic";
@@ -12,6 +13,8 @@ const appDir = path.resolve(buildDir, "..");
 const workspaceRoot = path.resolve(appDir, "../..");
 const generatedDocsDir = path.resolve(appDir, "content/docs");
 const staticDataDir = path.resolve(appDir, "static/data");
+const publicDataDir = path.resolve(appDir, "public/data");
+const dashboardSnapshotPath = path.resolve(buildDir, "fixtures/dashboard-data.snapshot.json");
 
 function escapeHtml(value: string): string {
   return value
@@ -120,11 +123,10 @@ function writeDemoPayload(payload: DemoDataPayload): void {
   }));
 
   fs.mkdirSync(staticDataDir, { recursive: true });
-  fs.writeFileSync(
-    path.resolve(staticDataDir, "demo-data.json"),
-    JSON.stringify({ ...payload, docs }),
-    "utf8"
-  );
+  fs.rmSync(path.resolve(staticDataDir, "demo-data.json"), { force: true });
+  fs.rmSync(path.resolve(publicDataDir, "demo-data.json"), { force: true });
+  const serialized = JSON.stringify({ ...payload, docs });
+  fs.writeFileSync(path.resolve(staticDataDir, "demo-data.json.gz"), gzipSync(serialized));
 }
 
 function writeDashboardPayload(payload: DashboardDataPayload): void {
@@ -132,8 +134,16 @@ function writeDashboardPayload(payload: DashboardDataPayload): void {
   fs.writeFileSync(path.resolve(staticDataDir, "dashboard-data.json"), JSON.stringify(payload), "utf8");
 }
 
+function loadDashboardPayloadSnapshot(): DashboardDataPayload {
+  return JSON.parse(fs.readFileSync(dashboardSnapshotPath, "utf8")) as DashboardDataPayload;
+}
+
 const demoPayload = await buildDemoDataPayload(workspaceRoot);
-const dashboardPayload = await buildDashboardDataPayload();
+const dashboardPayload = await buildDashboardDataPayload().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(`Using committed dashboard snapshot because live dataset refresh failed: ${message}`);
+  return loadDashboardPayloadSnapshot();
+});
 
 writeDocsContent(demoPayload);
 writeDemoPayload(demoPayload);

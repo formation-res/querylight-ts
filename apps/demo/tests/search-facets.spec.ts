@@ -27,6 +27,16 @@ test("detail tag facet keeps results usable", async ({ page }) => {
   await expect(page.locator("#center-view")).not.toContainText("No matches found");
 });
 
+test("docs search boots from the gzipped demo payload", async ({ page }) => {
+  const payloadResponsePromise = page.waitForResponse((response) => response.url().endsWith("/data/demo-data.json.gz"));
+
+  await page.goto("/");
+
+  const payloadResponse = await payloadResponsePromise;
+  expect(payloadResponse.ok()).toBeTruthy();
+  await expect(page.locator("#query")).toBeVisible();
+});
+
 test("facet count matches the current-query result count after applying it", async ({ page }) => {
   await page.goto("/");
 

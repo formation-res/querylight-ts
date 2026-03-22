@@ -2269,12 +2269,23 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
 let runtimeContextPromise: Promise<RuntimeContext> | null = null;
 
+async function readGzippedJson<T>(response: Response): Promise<T> {
+  if (!response.body) {
+    throw new Error("failed to read compressed demo data response body");
+  }
+  if (typeof DecompressionStream !== "function") {
+    throw new Error("this browser does not support gzip-compressed demo data");
+  }
+  const decompressed = response.body.pipeThrough(new DecompressionStream("gzip"));
+  return await new Response(decompressed).json() as T;
+}
+
 async function loadRuntimeContext(): Promise<RuntimeContext> {
-  const response = await fetch("/data/demo-data.json");
+  const response = await fetch("/data/demo-data.json.gz");
   if (!response.ok) {
     throw new Error(`failed to load demo data: ${response.status} ${response.statusText}`);
   }
-  const demoData = (await response.json()) as DemoDataPayload;
+  const demoData = await readGzippedJson<DemoDataPayload>(response);
   return createRuntimeContext(demoData);
 }
 
