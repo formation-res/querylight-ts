@@ -26,6 +26,7 @@ import {
   type RelatedArticleRecord,
   type SemanticPayload
 } from "../src/semantic";
+import { buildApiDocEntries } from "./api-docs";
 
 export type DocEntry = {
   id: string;
@@ -291,14 +292,17 @@ function cosineSimilarity(left: number[], right: number[]): number {
 
 export async function buildDemoDataPayload(rootDir: string): Promise<DemoDataPayload> {
   const docsDir = path.resolve(rootDir, "docs");
-  const docs = collectMarkdownFiles(docsDir)
+  const sourceDocs = collectMarkdownFiles(docsDir)
     .map((fullPath) => {
       const raw = fs.readFileSync(fullPath, "utf8");
       return toDocEntry(path.posix.join("docs", path.relative(docsDir, fullPath).split(path.sep).join("/")), raw);
     })
     .sort((left, right) => left.order - right.order || left.title.localeCompare(right.title));
+  const apiDocs = await buildApiDocEntries(rootDir);
+  const docs = [...sourceDocs, ...apiDocs]
+    .sort((left, right) => left.section.localeCompare(right.section) || left.order - right.order || left.title.localeCompare(right.title));
 
-  const semantic = await createSemanticPayload(docs);
+  const semantic = await createSemanticPayload(sourceDocs);
 
   return {
     docs,

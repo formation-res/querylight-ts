@@ -207,6 +207,7 @@ const WORD_COUNT_FACETS: WordCountFacet[] = [
 const WORD_COUNT_HISTOGRAM_INTERVAL = 250;
 const DOC_SECTION_ORDER = [
   "Overview",
+  "API Reference",
   "Schema",
   "Analysis",
   "Lexical Querying",
@@ -924,6 +925,10 @@ function searchForState(context: RuntimeContext, current: SearchState): SearchRe
 function createShell(context: RuntimeContext): void {
   const navSections = createNavSections(context);
   const buildTimeLabel = formatRelativeBuildTime(BUILD_TIMESTAMP);
+  const currentPath = window.location.pathname;
+  const docsSearchClass = currentPath === "/" ? " nav-result-active" : "";
+  const documentationClass = currentPath.startsWith("/docs/") && !currentPath.startsWith("/docs/api/") ? " nav-result-active" : "";
+  const apiReferenceClass = currentPath.startsWith("/docs/api/") ? " nav-result-active" : "";
 
   requireApp().innerHTML = `
     <main id="demo-shell" class="demo-shell mx-auto w-[min(1560px,calc(100vw-24px))] py-6 lg:py-8" data-busy="false">
@@ -938,7 +943,9 @@ function createShell(context: RuntimeContext): void {
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <a href="/" class="chip-button nav-result-active">Docs Search</a>
+            <a href="/" class="chip-button${docsSearchClass}">Docs Search</a>
+            <a href="/docs/" class="chip-button${documentationClass}">Documentation</a>
+            <a href="/docs/api/" class="chip-button${apiReferenceClass}">API Reference</a>
             <a href="/dashboard/" class="chip-button">Dashboard</a>
           </div>
         </div>

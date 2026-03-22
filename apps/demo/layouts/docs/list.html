@@ -5,6 +5,11 @@
       <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Documentation</p>
       <h2 class="mt-3 font-serif text-4xl text-stone-950">Static article pages</h2>
       <p class="mt-4 text-sm leading-7 text-stone-600">Use the interactive search on the home page, or browse documentation entries directly below.</p>
+      <a class="doc-card mt-6 block border-orange-200 bg-orange-50/80" href="/docs/api/">
+        <span class="text-xs uppercase tracking-[0.12em] text-orange-700">API Reference</span>
+        <h3 class="card-title">Generated symbol-level API docs</h3>
+        <p class="card-summary">Browse TSDoc-backed reference pages for exported classes, interfaces, queries, helpers, and types.</p>
+      </a>
       <div class="mt-6 grid gap-3">
         {{ range .Pages.ByTitle }}
           <a class="doc-card" href="{{ .RelPermalink }}">

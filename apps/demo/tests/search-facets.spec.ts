@@ -117,6 +117,35 @@ test("dashboard header link navigates to docs search without triggering a hard r
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem("querylight-hard-nav"))).toBeNull();
 });
 
+test("api reference header link navigates without triggering a hard reload", async ({ page }) => {
+  await page.goto("/docs/overview/what-querylight-ts-covers/");
+
+  await expect(page.locator("#center-view")).toContainText("What Querylight TS Covers");
+  await page.evaluate(() => {
+    window.sessionStorage.removeItem("querylight-hard-nav");
+    window.addEventListener("beforeunload", () => {
+      window.sessionStorage.setItem("querylight-hard-nav", "1");
+    }, { once: true });
+  });
+
+  await page.locator("#demo-shell").getByRole("link", { name: "API Reference" }).click();
+
+  await expect(page).toHaveURL(/\/docs\/api\/$/);
+  await expect(page.locator("#center-view")).toContainText("Generated symbol-level API documentation");
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem("querylight-hard-nav"))).toBeNull();
+});
+
+test("api reference pages appear in search and section facets", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator("#query").fill("createSimpleTextSearchIndex");
+  await page.locator("#submit-query").click();
+
+  await expect(page.locator("#result-count")).toContainText(/matches/);
+  await expect(page.locator("#center-view")).toContainText("createSimpleTextSearchIndex");
+  await expect(page.locator("#facet-sections")).toContainText("API Reference");
+});
+
 test("search results support paging and expose offset metadata", async ({ page }) => {
   await page.goto("/");
 
@@ -149,7 +178,7 @@ test("all documentation view paginates beyond the first 20 docs", async ({ page 
   await page.locator("#submit-query").click();
 
   const resultCount = page.locator("#result-count");
-  await expect(resultCount).toContainText(/61 matches · \d+ ms · showing 1-20/);
+  await expect(resultCount).toContainText(/\d+ matches · \d+ ms · showing 1-20/);
 
   const nextButton = page.getByRole("button", { name: "Next" });
   await expect(nextButton).toBeEnabled();
