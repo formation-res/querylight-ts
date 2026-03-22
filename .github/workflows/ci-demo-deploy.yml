@@ -18,6 +18,7 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  HUGO_VERSION: "0.150.0"
 
 jobs:
   test:
@@ -35,11 +36,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Setup Hugo
-        uses: peaceiris/actions-hugo@v3
-        with:
-          hugo-version: "0.150.0"
-          extended: true
+      - name: Install Hugo
+        run: |
+          curl -fsSL -o /tmp/hugo.deb "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb"
+          sudo dpkg -i /tmp/hugo.deb
+          hugo version
 
       - name: Run tests
         run: npm test
@@ -64,11 +65,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Setup Hugo
-        uses: peaceiris/actions-hugo@v3
-        with:
-          hugo-version: "0.150.0"
-          extended: true
+      - name: Install Hugo
+        run: |
+          curl -fsSL -o /tmp/hugo.deb "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb"
+          sudo dpkg -i /tmp/hugo.deb
+          hugo version
 
       - name: Build core package
         run: npm run build --workspace @tryformation/querylight-ts
@@ -77,8 +78,7 @@ jobs:
         run: npm run build --workspace @querylight/demo
 
       - name: Deploy demo to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3.14.1
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy apps/demo/public --project-name querylight-ts-demo --branch main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx -y wrangler@4 pages deploy apps/demo/public --project-name querylight-ts-demo --branch main
