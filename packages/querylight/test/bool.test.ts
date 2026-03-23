@@ -105,6 +105,21 @@ describe("bool queries", () => {
     expect(ids(hits)).toEqual(["2", "1", "3"]);
   });
 
+  it("should not return should-only hits when must clauses match nothing", async () => {
+    const index = new DocumentIndex({ title: new TextFieldIndex() });
+    [
+      ["1", "alpha"],
+      ["2", "beta"]
+    ].forEach(([id, title]) => index.index({ id, fields: { title: [title] } }));
+
+    const hits = await index.search(new BoolQuery({
+      must: [new MatchQuery({ field: "title", text: "gamma" })],
+      should: [new MatchQuery({ field: "title", text: "alpha" })]
+    }));
+
+    expect(hits).toEqual([]);
+  });
+
   it("should support minimumShouldMatch for should-only queries", async () => {
     const index = new DocumentIndex({ title: new TextFieldIndex() });
     [

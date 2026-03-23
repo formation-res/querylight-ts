@@ -199,6 +199,18 @@ test("api reference pages appear in search and section facets", async ({ page })
   await expect(page.locator("#facet-sections")).toContainText("API Reference");
 });
 
+test("and mode requires all query terms across the combined search fields", async ({ page }) => {
+  await page.goto("/");
+  await switchToLexicalSearch(page);
+
+  await page.locator("#operation").selectOption("AND");
+  await page.locator("#query").fill("hydration geohash");
+  await page.locator("#submit-query").click();
+
+  await expect(page.locator("#result-count")).toHaveText(/^0 matches/);
+  await expect(page.locator("#center-view")).toContainText("No matches found");
+});
+
 test("search results support paging and expose offset metadata", async ({ page }) => {
   await page.goto("/");
   await switchToLexicalSearch(page);

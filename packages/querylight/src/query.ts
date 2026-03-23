@@ -363,6 +363,9 @@ export class BoolQuery implements Query {
 
     if (this.must.length > 0) {
       context.setIncludeIds(ids(mustHits));
+      if (mustHits.length === 0) {
+        return [];
+      }
     }
 
     const mappedShoulds = await Promise.all(this.should.map((query) => query.hits(documentIndex, context)));

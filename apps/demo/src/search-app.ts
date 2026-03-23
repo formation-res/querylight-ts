@@ -8,6 +8,7 @@ import {
   MatchAll,
   MatchPhrase,
   MatchQuery,
+  MultiMatchQuery,
   NgramTokenFilter,
   NumericFieldIndex,
   OP,
@@ -236,6 +237,7 @@ const REPOSITORY_URL = packageMeta.repository.url.replace(/^git\+/, "").replace(
 const NPM_PACKAGE_URL = `https://www.npmjs.com/package/${encodeURIComponent(PACKAGE_NAME)}`;
 const NPM_BADGE_URL = `https://img.shields.io/npm/v/${encodeURIComponent(PACKAGE_NAME)}?label=npm&color=cb3837`;
 const BUILD_TIMESTAMP = __BUILD_TIMESTAMP__;
+const SEARCHABLE_TEXT_FIELDS = ["title", "tagline", "body", "api", "tags"] as const;
 const GITHUB_ICON = `
   <svg viewBox="0 0 24 24" aria-hidden="true" class="size-4 fill-current">
     <path d="M12 0.5C5.37 0.5 0 5.87 0 12.5c0 5.3 3.44 9.79 8.21 11.38.6.11.82-.26.82-.58 0-.29-.01-1.05-.02-2.06-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.74.08-.74 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.49.99.11-.78.42-1.31.76-1.61-2.66-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.52.12-3.17 0 0 1.01-.32 3.3 1.23a11.4 11.4 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.65.25 2.87.12 3.17.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.62-5.49 5.92.43.37.82 1.1.82 2.23 0 1.61-.01 2.91-.01 3.31 0 .32.21.7.83.58A12 12 0 0 0 24 12.5C24 5.87 18.63 0.5 12 0.5Z"/>
@@ -744,11 +746,21 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
   const allowPrefixSuggestions = trimmed.length >= 2;
   const { filters, mustNot } = buildFacetFilterQueries(current);
   const filterOnlyQuery = filters.length > 0 || mustNot.length > 0 ? new BoolQuery({ filter: filters, mustNot }) : new MatchAll();
+  const requiredTextQuery =
+    trimmed.length === 0 || current.operation !== OP.AND
+      ? null
+      : new MultiMatchQuery({
+          fields: [...SEARCHABLE_TEXT_FIELDS],
+          text: trimmed,
+          operation: OP.AND,
+          prefixMatch: current.prefix
+        });
 
   const baseTextQuery =
     trimmed.length === 0
       ? new MatchAll()
       : new BoolQuery({
+          must: requiredTextQuery ? [requiredTextQuery] : [],
           should: [
             new MatchQuery({ field: "title", text: trimmed, operation: current.operation, prefixMatch: current.prefix, boost: 7 }),
             new MatchQuery({ field: "tagline", text: trimmed, operation: current.operation, prefixMatch: current.prefix, boost: 2.5 }),
@@ -776,6 +788,7 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
     trimmed.length === 0
       ? filterOnlyQuery
       : new BoolQuery({
+          must: requiredTextQuery ? [requiredTextQuery] : [],
           should: [
             new MatchPhrase({ field: "title", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 0 : 1, boost: 8 }),
             new MatchPhrase({ field: "body", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 1 : 2, boost: 3 }),
@@ -799,13 +812,25 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
           mustNot
         });
 
+  const requiredIds =
+    requiredTextQuery == null
+      ? undefined
+      : new Set((await index.searchRequest({
+          query: new BoolQuery({
+            must: [requiredTextQuery],
+            filter: filters,
+            mustNot
+          }),
+          limit: Number.MAX_SAFE_INTEGER
+        })).map(([id]) => id));
+
   const fuzzyHits =
     trimmed.length === 0
       ? []
-      : await active.fuzzy.searchRequest({
+      : (await active.fuzzy.searchRequest({
           query: new MatchQuery({ field: "combined", text: trimmed, operation: OP.OR, boost: 1.5 }),
           limit: Number.MAX_SAFE_INTEGER
-        });
+        })).filter(([id]) => requiredIds == null || requiredIds.has(id));
 
   const allowedIds =
     filters.length > 0 || mustNot.length > 0
