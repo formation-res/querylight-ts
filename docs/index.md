@@ -80,6 +80,7 @@ This index mirrors the documentation table of contents used by the demo.
 - [SimpleTextSearch for Plain JSON Documents](./features/simple-text-search-for-plain-json-documents.md)
 - [Highlighting with Querylight TS](./features/highlighting-with-querylight-ts.md)
 - [Approximate Nearest Neighbor Vector Search](./features/approximate-nearest-neighbor-vector-search.md)
+- [Sparse Vector Search](./features/sparse-vector-search.md)
 - [Geo Indexing with Points and Polygons](./features/geo-indexing-with-points-and-polygons.md)
 - [Document Chunking Strategies](./features/document-chunking-strategies.md)
 - [Vector Rescoring for Faster Hybrid Search](./features/vector-rescoring-for-faster-hybrid-search.md)

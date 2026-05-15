@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { pipeline, env, type FeatureExtractionPipeline } from "@huggingface/transformers";
 import {
   Analyzer,
@@ -12,7 +14,8 @@ import {
   TextFieldIndex,
   bigramVector,
   type Document,
-  type DocumentIndexState
+  type DocumentIndexState,
+  type SparseVector
 } from "../../../packages/querylight/src/index";
 import {
   SEMANTIC_CHUNKING_VERSION,
@@ -26,6 +29,14 @@ import {
   type RelatedArticleRecord,
   type SemanticPayload
 } from "../src/semantic";
+import {
+  createSparseDocumentText,
+  SPARSE_DOCUMENT_TOP_TOKENS,
+  SPARSE_MODEL_ID,
+  type SparseDocumentVectorRecord,
+  type SparsePayload,
+  type SparseQueryWeights
+} from "../src/sparse";
 import { buildApiDocEntries } from "./api-docs";
 
 export type DocEntry = {
@@ -54,6 +65,8 @@ export type DemoDataPayload = {
   docs: DocEntry[];
   indexes: Record<RankingAlgorithm, SerializedRuntimeIndexes>;
   semantic: SemanticPayload;
+  sparse: SparsePayload;
+  sparseQuery: SparseQueryWeights;
 };
 
 const tagAnalyzer = new Analyzer([], new KeywordTokenizer());
@@ -258,6 +271,70 @@ async function createSemanticPayload(docs: DocEntry[]): Promise<SemanticPayload>
   };
 }
 
+type SparseEncodingResult = {
+  query_token_weights: number[];
+  vocabularySize: number;
+  documents: SparseDocumentVectorRecord[];
+};
+
+function createSparsePayload(docs: DocEntry[]): { sparse: SparsePayload; sparseQuery: SparseQueryWeights } {
+  const scriptPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "sparse-encode.py");
+  const inputPayload = JSON.stringify({
+    model_id: SPARSE_MODEL_ID,
+    top_tokens: SPARSE_DOCUMENT_TOP_TOKENS,
+    documents: docs.map((doc) => ({
+      docId: doc.id,
+      text: createSparseDocumentText(doc)
+    }))
+  });
+  const encoded = execFileSync(
+    "uv",
+    [
+      "run",
+      "--with",
+      "torch",
+      "--with",
+      "transformers",
+      "--with",
+      "huggingface_hub",
+      "python",
+      scriptPath
+    ],
+    {
+      input: inputPayload,
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024 * 1024
+    }
+  );
+  const output = JSON.parse(encoded) as SparseEncodingResult;
+  return {
+    sparse: {
+      model: {
+        modelId: SPARSE_MODEL_ID,
+        queryEncoding: "tokenizer-token-weights",
+        documentEncoding: "masked-lm-max-log1p-relu",
+        documentTopTokens: SPARSE_DOCUMENT_TOP_TOKENS,
+        vocabularySize: output.vocabularySize
+      },
+      documents: output.documents.map((record) => ({
+        docId: record.docId,
+        vector: normalizeSparseVector(record.vector)
+      }))
+    },
+    sparseQuery: {
+      tokenWeights: output.query_token_weights
+    }
+  };
+}
+
+function normalizeSparseVector(vector: SparseVector): SparseVector {
+  return Object.fromEntries(
+    Object.entries(vector)
+      .filter(([, weight]) => Number.isFinite(weight) && weight > 0)
+      .sort((left, right) => right[1] - left[1])
+  );
+}
+
 function createRelatedArticleRecords(articleEmbeddings: ArticleEmbeddingRecord[]): RelatedArticleRecord[] {
   // Related article cards are computed offline from whole-page embeddings to
   // keep the browser runtime simple and deterministic.
@@ -302,7 +379,8 @@ export async function buildDemoDataPayload(rootDir: string): Promise<DemoDataPay
   const docs = [...sourceDocs, ...apiDocs]
     .sort((left, right) => left.section.localeCompare(right.section) || left.order - right.order || left.title.localeCompare(right.title));
 
-  const semantic = await createSemanticPayload(sourceDocs);
+  const semantic = await createSemanticPayload(docs);
+  const { sparse, sparseQuery } = createSparsePayload(docs);
 
   return {
     docs,
@@ -310,7 +388,9 @@ export async function buildDemoDataPayload(rootDir: string): Promise<DemoDataPay
       [RankingAlgorithm.BM25]: createSerializedIndexes(docs, RankingAlgorithm.BM25),
       [RankingAlgorithm.TFIDF]: createSerializedIndexes(docs, RankingAlgorithm.TFIDF)
     },
-    semantic
+    semantic,
+    sparse,
+    sparseQuery
   };
 }
 

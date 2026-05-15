@@ -17,6 +17,7 @@ import {
   RankingAlgorithm,
   reciprocalRankFusion,
   type SignificantTermsBucket,
+  SparseVectorFieldIndex,
   TermQuery,
   TextFieldIndex,
   VectorFieldIndex,
@@ -42,11 +43,17 @@ import {
   type SemanticModelInfo,
   type SemanticPayload
 } from "./semantic";
+import {
+  encodeSparseQuery,
+  type SparseModelInfo,
+  type SparsePayload,
+  type SparseQueryWeights
+} from "./sparse";
 import { createSemanticVectorScorer } from "./webgpu-vector-scorer";
 
 declare const __BUILD_TIMESTAMP__: string;
 
-type SearchMode = "hybrid" | "match" | "phrase" | "fuzzy";
+type SearchMode = "hybrid" | "match" | "phrase" | "fuzzy" | "sparse" | "ann";
 type QueryExperience = "search" | "ask";
 
 type DocEntry = {
@@ -93,7 +100,7 @@ type FacetKind = "api" | "section" | "tag" | "significant-term" | "word-count";
 type SearchResult = {
   lexicalHits: Hits;
   fuzzyHits: Hits;
-  vectorHits: Hits;
+  sparseHits: Hits;
   finalHits: Hits;
   visibleHits: Hits;
   totalHits: number;
@@ -126,6 +133,8 @@ type DemoDataPayload = {
     }
   >;
   semantic: SemanticPayload;
+  sparse: SparsePayload;
+  sparseQuery: SparseQueryWeights;
 };
 
 type RuntimeContext = {
@@ -137,6 +146,7 @@ type RuntimeContext = {
   renderedMarkdown: Map<string, string>;
   indexes: Record<RankingAlgorithm, RuntimeIndexes>;
   semantic: SemanticRuntime;
+  sparse: SparseRuntime;
 };
 
 type NavSection = {
@@ -158,9 +168,17 @@ type RelatedArticleViewModel = {
 type SemanticRuntime = {
   model: SemanticModelInfo;
   chunkIndex: VectorFieldIndex;
+  articleIndex: VectorFieldIndex;
+  articleIds: string[];
   relatedArticlesByDocId: Map<string, RelatedArticleRecord>;
   chunkEmbeddingsById: Map<string, ChunkEmbeddingRecord>;
   backend: "webgpu" | "cpu";
+};
+
+type SparseRuntime = {
+  model: SparseModelInfo;
+  index: SparseVectorFieldIndex;
+  query: SparseQueryWeights;
 };
 
 type SemanticQuestionState = {
@@ -535,6 +553,12 @@ async function createSemanticRuntime(semanticPayload: SemanticPayload): Promise<
   // Load the precomputed chunk embeddings into an ANN index once at startup so
   // Ask-the-docs queries only need to embed the user's question.
   const { scorer, backend } = await createSemanticVectorScorer();
+  const articleIndex = new VectorFieldIndex({
+    numHashTables: SEMANTIC_INDEX_HASH_TABLES,
+    dimensions: semanticPayload.model.dimensions,
+    random: createSeededRandom(SEMANTIC_INDEX_RANDOM_SEED),
+    options: { scorer }
+  });
   const chunkIndex = new VectorFieldIndex({
     numHashTables: SEMANTIC_INDEX_HASH_TABLES,
     dimensions: semanticPayload.model.dimensions,
@@ -542,16 +566,34 @@ async function createSemanticRuntime(semanticPayload: SemanticPayload): Promise<
     options: { scorer }
   });
 
+  semanticPayload.articleEmbeddings.forEach((record) => {
+    articleIndex.insert(record.docId, [record.embedding]);
+  });
   semanticPayload.chunkEmbeddings.forEach((record) => {
     chunkIndex.insert(record.chunkId, [record.embedding]);
   });
 
   return {
     model: semanticPayload.model,
+    articleIndex,
+    articleIds: semanticPayload.articleEmbeddings.map((record) => record.docId),
     chunkIndex,
     relatedArticlesByDocId: new Map(semanticPayload.relatedArticles.map((record) => [record.docId, record])),
     chunkEmbeddingsById: new Map(semanticPayload.chunkEmbeddings.map((record) => [record.chunkId, record])),
     backend
+  };
+}
+
+function createSparseRuntime(sparsePayload: SparsePayload, sparseQuery: SparseQueryWeights): SparseRuntime {
+  const index = new SparseVectorFieldIndex();
+  sparsePayload.documents.forEach((record) => {
+    index.insert(record.docId, [record.vector]);
+  });
+
+  return {
+    model: sparsePayload.model,
+    index,
+    query: sparseQuery
   };
 }
 
@@ -579,7 +621,8 @@ async function createRuntimeContext(demoData: DemoDataPayload): Promise<RuntimeC
       [RankingAlgorithm.BM25]: loadSerializedIndexes(RankingAlgorithm.BM25, demoData.indexes[RankingAlgorithm.BM25]),
       [RankingAlgorithm.TFIDF]: loadSerializedIndexes(RankingAlgorithm.TFIDF, demoData.indexes[RankingAlgorithm.TFIDF])
     },
-    semantic: await createSemanticRuntime(demoData.semantic)
+    semantic: await createSemanticRuntime(demoData.semantic),
+    sparse: createSparseRuntime(demoData.sparse, demoData.sparseQuery)
   };
 }
 
@@ -849,12 +892,38 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
     trimmed.length === 0
       ? filterOnlyHits
       : await index.searchRequest({ query: hybridLexicalQuery, limit: Number.MAX_SAFE_INTEGER });
+  const sparseHits =
+    trimmed.length === 0
+      ? filterOnlyHits
+      : context.sparse.index.query(
+          await encodeSparseQuery(trimmed, context.sparse.model.modelId, context.sparse.query.tokenWeights),
+          Number.MAX_SAFE_INTEGER,
+          allowedIds
+        );
+  const annHits =
+    trimmed.length === 0
+      ? filterOnlyHits
+      : await context.semantic.articleIndex.rerankAsync(
+          await embedSemanticQuery(trimmed, context.semantic.model.modelId),
+          allowedIds ?? context.semantic.articleIds,
+          Number.MAX_SAFE_INTEGER
+        );
 
   let fullFinalHits: Hits;
   let lexicalHits: Hits;
   let highlightQuery: BoolQuery | MatchAll | null = null;
 
   switch (current.mode) {
+    case "ann":
+      lexicalHits = [];
+      fullFinalHits = annHits;
+      highlightQuery = null;
+      break;
+    case "sparse":
+      lexicalHits = [];
+      fullFinalHits = sparseHits;
+      highlightQuery = null;
+      break;
     case "phrase":
       lexicalHits = phraseHits;
       fullFinalHits = lexicalHits;
@@ -931,7 +1000,7 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
   return {
     lexicalHits,
     fuzzyHits,
-    vectorHits: [],
+    sparseHits,
     finalHits: fullFinalHits,
     visibleHits,
     totalHits: fullFinalHits.length,
@@ -1043,6 +1112,8 @@ function createShell(context: RuntimeContext): void {
                     <option value="match">Match</option>
                     <option value="phrase">Phrase</option>
                     <option value="fuzzy">Fuzzy (ngrams)</option>
+                    <option value="ann">ANN semantic</option>
+                    <option value="sparse">Sparse</option>
                   </select>
                 </label>
                 <label>
@@ -1436,6 +1507,24 @@ function renderHome(context: RuntimeContext, centerNode: HTMLDivElement): void {
   `;
 }
 
+function searchModeLabel(mode: SearchMode): string {
+  switch (mode) {
+    case "ann":
+      return "ANN";
+    case "sparse":
+      return "Sparse";
+    case "match":
+      return "Match";
+    case "phrase":
+      return "Phrase";
+    case "fuzzy":
+      return "Fuzzy";
+    case "hybrid":
+    default:
+      return "Hybrid";
+  }
+}
+
 function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, current: SearchResult): void {
   const pageStart = current.totalHits === 0 ? 0 : current.offset + 1;
   const pageEnd = current.offset + current.visibleHits.length;
@@ -1446,6 +1535,7 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
       <header>
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Search Results</p>
         <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${state.query.trim() || "All documentation"}</h1>
+        <p class="mt-3 text-sm text-stone-500">${searchModeLabel(state.mode)} retrieval${state.mode === "sparse" ? " using OpenSearch-style sparse vectors" : ""}</p>
         <p id="result-count" class="mt-3 text-sm text-stone-600">${current.totalHits} matches · ${current.responseTimeMs} ms${current.offset > 0 ? ` · offset ${current.offset}` : ""}${current.totalHits > 0 ? ` · showing ${pageStart}-${pageEnd}` : ""}</p>
         ${
           current.totalHits > current.pageSize
@@ -1800,6 +1890,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   const syncControls = () => {
     const isAsk = activeExperience === "ask";
+    const usesNonLexicalRetrieval = state.mode === "sparse" || state.mode === "ann";
     const sharedQuery = state.query;
     queryInput.value = sharedQuery;
     queryInput.placeholder = isAsk ? "Ask a question like: how do I use vector search?" : "Search Querylight TS documentation";
@@ -1811,9 +1902,13 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     clearQueryButton.disabled = sharedQuery.length === 0;
     experienceSearchButton.classList.toggle("nav-result-active", !isAsk);
     experienceAskButton.classList.toggle("nav-result-active", isAsk);
-    [modeSelect, rankingSelect, operationSelect, prefixInput, excludeAdvancedInput].forEach((control) => {
-      control.disabled = isAsk;
-      control.closest("label")?.classList.toggle("opacity-45", isAsk);
+    modeSelect.disabled = isAsk;
+    modeSelect.closest("label")?.classList.toggle("opacity-45", isAsk);
+    excludeAdvancedInput.disabled = isAsk;
+    excludeAdvancedInput.closest("label")?.classList.toggle("opacity-45", isAsk);
+    [rankingSelect, operationSelect, prefixInput].forEach((control) => {
+      control.disabled = isAsk || usesNonLexicalRetrieval;
+      control.closest("label")?.classList.toggle("opacity-45", isAsk || usesNonLexicalRetrieval);
     });
     const submitLabel = queryForm.querySelector<HTMLButtonElement>("#submit-query");
     if (submitLabel) {
@@ -1983,7 +2078,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     if (pendingSuggestions !== null) {
       window.clearTimeout(pendingSuggestions);
     }
-    if (activeExperience !== "search" || !state.query.trim()) {
+    if (activeExperience !== "search" || !state.query.trim() || state.mode === "ann") {
       suggestionResult = null;
       renderSuggestionsOnly();
       return;

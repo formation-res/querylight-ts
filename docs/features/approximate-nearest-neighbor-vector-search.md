@@ -72,10 +72,10 @@ This follows the same basic pattern as Elasticsearch rescoring: use normal retri
 
 The demo uses vector search in two different ways:
 
-- lightweight bigram vectors for typo-tolerant relatedness in the main search experience
+- article-level dense retrieval as a separate ANN search mode in the docs demo
 - transformer embeddings for the "Ask the Docs" semantic question flow
 
-For the full end-to-end walkthrough, see [Ask the Docs End to End](./../demo/ask-the-docs-end-to-end.md).
+For the full end-to-end walkthrough, see [Ask the Docs End to End](./../demo/ask-the-docs-end-to-end.md). For the OpenSearch-style token-weight alternative, see [Sparse Vector Search](./sparse-vector-search.md).
 
 ## Current limitations
 

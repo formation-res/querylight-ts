@@ -1,4 +1,5 @@
 import { type TrieNodeState } from "./trie";
+import { type SparseVectorFieldIndexState } from "./sparse-vector";
 import { type VectorFieldIndexState } from "./vector";
 import { type DocumentIndex } from "./document-index";
 
@@ -175,7 +176,7 @@ export interface SignificantTermsBucket {
 }
 
 /** Union of all serialized field index state payloads. */
-export type IndexState = TextFieldIndexState | GeoFieldIndexState | NumericFieldIndexState | DateFieldIndexState | VectorFieldIndexState;
+export type IndexState = TextFieldIndexState | GeoFieldIndexState | NumericFieldIndexState | DateFieldIndexState | VectorFieldIndexState | SparseVectorFieldIndexState;
 
 /** Serialized state for a full {@link DocumentIndex}. */
 export interface DocumentIndexState {

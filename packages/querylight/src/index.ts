@@ -152,6 +152,16 @@ export type {
 } from "./vector";
 
 export {
+  SparseVectorFieldIndex,
+  sparseInnerProduct
+} from "./sparse-vector";
+export type {
+  SparseVector,
+  SparseVectorFieldIndexParams,
+  SparseVectorFieldIndexState
+} from "./sparse-vector";
+
+export {
   createSimpleTextSearchIndex,
   simpleTextSearch
 } from "./simple-text-search";
