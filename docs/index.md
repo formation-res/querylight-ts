@@ -13,6 +13,13 @@ order: 5
 
 This index mirrors the documentation table of contents used by the demo.
 
+If you are here for vector search, start with these four pages:
+
+- [Approximate Nearest Neighbor Vector Search](./features/approximate-nearest-neighbor-vector-search.md)
+- [Sparse Vector Search](./features/sparse-vector-search.md)
+- [Vector Rescoring for Faster Hybrid Search](./features/vector-rescoring-for-faster-hybrid-search.md)
+- [Ask the Docs End to End](./demo/ask-the-docs-end-to-end.md)
+
 ## Overview
 
 - [Introducing Querylight TS](./overview/introduction.md)

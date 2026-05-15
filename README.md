@@ -5,11 +5,15 @@
 
 Pure TypeScript port of the Kotlin `querylight` library, packaged for browsers and Node.js.
 
-Querylight TS is a lightweight in-process search toolkit for static sites, browser apps, and Node.js projects that need more than fuzzy matching but less than a full search server. It combines structured indexing, BM25/TF-IDF ranking, boolean queries, advanced relevance tuning, aggregations, vector search, hybrid reranking, highlighting, and geo search behind one small API.
+Querylight TS is an in-process search toolkit for static sites, browser apps, and Node.js projects that need more than fuzzy matching but do not want a separate search server. It is positioned as the most feature-rich local search library in this category: BM25 and TF-IDF ranking, structured queries, aggregations, highlighting, geo search, dense vector search, sparse vector search, and hybrid reranking behind one API.
 
-In practice, that means it is an easy way to build semantic-search features locally without introducing a separate vector database or search service. You can use it to power search experiences such as "Ask the Docs", related-article suggestions, semantic reranking on top of lexical results, typo-tolerant content discovery, faceted navigation, and map- or region-aware retrieval.
+The vector story is a first-class part of the library:
 
-It is one of the few browser-first TypeScript search toolkits that brings together structured search-engine-style querying and lightweight vector search in the same local package.
+- dense vector search with `VectorFieldIndex` for semantic retrieval, ANN lookup, related-content features, and vector rescoring
+- sparse vector search with `SparseVectorFieldIndex` for learned token-weight retrieval in the style of OpenSearch neural sparse search
+- hybrid search patterns that combine lexical retrieval with dense or sparse vector ranking
+
+That makes it practical to ship lexical, dense, sparse, and hybrid search locally in one package instead of stitching together multiple narrower tools.
 
 Project links:
 
@@ -20,15 +24,20 @@ Project links:
 
 Querylight TS can cover a wide range of local search problems without forcing you into a backend search stack.
 
-- Docs search and site search: `TextFieldIndex`, `MatchQuery`, `MultiMatchQuery`, BM25 ranking, highlighting, and serialized indexes.
-- Semantic "Ask the Docs" experiences: `VectorFieldIndex`, chunked content, vector retrieval, and `VectorRescoreQuery` for lexical-first reranking.
-- Related articles and recommendations: document or chunk embeddings with vector similarity.
-- Faceted navigation and filtered discovery: `BoolQuery`, `TermsQuery`, aggregations, and significant terms.
-- Product or catalog search: BM25 ranking, fielded search, hard filters, prefixes, and optional hybrid reranking.
-- Typo-tolerant search boxes: `bigramVector`, ngram analyzers, prefix queries, and hybrid lexical plus vector patterns.
-- Geo-aware search: `GeoFieldIndex`, `GeoPointQuery`, and `GeoPolygonQuery`.
-- Browser-shipped search for static content: JSON-serializable index state and build-time precomputation.
-- Search behavior testing and tuning: stable query objects, ranking controls, and a testable in-memory model.
+| Use Case | Description | Features |
+| --- | --- | --- |
+| Text search | Find the right page, document, or product from normal keyword queries. | [TF-IDF and BM25 Ranking](docs/ranking/tfidf-and-bm25-ranking.md), [Term, Terms, Prefix, Exists, and Match Queries](docs/lexical-querying/term-terms-prefix-exists-and-match-queries.md), [BoolQuery for Must, Should, Filter, MustNot, and MinimumShouldMatch](docs/lexical-querying/bool-query.md), [Highlighting with Querylight TS](docs/features/highlighting-with-querylight-ts.md) |
+| Search as you type | Show useful matches while somebody is still typing. | [SimpleTextSearch for Plain JSON Documents](docs/features/simple-text-search-for-plain-json-documents.md), [Trie-Backed Prefix Expansion](docs/indexing/trie-backed-prefix-expansion.md), [How To Build Autocomplete](docs/guides/how-to-build-autocomplete.md) |
+| Did you mean | Recover from typos, partial words, and slightly wrong queries. | [SimpleTextSearch for Plain JSON Documents](docs/features/simple-text-search-for-plain-json-documents.md), [Approximate Nearest Neighbor Vector Search](docs/features/approximate-nearest-neighbor-vector-search.md), [Reciprocal Rank Fusion](docs/ranking/reciprocal-rank-fusion.md) |
+| Related documents | Show similar articles, products, help pages, or records. | [Approximate Nearest Neighbor Vector Search](docs/features/approximate-nearest-neighbor-vector-search.md), [Document Chunking Strategies](docs/features/document-chunking-strategies.md), [Vector Rescoring for Faster Hybrid Search](docs/features/vector-rescoring-for-faster-hybrid-search.md) |
+| Ask the docs | Answer natural-language questions by retrieving the most relevant chunks first. | [Approximate Nearest Neighbor Vector Search](docs/features/approximate-nearest-neighbor-vector-search.md), [Document Chunking Strategies](docs/features/document-chunking-strategies.md), [Vector Rescoring for Faster Hybrid Search](docs/features/vector-rescoring-for-faster-hybrid-search.md), [Ask the Docs End to End](docs/demo/ask-the-docs-end-to-end.md) |
+| Sparse neural search | Run learned token-weight retrieval when your model emits sparse vectors instead of dense embeddings. | [Sparse Vector Search](docs/features/sparse-vector-search.md), [Reciprocal Rank Fusion](docs/ranking/reciprocal-rank-fusion.md), [Ask the Docs End to End](docs/demo/ask-the-docs-end-to-end.md) |
+| Faceting | Let users narrow results by tags, sections, categories, ranges, or counts. | [Terms Aggregation](docs/discovery/terms-aggregation.md), [Significant Terms Aggregation](docs/discovery/significant-terms-aggregation.md), [Range Aggregation](docs/discovery/range-aggregation.md), [Histogram Aggregation](docs/discovery/histogram-aggregation.md), [Date Histogram Aggregation](docs/discovery/date-histogram-aggregation.md), [How To Build Faceted Navigation](docs/guides/how-to-build-faceted-navigation.md) |
+| Filtered search | Combine full-text queries with hard constraints such as section, product type, date, or status. | [BoolQuery for Must, Should, Filter, MustNot, and MinimumShouldMatch](docs/lexical-querying/bool-query.md), [NumericFieldIndex and DateFieldIndex for Structured Features](docs/indexing/numeric-and-date-fields.md), [RangeQuery Over Lexical Fields](docs/lexical-querying/range-query-over-lexical-fields.md) |
+| Dashboards | Slice and explore local data with counts, buckets, and ranked result lists. | [Using Querylight TS as a Local Analytics Engine](docs/guides/using-querylight-ts-as-a-local-analytics-engine.md), [From Raw API Payloads to Browser Dashboards](docs/guides/from-raw-api-payloads-to-browser-dashboards.md), [Build Interactive ECharts Dashboards from Plain JSON](docs/guides/building-echarts-dashboards-from-plain-json.md), [Terms Aggregation](docs/discovery/terms-aggregation.md), [Stats Aggregation](docs/discovery/stats-aggregation.md) |
+| Hybrid search | Blend lexical ranking with dense or sparse vectors instead of picking one retrieval model. | [Reciprocal Rank Fusion](docs/ranking/reciprocal-rank-fusion.md), [Vector Rescoring for Faster Hybrid Search](docs/features/vector-rescoring-for-faster-hybrid-search.md), [Sparse Vector Search](docs/features/sparse-vector-search.md), [Approximate Nearest Neighbor Vector Search](docs/features/approximate-nearest-neighbor-vector-search.md) |
+| Geo-aware search | Find results inside a point radius, map area, or polygon. | [Geo Indexing with Points and Polygons](docs/features/geo-indexing-with-points-and-polygons.md), [BoolQuery for Must, Should, Filter, MustNot, and MinimumShouldMatch](docs/lexical-querying/bool-query.md) |
+| Static-site search shipped to the browser | Build indexes ahead of time and ship them with your site or app. | [Portable JSON Index State](docs/indexing/portable-json-index-state.md), [Serialization, Hydration, and Shipping Indexes](docs/indexing/serialization-hydration-and-shipping-indexes.md), [Getting Started with Browser Search](docs/overview/getting-started-with-browser-search.md) |
 
 ## Try The Demo
 
@@ -36,7 +45,7 @@ Play with the live search demo on Cloudflare Pages:
 
 - [https://querylight.tryformation.com/](https://querylight.tryformation.com/)
 
-Use it to try the search experience, inspect the indexed documentation, and get a feel for lexical, vector, and structured search behavior in the browser.
+Use it to try the search experience, inspect the indexed documentation, and compare lexical, dense vector, sparse vector, and hybrid retrieval in the browser.
 
 ## Workspace Layout
 
@@ -48,6 +57,9 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 - In-memory reverse index for structured documents
 - TF-IDF and BM25 ranking
 - Reciprocal rank fusion for combining lexical, geo, filter, and vector results
+- Dense vector retrieval with `VectorFieldIndex`
+- Sparse vector retrieval with `SparseVectorFieldIndex`
+- Hybrid retrieval with vector rescoring and rank fusion
 - Boolean, term, terms, wildcard, regex, exists, range, phrase, prefix, multi-match, dis-max, boosting, and match-all queries
 - Numeric/date field indexes plus distance-feature, rank-feature, and JS script scoring queries
 - Beginner-friendly plain JSON indexing with `simpleTextSearch`
@@ -55,9 +67,24 @@ Use it to try the search experience, inspect the indexed documentation, and get 
 - Analyzer/tokenizer/token-filter pipeline
 - Trie-backed prefix expansion
 - Aggregations and significant terms
-- Approximate nearest-neighbour vector search
+- Approximate nearest-neighbour dense vector search
 - Basic geo point/polygon queries
 - Portable JSON-serializable index state
+
+## Dense And Sparse Vector Search
+
+Querylight TS supports two different vector retrieval models.
+
+- Dense vectors use `VectorFieldIndex`. This is the right fit for embeddings, semantic similarity, related-content features, ANN lookup, and lexical-first reranking with `VectorRescoreQuery`.
+- Sparse vectors use `SparseVectorFieldIndex`. This is the right fit when your model produces token-weight maps and you want a retrieval path closer to an inverted index.
+- Hybrid search works with both. You can fuse lexical and vector result sets with `reciprocalRankFusion(...)`, or retrieve lexically first and rescore a smaller candidate window with vectors.
+
+Start here if vector search is the reason you are evaluating the library:
+
+- Dense vector search: [docs/features/approximate-nearest-neighbor-vector-search.md](docs/features/approximate-nearest-neighbor-vector-search.md)
+- Sparse vector search: [docs/features/sparse-vector-search.md](docs/features/sparse-vector-search.md)
+- Hybrid reranking: [docs/features/vector-rescoring-for-faster-hybrid-search.md](docs/features/vector-rescoring-for-faster-hybrid-search.md)
+- Demo internals: [docs/demo/ask-the-docs-end-to-end.md](docs/demo/ask-the-docs-end-to-end.md)
 
 ## Documentation
 
@@ -123,10 +150,10 @@ npm run dev
 
 ## Positioning
 
-This is intended as a broader client-side search toolkit than fuzzy-match-only libraries such as `fuse.js`: it combines ranking, boolean logic, multi-field search, phrase search, prefixes, aggregations, vector search, and geo support behind one small pure TypeScript API. For a fuller comparison with `fuse.js`, Lunr, MiniSearch, FlexSearch, Pagefind, and Orama, see [the comparison article](docs/overview/browser-search-library-comparison.md).
+This is intended as a broader client-side search toolkit than fuzzy-match-only libraries such as `fuse.js`: it combines ranking, boolean logic, multi-field search, phrase search, prefixes, aggregations, dense vector search, sparse vector search, and geo support behind one small pure TypeScript API. For a fuller comparison with `fuse.js`, Lunr, MiniSearch, FlexSearch, Pagefind, and Orama, see [the comparison article](docs/overview/browser-search-library-comparison.md).
 
 ## Project Notes
 
 Parts of this project were developed with AI-assisted agentic coding tools, with design, review, and release decisions still made manually.
 
-Most of the documentation was also AI-generated. That serves two practical purposes: it makes it possible to provide comprehensive coverage of the library's broad feature set without spending disproportionate time writing docs by hand, and it provides a large enough corpus for the [demo application](https://querylight.tryformation.com/) to showcase vector search through the "Ask the Docs" feature.
+Most of the documentation was also AI-generated. That makes broad docs coverage easier to maintain, and it provides a large enough corpus for the [demo application](https://querylight.tryformation.com/) to showcase lexical, dense-vector, sparse-vector, and hybrid search modes.

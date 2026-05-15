@@ -16,7 +16,8 @@ This guide is for somebody who has never used a search library before and wants 
 It is also the quickest way to understand what Querylight TS is good at in practice. Even if you start with a simple search box, the same library can later grow into:
 
 - docs or site search with highlighting
-- semantic "Ask the Docs" retrieval over chunked content
+- dense-vector semantic retrieval over chunked content
+- sparse-vector retrieval over learned token-weight maps
 - related-article suggestions
 - faceted or filtered discovery
 - geo-aware search
@@ -41,7 +42,7 @@ That avoids indexing work in the browser and gives you a fast startup path.
 ## Pick the path that matches your use case
 
 - If you want a practical docs or content search box fast, start with `createSimpleTextSearchIndex`.
-- If you know you need filters, facets, semantic retrieval, or custom ranking, use the lower-level query API directly.
+- If you know you need filters, facets, dense retrieval, sparse retrieval, or custom ranking, use the lower-level query API directly.
 - If you are unsure, start simple. You can keep the same document model and move to manual queries later.
 
 ## Fastest path: beginner helper
@@ -184,13 +185,14 @@ The manual version is useful when:
 - you want different boosts
 - you want different fuzzy behavior
 - you need filters or faceting
-- you want to mix in vector or geo search later
+- you want to mix in dense vector, sparse vector, or geo search later
 
 It is also the path to take when your product requirements sound more like:
 
 - "search only within this section"
 - "show related articles"
 - "use embeddings for semantic reranking"
+- "use sparse token-weight retrieval"
 - "limit results to the visible map area"
 - "support strict metadata filters"
 

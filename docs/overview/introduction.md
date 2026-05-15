@@ -13,9 +13,9 @@ order: 10
 
 Querylight TS is a [TypeScript](https://www.typescriptlang.org/) port of the original [`querylight`](https://github.com/jillesvangurp/querylight) library, built for browser and [Node.js](https://nodejs.org/) use cases where shipping a full search server would be excessive.
 
-The project focuses on a practical middle ground: more capable than simple fuzzy matching libraries such as [`fuse.js`](https://github.com/krisk/Fuse), much smaller in scope than a full Lucene-based search stack. You can use it to add fast, local, explainable search to static sites, browser apps, demos, documentation portals, and other small to medium datasets.
+The project focuses on a practical middle ground: more capable than simple fuzzy matching libraries such as [`fuse.js`](https://github.com/krisk/Fuse), much smaller in scope than a full Lucene-based search stack. Within that local-first segment, it is positioned as the most feature-rich option for static sites, browser apps, demos, documentation portals, and other small to medium datasets.
 
-The practical benefit is that one library can cover both classic lexical search and newer semantic-search patterns. You can start with a search box and later grow into "Ask the Docs", related articles, hybrid lexical-plus-vector ranking, faceted navigation, or geo-aware retrieval without switching to a different local search stack.
+The practical benefit is that one library can cover classic lexical retrieval, dense vector retrieval, sparse vector retrieval, and hybrid ranking. You can start with a search box and later grow into "Ask the Docs", related articles, sparse neural retrieval, hybrid lexical-plus-vector ranking, faceted navigation, or geo-aware retrieval without switching to a different local search stack.
 
 ## Who it is for
 
@@ -27,7 +27,8 @@ Typical use cases include:
 - Search-as-you-type suggestions
 - Faceting and filtering over structured metadata
 - Geo search for location-aware content
-- Lightweight vector search for similarity and recommendation features
+- Dense vector search for similarity and recommendation features
+- Sparse neural search over token-weight vectors
 - Semantic search over chunked content
 - Related-article and "read next" suggestions
 - Offline or local-first retrieval experiments in the browser
@@ -50,11 +51,12 @@ Querylight TS supports several retrieval patterns under one API:
 - Structured boolean queries
 - Phrase queries and prefix expansion
 - Aggregations and significant terms
-- Vector-based similarity search
+- Dense vector similarity search
+- Sparse vector retrieval with token-weight maps
 - Geo indexing and querying
 - JSON-serializable index state for build-time generation and browser hydration
 
-That combination makes it useful for more than a search box. It can also power "related articles", typo-tolerant discovery, filtered navigation, and hybrid ranking strategies.
+That combination makes it useful for more than a search box. It can also power "related articles", typo-tolerant discovery, filtered navigation, and hybrid lexical plus vector ranking strategies.
 
 ## Is it better than X?
 
