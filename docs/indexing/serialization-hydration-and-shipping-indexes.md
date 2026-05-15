@@ -11,7 +11,7 @@ order: 30
 
 # Serialization, Hydration, and Shipping Indexes
 
-One of the most useful deployment patterns in Querylight TS is to build indexes ahead of time and ship their serialized state to the browser.
+Build indexes ahead of time and ship their serialized state to the browser when you want local search without client-side reindexing.
 
 That avoids reindexing large corpora on every page load.
 
@@ -71,4 +71,4 @@ If you change the schema, rebuild and reship the state.
 - load the serialized state in the browser
 - run queries locally with no backend dependency
 
-This is one of the clearest ways to get fast, private, low-latency search into a frontend app.
+This pattern keeps runtime logic small, removes client-side indexing work, and gives you a predictable startup cost tied to payload size instead of indexing time.

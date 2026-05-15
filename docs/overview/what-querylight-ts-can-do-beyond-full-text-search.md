@@ -11,9 +11,7 @@ order: 62
 
 # What Querylight TS Can Do Beyond Full-Text Search
 
-It is easy to look at Querylight TS and assume it is only a small browser full-text search library.
-
-That would miss a large part of the design.
+Querylight TS supports more than ranked text retrieval. The same local index can also drive filters, facets, aggregations, vector retrieval, geo queries, and browser-side dashboards.
 
 The library already supports several capability layers:
 
@@ -25,7 +23,7 @@ The library already supports several capability layers:
 - geo indexing and geo queries
 - serialized index state for build-time shipping
 
-The new dashboard demo extends that story into lightweight local analytics.
+The dashboard demo shows the same pattern applied to browser-side analytics over local JSON records.
 
 ## Search is still the center
 
@@ -82,14 +80,14 @@ for location-based slices and map-adjacent interfaces.
 
 ## Why this matters
 
-For small browser and local-first systems, it is useful when one toolkit can cover several adjacent needs instead of forcing an early split into:
+For small browser and local-first systems, this can remove an early split into:
 
 - one library for search
 - one library for analytics
 - one library for geo
 - one extra backend just to make the UI interactive
 
-Querylight TS does not replace every specialized system. But it can cover a wider practical surface than "text in, ranked hits out".
+Querylight TS does not replace every specialized system. It does let one local index cover more than ranked hits.
 
 ## Related articles
 

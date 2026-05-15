@@ -52,9 +52,9 @@ Use vector search when:
 
 - you want typo tolerance beyond exact token matching
 - you want semantic retrieval with precomputed embeddings
-- you want "related article" suggestions
+- you want related-article suggestions
 
-Do not use it as the only retrieval strategy unless you are sure that is what you want. In practice, vector search is often strongest when combined with lexical ranking, filters, or both.
+Vector retrieval is usually strongest when combined with lexical ranking, filters, or both.
 
 ## Use rescoring when lexical search already narrowed things down
 
@@ -79,16 +79,16 @@ For the full end-to-end walkthrough, see [Ask the Docs End to End](./../demo/ask
 
 ## Current limitations
 
-The current vector implementation is intentionally lightweight.
-
-That keeps it easy to understand and practical for browser and small in-process use cases, but it also means it does not try to match the full vector-search feature set of engines such as OpenSearch or Elasticsearch.
+The current vector implementation is LSH-based and aimed at browser and small in-process use cases.
 
 Current limitations include:
 
-- approximate retrieval is based on a simple locality-sensitive hashing approach
+- approximate retrieval uses a simple locality-sensitive hashing approach
 - there is no HNSW or IVF-style ANN index yet
 - there is no vector quantization or compressed vector storage yet
-- filtering and rescoring patterns exist, but the integrated vector feature set is still smaller than what larger search engines provide
+- filtering and rescoring patterns exist, but integrated vector features are still narrower than in larger search engines
+
+For small local corpora, these tradeoffs are often acceptable. For large vector collections or more demanding ANN workloads, use rescoring to narrow the candidate set first or move to a larger engine with a more advanced ANN implementation.
 
 ## Custom scorer backends
 
@@ -96,9 +96,7 @@ Current limitations include:
 
 The built-in default is a CPU scorer, but advanced users can provide a custom scorer backend via `options.scorer` when constructing the index. That makes it possible to experiment with alternatives such as a WebGPU scorer while keeping the same `VectorFieldIndex` query and rerank API.
 
-For many browser, static-site, and embedded search scenarios that tradeoff is acceptable. If you need a small pure TypeScript toolkit with vector support, this can already be useful. If you need a larger algorithmic feature set, there is room to grow.
-
-Pull requests are welcome.
+Feedback and pull requests are welcome, especially around ANN quality, scorer backends, and vector-specific performance improvements.
 
 ## Learn more
 

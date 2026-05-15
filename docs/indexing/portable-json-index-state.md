@@ -13,6 +13,8 @@ order: 20
 
 Querylight index state is intentionally JSON-serializable.
 
+This page covers the smallest possible version of the pattern: serialize `indexState`, ship it, and hydrate it again later. For the broader deployment pattern around browser apps and static sites, see [Serialization, Hydration, and Shipping Indexes](./serialization-hydration-and-shipping-indexes.md).
+
 ## Serialize
 
 ```ts
@@ -25,12 +27,21 @@ const state = JSON.parse(JSON.stringify(index.indexState));
 const hydrated = index.loadState(state);
 ```
 
-## Why it is useful
+`loadState(...)` expects the same logical field layout you used when you built the index. If the runtime schema changes, rebuild and reship the JSON state.
+
+## When to use it
 
 - Precompute indexes at build time
 - Ship them to the browser
 - Avoid reindexing on startup
 - Keep test fixtures deterministic
+
+This pattern is a good fit when:
+
+- the source documents already exist at build time
+- startup latency matters more than extra build-time work
+- the serialized payload still fits comfortably in browser or process memory
+- you want deterministic fixtures for tests or demos
 
 This is the recommended architecture for documentation and static-site search:
 
@@ -40,7 +51,7 @@ This is the recommended architecture for documentation and static-site search:
 4. Hydrate the index state.
 5. Run search queries locally in the browser.
 
-That pattern keeps your runtime simple and gives users a responsive search box without a search server.
+That pattern keeps the runtime simple, avoids client-side reindexing, and gives you predictable startup cost.
 
 ## Learn more
 

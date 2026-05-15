@@ -11,7 +11,7 @@ order: 20
 
 # What Querylight TS Covers
 
-Querylight TS is a pure TypeScript search toolkit for browsers and Node.js. It is positioned as the most feature-rich local search library for static sites and browser apps. It combines text retrieval, structured boolean queries, multi-field search, phrase search, prefix expansion, aggregations, dense vector search, sparse vector search, geo search, and portable index state under one API.
+Querylight TS is a pure TypeScript search toolkit for browsers and Node.js. It is positioned as the most feature-rich local search library for static sites and browser apps. It combines text retrieval, structured boolean queries, multi-field search, phrase search, prefix expansion, aggregations, dense vector search, sparse vector search, geo search, and portable index state under one API. For a direct comparison with narrower browser-first libraries, see [Comparing Querylight TS to Other Browser Search Libraries](./browser-search-library-comparison.md).
 
 In practical terms, that means you can use one local library to power very different kinds of search experiences:
 
@@ -23,7 +23,7 @@ In practical terms, that means you can use one local library to power very diffe
 - related-article or recommendation features using vector similarity
 - geo-aware retrieval for map or region-based content
 
-That breadth is the main reason to use Querylight TS instead of a narrower fuzzy-only library.
+That breadth matters when you want one local index model for search, filters, facets, vectors, and geo features instead of stitching those behaviors together from separate tools.
 
 If you are new to search tooling, the easiest mental model is:
 

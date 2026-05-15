@@ -134,6 +134,7 @@ Keep third-party GitHub Actions current. If CI shows runtime deprecation warning
 
 - Preserve the public package name: `@tryformation/querylight-ts`
 - Keep demo dependency versions aligned with the library package version
+- For any textual change, run a copy pass against the `copy-tone` skill and align the wording before considering the task done
 - Prefer adding tests when changing query semantics or exported APIs
 - If changing docs and query behavior together, update both in the same work session
 - For release-oriented work, check both local validation and GitHub Actions results

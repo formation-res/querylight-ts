@@ -13,14 +13,12 @@ order: 60
 
 When you first integrate with an API, you often do not know yet what the right dashboard or search experience should be.
 
-That is exactly the wrong moment to prematurely build:
+Start by loading representative records locally and exploring them before you commit to:
 
 - a custom analytics backend
 - a warehouse pipeline
 - a large reporting model
 - several bespoke aggregation endpoints
-
-It is often better to start by loading the raw records locally and exploring them.
 
 ## What local-first exploration gives you
 
@@ -44,21 +42,19 @@ You usually want to answer questions like:
 
 Querylight TS gives you that structure in memory, without requiring a separate search or analytics server.
 
-## What this is not
+## Where this fits
 
-Local-first exploration is not a claim that every analytics problem belongs in the browser.
-
-It is a useful phase for:
+This works best for:
 
 - prototyping
 - internal tools
 - demos
 - static sites
-- modest local datasets
+- datasets that still fit comfortably in browser or process memory
 
 Later, if the product grows, you may still move some of the logic to a backend.
 
-That is fine. The prototype work is still valuable because it clarifies:
+That prototype work still pays off because it clarifies:
 
 - the document shape
 - the important filters
@@ -71,7 +67,7 @@ That is fine. The prototype work is still valuable because it clarifies:
 2. Normalize it into plain local documents.
 3. Index the fields you want to filter and aggregate.
 4. Build a few exploratory views.
-5. Watch what turns out to be useful.
+5. Watch which filters, buckets, and views users actually use.
 
 That is often enough to separate real product requirements from guesswork.
 

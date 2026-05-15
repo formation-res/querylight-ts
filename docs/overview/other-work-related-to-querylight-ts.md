@@ -136,7 +136,7 @@ It is for:
 - structuring log events for search and dashboarding
 - making exception and MDC data searchable
 
-This is adjacent rather than directly connected to Querylight TS, but it shows another practical use of the search tooling ecosystem: operational logging and observability.
+This project sits next to Querylight TS rather than inside the same problem space, but it shows how the wider tooling ecosystem extends into operational logging and observability.
 
 ## OpenAI Embeddings Processor
 
@@ -154,7 +154,7 @@ This connects naturally to Querylight TS because Querylight TS has vector search
 
 ## How these projects fit together
 
-A useful mental model is:
+Use this map when you want to place each project by responsibility:
 
 - Querylight TS: local in-process search for TypeScript
 - Querylight: the Kotlin sibling and conceptual predecessor
@@ -164,7 +164,7 @@ A useful mental model is:
 - GeoGeometry: geospatial foundations for geo-oriented retrieval work
 - embeddings tooling: experiments and support for semantic retrieval
 
-Together these projects cover a wide slice of search work:
+Across the set, the responsibilities break down into:
 
 - local search
 - server-backed search

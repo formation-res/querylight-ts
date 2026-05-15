@@ -22,7 +22,7 @@ It is also the quickest way to understand what Querylight TS is good at in pract
 - faceted or filtered discovery
 - geo-aware search
 
-That matters because beginner-friendly search tooling often becomes a dead end as soon as your requirements grow. Querylight TS is designed so the beginner path and the more advanced path stay connected.
+That matters because beginner-friendly search tooling often becomes a dead end as soon as your requirements grow. In Querylight TS, you can keep the same documents, build-time JSON payload, and browser hydration flow when you later switch to manual queries and additional field types.
 
 There are two paths:
 
@@ -287,6 +287,6 @@ That transition is normal. Many teams start with a plain site-search box and onl
 - faceted navigation
 - geo or region-based filtering
 
-The important point is that the beginner path is not a dead end. It gets you to a useful search box quickly, and the same library lets you grow from there.
+You do not need to throw away the first implementation when that happens. The same documents, serialized index pattern, and browser-side rendering flow still apply after you move beyond `simpleTextSearch`.
 
 For highlight-specific behavior and current limitations, see [Highlighting with Querylight TS](./../features/highlighting-with-querylight-ts.md).

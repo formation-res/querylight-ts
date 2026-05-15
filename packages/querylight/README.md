@@ -4,9 +4,9 @@ Lightweight in-memory search for TypeScript applications.
 
 `@tryformation/querylight-ts` combines structured indexing, BM25/TF-IDF ranking, boolean queries, aggregations, vector search, hybrid reranking, geo search, and offset-based highlighting in one small API for browser and Node.js projects.
 
-In practice, this is an easy way to add semantic-search features locally without introducing a separate search server or vector database. You can use it for "Ask the Docs" search, related articles, semantic reranking, typo-tolerant content discovery, faceted navigation, and geo-aware retrieval.
+In practice, this lets you add local semantic-search features without introducing a separate search server or vector database. You can use it for Ask the Docs retrieval, related articles, semantic reranking, typo-tolerant content discovery, faceted navigation, and geo-aware retrieval.
 
-It is one of the few browser-first TypeScript search toolkits that combines structured search-engine-style querying and lightweight vector search in the same local package.
+It is one of the few browser-first TypeScript search toolkits that combines structured search-engine-style querying and lightweight vector search in the same local package. The project comparison article explains that positioning in more detail: [Comparing Querylight TS to Other Browser Search Libraries](https://github.com/formation-res/querylight-ts/blob/main/docs/overview/browser-search-library-comparison.md).
 
 For the full project README, examples, and all documentation, see:
 

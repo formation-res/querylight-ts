@@ -11,7 +11,7 @@ order: 30
 
 # From Raw API Payloads to Browser Dashboards
 
-The new dashboard demo exists to make one point clear: Querylight TS is not just for search boxes.
+The dashboard demo shows how Querylight TS can drive browser-side filtering, slicing, and aggregation over raw JSON records.
 
 If an API gives you rows of JSON instead of pre-aggregated charts, you can still build a usable analytics surface in the browser:
 
@@ -39,7 +39,7 @@ That is enough for exploration, but not enough for a ready-made dashboard. Norma
 - SQL transformation jobs
 - custom aggregation endpoints
 
-For small datasets, prototypes, internal tools, and static demos, that can be overkill.
+For datasets that still fit comfortably in browser memory, prototypes, internal tools, and static demos, that can be overkill.
 
 ## A good document shape for analytics
 
@@ -116,7 +116,7 @@ The demo is deliberately small in scope.
 - The category heuristics are simple and may contain bugs.
 - The goal is to show the pattern, not to ship a production BI stack.
 
-That is an acceptable tradeoff for a docs demo because the architectural idea is the real subject.
+That tradeoff is acceptable in a docs demo because the page is showing the indexing and slicing pattern, not promising production-grade analytics semantics.
 
 ## When this approach is a good fit
 

@@ -11,7 +11,7 @@ order: 40
 
 # Comparing Querylight TS to Other Browser Search Libraries
 
-There are several good browser-first search libraries, and they do not all optimize for the same thing.
+Browser-first search libraries optimize for different use cases.
 
 This article summarizes the strengths and weak points of several widely used alternatives:
 
@@ -21,6 +21,8 @@ This article summarizes the strengths and weak points of several widely used alt
 - [FlexSearch](https://github.com/nextapps-de/flexsearch)
 - [Pagefind](https://pagefind.app/) and [GitHub repo](https://github.com/CloudCannon/pagefind)
 - [Orama](https://orama.com/) and [GitHub repo](https://github.com/oramasearch/orama)
+
+This comparison explains why Querylight TS is positioned as the most feature-rich local-first option in this set for teams that want one browser-first toolkit to cover structured lexical search, aggregations, highlighting, vector retrieval, sparse retrieval, geo queries, and JSON-serializable index state.
 
 ## Querylight TS
 
@@ -33,6 +35,10 @@ Querylight TS is a local in-memory retrieval toolkit with:
 - highlighting
 - JSON-serializable index state
 - vector and geo search
+
+Compared to the rest of the libraries in this article, that combination is unusual. Several alternatives cover one or two of these areas well. Fewer of them cover all of them under one local API, and fewer still keep that API centered on fielded query composition instead of a narrower search-box workflow.
+
+Feature breadth is the main differentiator here, not a claim that every individual feature is the strongest possible implementation on performance, scalability, or algorithmic sophistication. Querylight TS is aimed at small local datasets where that tradeoff is often acceptable, and the project welcomes feedback and pull requests that improve feature quality, behavior, or performance.
 
 Strong points:
 
@@ -48,7 +54,7 @@ Strong points:
 Weak points:
 
 - more moving parts than a fuzzy-only search library
-- not the smallest API surface in this category
+- larger API surface than narrower search-box libraries
 - intended for small local corpora rather than very large search deployments
 
 ## Fuse.js
@@ -181,9 +187,9 @@ Weak points:
 Relative to these libraries, Querylight TS sits in a fairly clear place:
 
 - more complex to use, but also more feature rich
-- probably not the thing you would choose for the very largest browser-side corpora, but it should work well with a small corpus
-- an easy way to experiment with semantic and vector search on small sets of documents
-- a strong fit for documentation sites, blogs, magazines, and similar content-heavy websites with a limited amount of material
+- intended for local corpora that still fit comfortably in browser or Node.js memory
+- a practical way to combine lexical, structured, vector, and geo retrieval on the same set of documents
+- a good fit for documentation sites, blogs, magazines, and similar content-heavy websites where local indexing and shipping JSON state are acceptable
 
 Relative to Fuse.js, it offers a much richer retrieval model at the cost of more setup.
 
@@ -195,6 +201,6 @@ Relative to Pagefind, it is less specialized for generated static sites and more
 
 Relative to Orama, it is narrower in scope but easier to reason about if your focus is local structured retrieval instead of a broader search platform story.
 
-Relative to Solr, Elasticsearch, and OpenSearch, Querylight TS is intentionally much smaller in scope. That comparison does not just apply to Querylight TS; it applies to all of the browser- and local-first options discussed on this page. Full server-side search engines are far more sophisticated in terms of features, algorithms, optimization, and scalability. Querylight TS probably comes the closest to that style of search toolkit among the libraries covered here, but it is still aimed at a very different problem size.
+Relative to Solr, Elasticsearch, and OpenSearch, Querylight TS is intentionally much smaller in scope. That comparison does not just apply to Querylight TS; it applies to all of the browser- and local-first options discussed on this page. Full server-side search engines are far more sophisticated in terms of features, algorithms, optimization, and scalability. Querylight TS borrows more of that query-building style than most browser-first libraries covered here, but it is still aimed at a very different problem size.
 
 Those systems are the right tools when you need serious search infrastructure at scale. Querylight TS is for the opposite end of the spectrum: situations where a small local corpus needs capable search features without the operational weight of running a full search server, and where those larger systems would be overkill. And beyond Solr, Elasticsearch, and OpenSearch, there are many server-side alternatives that are also designed for far greater scale than anything in this article is targeting.

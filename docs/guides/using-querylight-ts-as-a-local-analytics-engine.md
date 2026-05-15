@@ -118,18 +118,18 @@ Querylight TS fills that gap by giving you:
 - efficient subset-based aggregation helpers
 - one in-memory representation that can support both search and analytics
 
-That makes it useful when your data source is "an API that returns JSON rows" rather than "a service that already gives me every chart endpoint I need".
+That is a good fit when your data source is an API that returns JSON rows and you still want interactive filters, buckets, and summary stats without adding a dedicated backend aggregation layer.
 
 ## Practical limits
 
 This pattern is strongest when:
 
-- the dataset is modest
+- the dataset still fits comfortably in browser or process memory
 - the documents are already local
 - you need interactive filtering
 - you want to keep deployment simple
 
-It is not a replacement for a warehouse or OLAP engine. It is a useful middle ground between:
+It is not a replacement for a warehouse or OLAP engine. It is a middle ground between:
 
 - no structured exploration at all
 - a much larger analytics stack
