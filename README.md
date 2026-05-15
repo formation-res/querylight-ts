@@ -18,7 +18,7 @@ That makes it practical to ship lexical, dense, sparse, and hybrid search locall
 Project links:
 
 - Documentation: [`docs/`](docs/)
-- Demo: [https://querylight.tryformation.com/](https://querylight.tryformation.com/)
+- Live demo and documentation portal: [https://querylight.tryformation.com/](https://querylight.tryformation.com/)
 
 ## Use Cases
 
@@ -41,11 +41,11 @@ Querylight TS can cover a wide range of local search problems without forcing yo
 
 ## Try The Demo
 
-Play with the live search demo on Cloudflare Pages:
+Open the live documentation portal and demo on Cloudflare Pages:
 
 - [https://querylight.tryformation.com/](https://querylight.tryformation.com/)
 
-Use it to try the search experience, inspect the indexed documentation, and compare lexical, dense vector, sparse vector, and hybrid retrieval in the browser.
+It is both the main documentation site and the live product demo. Use it to read the docs, inspect the indexed content, and compare lexical, dense vector, sparse vector, and hybrid retrieval in the browser.
 
 ## Workspace Layout
 
@@ -88,7 +88,7 @@ Start here if vector search is the reason you are evaluating the library:
 
 ## Documentation
 
-Browse the documentation in [`docs/`](docs/) and try the live demo at [https://querylight.tryformation.com/](https://querylight.tryformation.com/).
+Browse the canonical documentation source in [`docs/`](docs/) or open the published documentation portal and live demo at [https://querylight.tryformation.com/](https://querylight.tryformation.com/).
 
 ## Install
 
