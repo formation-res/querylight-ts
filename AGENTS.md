@@ -63,7 +63,7 @@ npm pack --workspace @tryformation/querylight-ts --dry-run
 - shared public types/utilities: `packages/querylight/src/shared.ts`
 - beginner helper API: `packages/querylight/src/simple-text-search.ts`
 - browser demo: `apps/demo/src/main.ts`
-- release notes draft for the latest release: `RELEASE_NOTES_0.9.3.md`
+- release notes are prepared locally for the GitHub release and are not kept in git by default
 - release skill guidance: `.codex/skills/release-publish-guardrails/SKILL.md`
 
 ## Testing expectations
@@ -103,9 +103,9 @@ Expected release flow:
 9. create and push the matching version tag
 10. wait for the tag-triggered publish workflow
 11. verify npm has the new version and the correct `latest` dist-tag
-12. create the GitHub release from the prepared notes file
+12. create the GitHub release from the prepared notes content or a temporary notes file outside git
 
-Release notes are required for every tagged release.
+Release notes are required for every tagged release, but they should be prepared outside git unless explicitly requested otherwise.
 
 Useful commands:
 

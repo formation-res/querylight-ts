@@ -17,6 +17,7 @@ Use this skill for npm package releases, Git tags, and GitHub releases.
 - When preparing a release, treat the release commit, the CI run for that commit on the branch, the tag-triggered publish run, the npm registry state, and the GitHub release as separate checkpoints.
 - If a user asks to tag a release, assume they want the full release flow: tag, publish, verify, and create the GitHub release.
 - Release notes are required for every tagged release.
+- Keep release notes out of git unless the user explicitly asks to check them in. Prepare them locally and attach them when creating the GitHub release.
 
 ## Required checks before tagging
 
@@ -47,7 +48,7 @@ Use this skill for npm package releases, Git tags, and GitHub releases.
 9. Push the tag.
 10. Follow the tag-triggered publish job until it finishes.
 11. Verify the published version from the registry.
-12. Create the GitHub release from the prepared notes file, with:
+12. Create the GitHub release from the prepared notes content or a temporary notes file, with:
    - a brief introduction to the project
    - the npm package link
    - the Cloudflare demo link when available
@@ -81,7 +82,7 @@ Do not collapse these into one step mentally. A release is only complete after t
 - Wait for full branch CI success before tagging, even if local tests and build already passed.
 - Wait for the publish workflow triggered by the tag, not just the branch workflow.
 - Verify the registry after publish before creating the GitHub release.
-- Prefer `gh release create <tag> --title <title> --notes-file <file>` when release notes were prepared locally.
+- Prefer `gh release create <tag> --title <title> --notes-file <file>` when release notes were prepared locally in a temporary file outside git.
 - Do not stop after publishing the package; the release is incomplete until the GitHub release exists.
 - Do not tag if you do not yet have release notes.
 
@@ -117,7 +118,7 @@ Default release notes can be brief:
 - Cloudflare demo link
 - npm package link
 
-If the release spans many commits or materially changes behavior, prepare a longer diff-based release notes draft and use that file for the GitHub release body.
+If the release spans many commits or materially changes behavior, prepare a longer diff-based release notes draft and use that content for the GitHub release body.
 There is no tagged release flow without release notes.
 
 ## Stop conditions
