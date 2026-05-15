@@ -54,7 +54,7 @@ import { createSemanticVectorScorer } from "./webgpu-vector-scorer";
 declare const __BUILD_TIMESTAMP__: string;
 
 type SearchMode = "hybrid" | "match" | "phrase" | "fuzzy" | "sparse" | "ann";
-type QueryExperience = "search" | "ask";
+type SearchVariant = "lexical" | "sparse" | "sparse-hybrid" | "vector" | "vector-hybrid";
 
 type DocEntry = {
   id: string;
@@ -82,6 +82,7 @@ type WordCountFacet = {
 
 type SearchState = {
   query: string;
+  variant: SearchVariant;
   mode: SearchMode;
   operation: OP;
   prefix: boolean;
@@ -264,6 +265,7 @@ const GITHUB_ICON = `
 
 const initialState: SearchState = {
   query: "",
+  variant: "lexical",
   mode: "hybrid",
   operation: OP.OR,
   prefix: false,
@@ -280,8 +282,7 @@ const initialState: SearchState = {
 let state: SearchState = { ...initialState };
 let activeDocId = "";
 let activeChunkId: string | null = null;
-let currentView: "home" | "results" | "detail" | "ask" = "home";
-let activeExperience: QueryExperience = "ask";
+let currentView: "home" | "results" | "detail" | "vector" = "home";
 let submittedResult: SearchResult | null = null;
 let suggestionResult: SearchResult | null = null;
 let semanticQuestionState: SemanticQuestionState = {
@@ -399,6 +400,9 @@ function buildDetailQuery(): string {
   const params = new URLSearchParams();
   if (state.query.trim()) {
     params.set("q", state.query.trim());
+  }
+  if (state.variant !== "lexical") {
+    params.set("variant", state.variant);
   }
   return params.toString();
 }
@@ -892,6 +896,10 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
     trimmed.length === 0
       ? filterOnlyHits
       : await index.searchRequest({ query: hybridLexicalQuery, limit: Number.MAX_SAFE_INTEGER });
+  const bm25HybridLexicalHits =
+    trimmed.length === 0
+      ? filterOnlyHits
+      : await context.indexes[RankingAlgorithm.BM25].hydrated.searchRequest({ query: hybridLexicalQuery, limit: Number.MAX_SAFE_INTEGER });
   const sparseHits =
     trimmed.length === 0
       ? filterOnlyHits
@@ -913,40 +921,61 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
   let lexicalHits: Hits;
   let highlightQuery: BoolQuery | MatchAll | null = null;
 
-  switch (current.mode) {
-    case "ann":
+  switch (current.variant) {
+    case "vector-hybrid":
+      lexicalHits = bm25HybridLexicalHits;
+      fullFinalHits =
+        trimmed.length === 0
+          ? filterOnlyHits
+          : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([bm25HybridLexicalHits, annHits], { rankConstant: 20 }));
+      highlightQuery = hybridLexicalQuery;
+      break;
+    case "vector":
       lexicalHits = [];
       fullFinalHits = annHits;
       highlightQuery = null;
+      break;
+    case "sparse-hybrid":
+      lexicalHits = bm25HybridLexicalHits;
+      fullFinalHits =
+        trimmed.length === 0
+          ? filterOnlyHits
+          : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([bm25HybridLexicalHits, sparseHits], { rankConstant: 20 }));
+      highlightQuery = hybridLexicalQuery;
       break;
     case "sparse":
       lexicalHits = [];
       fullFinalHits = sparseHits;
       highlightQuery = null;
       break;
-    case "phrase":
-      lexicalHits = phraseHits;
-      fullFinalHits = lexicalHits;
-      highlightQuery = phraseQuery;
-      break;
-    case "fuzzy":
-      lexicalHits = trimmed.length === 0 ? filterOnlyHits : [];
-      fullFinalHits = trimmed.length === 0 ? lexicalHits : fuzzyHits;
-      highlightQuery = null;
-      break;
-    case "match":
-      lexicalHits = await index.searchRequest({ query: baseTextQuery, limit: Number.MAX_SAFE_INTEGER });
-      fullFinalHits = rerankWithTitleBoost(context, trimmed, lexicalHits);
-      highlightQuery = baseTextQuery;
-      break;
-    case "hybrid":
+    case "lexical":
     default:
-      lexicalHits = hybridLexicalHits;
-      fullFinalHits =
-        trimmed.length === 0
-          ? lexicalHits
-          : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([hybridLexicalHits, fuzzyHits], { rankConstant: 20, weights: [3, 1] }));
-      highlightQuery = hybridLexicalQuery;
+      switch (current.mode) {
+        case "phrase":
+          lexicalHits = phraseHits;
+          fullFinalHits = lexicalHits;
+          highlightQuery = phraseQuery;
+          break;
+        case "fuzzy":
+          lexicalHits = trimmed.length === 0 ? filterOnlyHits : [];
+          fullFinalHits = trimmed.length === 0 ? lexicalHits : fuzzyHits;
+          highlightQuery = null;
+          break;
+        case "match":
+          lexicalHits = await index.searchRequest({ query: baseTextQuery, limit: Number.MAX_SAFE_INTEGER });
+          fullFinalHits = rerankWithTitleBoost(context, trimmed, lexicalHits);
+          highlightQuery = baseTextQuery;
+          break;
+        case "hybrid":
+        default:
+          lexicalHits = hybridLexicalHits;
+          fullFinalHits =
+            trimmed.length === 0
+              ? lexicalHits
+              : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([hybridLexicalHits, fuzzyHits], { rankConstant: 20, weights: [3, 1] }));
+          highlightQuery = hybridLexicalQuery;
+          break;
+      }
       break;
   }
   const normalizedOffset = Math.max(0, Math.min(current.offset, Math.max(fullFinalHits.length - 1, 0)));
@@ -1038,9 +1067,12 @@ function createShell(context: RuntimeContext): void {
             <a href="/dashboard/" class="chip-button">Dashboard</a>
           </div>
         </div>
-        <div class="mt-5 inline-flex rounded-full border border-stone-900/10 bg-white/75 p-1">
-          <button id="experience-ask" type="button" class="chip-button">Ask the docs</button>
-          <button id="experience-search" type="button" class="chip-button">Search</button>
+        <div class="mt-5 inline-flex flex-wrap rounded-[1.75rem] border border-stone-900/10 bg-white/75 p-1">
+          <button id="variant-lexical" type="button" class="chip-button nav-result-active">Lexical Search</button>
+          <button id="variant-sparse" type="button" class="chip-button">Sparse Vector Search</button>
+          <button id="variant-sparse-hybrid" type="button" class="chip-button">Sparse + BM25</button>
+          <button id="variant-vector" type="button" class="chip-button">Vector Search</button>
+          <button id="variant-vector-hybrid" type="button" class="chip-button">Vector + BM25</button>
         </div>
         <form id="query-form" class="search-form mt-4" autocomplete="off">
           <div class="search-input-wrap">
@@ -1104,16 +1136,21 @@ function createShell(context: RuntimeContext): void {
                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Search Options</p>
                 <button type="button" class="reader-mobile-close" data-action="close-mobile-panel">Close</button>
               </div>
-              <div class="mt-4 grid gap-3">
+              <div class="mt-4 grid gap-4">
+                <section id="search-variant-card" class="rounded-[1.75rem] border border-stone-900/10 bg-white/85 px-4 py-4">
+                  <p id="search-variant-card-label" class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Lexical Search</p>
+                  <h3 id="search-variant-card-title" class="mt-2 font-serif text-2xl text-stone-950">Classic lexical retrieval</h3>
+                  <p id="search-variant-card-body" class="mt-3 text-sm leading-7 text-stone-600"></p>
+                  <p id="search-variant-card-meta" class="mt-3 text-xs text-stone-500"></p>
+                </section>
+                <div id="lexical-controls" class="grid gap-3">
                 <label>
-                  <span class="mb-2 block text-sm font-semibold text-stone-700">Mode</span>
+                  <span class="mb-2 block text-sm font-semibold text-stone-700">Lexical Strategy</span>
                   <select id="mode" class="control-input">
-                    <option value="hybrid">Hybrid</option>
+                    <option value="hybrid">Hybrid (lexical + fuzzy)</option>
                     <option value="match">Match</option>
                     <option value="phrase">Phrase</option>
                     <option value="fuzzy">Fuzzy (ngrams)</option>
-                    <option value="ann">ANN semantic</option>
-                    <option value="sparse">Sparse</option>
                   </select>
                 </label>
                 <label>
@@ -1138,6 +1175,7 @@ function createShell(context: RuntimeContext): void {
                   <input id="exclude-advanced" type="checkbox" class="size-4 accent-orange-700" />
                   <span class="text-sm font-medium text-stone-700">Hide advanced topics</span>
                 </label>
+                </div>
               </div>
             </section>
 
@@ -1232,13 +1270,13 @@ function syncSemanticBusyOverlay(): void {
 }
 
 function updateSummary(context: RuntimeContext, summaryNode: HTMLParagraphElement, current: SearchResult | null): void {
-  if (activeExperience === "ask") {
+  if (state.variant === "vector") {
     summaryNode.textContent =
       semanticQuestionState.status === "ready"
-        ? `${semanticQuestionState.results.length} answers · semantic chunks · ${context.semantic.backend === "webgpu" ? "WebGPU" : "CPU fallback"}`
+        ? `${semanticQuestionState.results.length} dense matches · semantic chunks · ${context.semantic.backend === "webgpu" ? "WebGPU" : "CPU fallback"}`
         : semanticQuestionState.status === "error"
-          ? "Ask the docs unavailable"
-          : "Ask the docs";
+          ? "Vector search unavailable"
+          : "Vector search";
     return;
   }
   if (!current) {
@@ -1253,7 +1291,7 @@ function updateSummary(context: RuntimeContext, summaryNode: HTMLParagraphElemen
     wordCountFacetByKey(state.wordCountFacet)?.label ? `length:${wordCountFacetByKey(state.wordCountFacet)?.label}` : "",
     state.excludeAdvanced ? "without advanced" : ""
   ].filter(Boolean).join(" · ");
-  summaryNode.textContent = `${current.totalHits} results · ${state.mode} · ${state.ranking}${filters ? ` · ${filters}` : ""}`;
+  summaryNode.textContent = `${current.totalHits} results · ${searchVariantLabel(state.variant)}${state.variant === "lexical" ? ` · ${lexicalModeLabel(state.mode)} · ${state.ranking}` : ""}${filters ? ` · ${filters}` : ""}`;
 }
 
 function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNode: HTMLParagraphElement, current: SearchResult | null): void {
@@ -1298,7 +1336,7 @@ function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNo
 }
 
 function renderSuggestions(context: RuntimeContext, suggestionsNode: HTMLDivElement, current: SearchResult | null): void {
-  if (currentView !== "home" || activeExperience !== "search" || !state.query.trim() || !current || current.finalHits.length === 0) {
+  if (currentView !== "home" || state.variant === "vector" || !state.query.trim() || !current || current.finalHits.length === 0) {
     suggestionsNode.classList.add("hidden");
     suggestionsNode.innerHTML = "";
     return;
@@ -1483,7 +1521,7 @@ function renderHome(context: RuntimeContext, centerNode: HTMLDivElement): void {
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Start Page</p>
         <h1 class="mt-2 font-serif text-[clamp(2.5rem,5vw,4.2rem)] leading-none text-stone-950">Querylight TS documentation</h1>
         <p class="mt-4 max-w-3xl text-base leading-7 text-stone-600">
-          Explore the docs, try the in-browser search experience, and jump out to the package or source when you want to wire it into your own project.
+          Explore the docs, compare lexical, sparse-vector, and dense-vector retrieval in the browser, and jump out to the package or source when you want to wire it into your own project.
         </p>
         <div class="mt-5 flex flex-wrap gap-3">
           <a class="chip-button" href="https://github.com/formation-res/querylight-ts" target="_blank" rel="noreferrer">GitHub repository</a>
@@ -1507,12 +1545,24 @@ function renderHome(context: RuntimeContext, centerNode: HTMLDivElement): void {
   `;
 }
 
-function searchModeLabel(mode: SearchMode): string {
-  switch (mode) {
-    case "ann":
-      return "ANN";
+function searchVariantLabel(variant: SearchVariant): string {
+  switch (variant) {
+    case "vector-hybrid":
+      return "Vector + BM25";
+    case "vector":
+      return "Vector Search";
+    case "sparse-hybrid":
+      return "Sparse + BM25";
     case "sparse":
-      return "Sparse";
+      return "Sparse Vector Search";
+    case "lexical":
+    default:
+      return "Lexical Search";
+  }
+}
+
+function lexicalModeLabel(mode: SearchMode): string {
+  switch (mode) {
     case "match":
       return "Match";
     case "phrase":
@@ -1522,6 +1572,46 @@ function searchModeLabel(mode: SearchMode): string {
     case "hybrid":
     default:
       return "Hybrid";
+  }
+}
+
+function searchVariantDescription(context: RuntimeContext): { title: string; body: string; meta: string } {
+  switch (state.variant) {
+    case "vector-hybrid":
+      return {
+        title: "BM25 + dense vector fusion",
+        body: "This variant combines BM25 lexical retrieval with article-level dense vector retrieval, then merges the two rankings with reciprocal rank fusion. It balances exact terminology with semantic similarity.",
+        meta: "Uses RRF to blend BM25 and dense vector ranks into one result list."
+      };
+    case "vector":
+      return {
+        title: "Dense semantic retrieval",
+        body: "The query is embedded in the browser and matched against precomputed documentation chunk vectors. This is the best fit for natural-language questions and concept-level similarity.",
+        meta: context.semantic.backend === "webgpu" ? "Runs locally with WebGPU acceleration when available." : "Runs locally in the browser with CPU fallback."
+      };
+    case "sparse-hybrid":
+      return {
+        title: "BM25 + sparse vector fusion",
+        body: "This variant combines BM25 lexical retrieval with learned sparse retrieval, then merges the two rankings with reciprocal rank fusion. It keeps strong keyword behavior while benefiting from learned token associations.",
+        meta: "Uses RRF to blend BM25 and sparse vector ranks into one result list."
+      };
+    case "sparse":
+      return {
+        title: "Learned sparse retrieval",
+        body: "The query is tokenized in the browser and expanded with learned token weights, then scored against precomputed sparse document vectors. This stays close to inverted-index behavior while adding learned term associations.",
+        meta: "Uses OpenSearch-style inference-free sparse vectors."
+      };
+    case "lexical":
+    default:
+      return {
+        title: "Classic lexical retrieval",
+        body: state.mode === "hybrid"
+          ? "The query is matched lexically and also through the demo's fuzzy n-gram index. Those two lexical result lists are merged with reciprocal rank fusion, so this hybrid stays fully lexical."
+          : "The query is matched against the indexed text fields using the library's lexical query operators and ranking strategies. This is the most transparent mode for exact terminology and query tuning.",
+        meta: state.mode === "hybrid"
+          ? `Uses ${state.ranking} for the main lexical ranker, then applies RRF to combine lexical and fuzzy matches.`
+          : `Supports ${lexicalModeLabel(state.mode).toLowerCase()} matching with ${state.ranking}.`
+      };
   }
 }
 
@@ -1535,7 +1625,7 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
       <header>
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Search Results</p>
         <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${state.query.trim() || "All documentation"}</h1>
-        <p class="mt-3 text-sm text-stone-500">${searchModeLabel(state.mode)} retrieval${state.mode === "sparse" ? " using OpenSearch-style sparse vectors" : ""}</p>
+        <p class="mt-3 text-sm text-stone-500">${searchVariantLabel(state.variant)}${state.variant === "lexical" ? ` · ${lexicalModeLabel(state.mode)} · ${state.ranking}` : ""}</p>
         <p id="result-count" class="mt-3 text-sm text-stone-600">${current.totalHits} matches · ${current.responseTimeMs} ms${current.offset > 0 ? ` · offset ${current.offset}` : ""}${current.totalHits > 0 ? ` · showing ${pageStart}-${pageEnd}` : ""}</p>
         ${
           current.totalHits > current.pageSize
@@ -1694,7 +1784,7 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
   }
 }
 
-function renderAskResultsPage(context: RuntimeContext, centerNode: HTMLDivElement): void {
+function renderVectorResultsPage(context: RuntimeContext, centerNode: HTMLDivElement): void {
   const statusMessage =
     semanticQuestionState.status === "loading-model"
       ? "Loading the embedding model for the first semantic query."
@@ -1704,13 +1794,13 @@ function renderAskResultsPage(context: RuntimeContext, centerNode: HTMLDivElemen
           ? semanticQuestionState.error ?? "Semantic search failed."
         : semanticQuestionState.status === "ready"
             ? `${semanticQuestionState.results.length} semantic matches · ${context.semantic.backend === "webgpu" ? "WebGPU" : "CPU fallback"}`
-            : `Ask a natural-language question and match it against article chunks. ${context.semantic.backend === "webgpu" ? "WebGPU acceleration is active." : "Using CPU fallback."}`;
+            : `Search with dense vectors against documentation chunks. ${context.semantic.backend === "webgpu" ? "WebGPU acceleration is active." : "Using CPU fallback."}`;
 
   centerNode.innerHTML = `
     <article class="surface reader-page px-6 py-8 sm:px-8 sm:py-10">
       <header>
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Ask The Docs</p>
-        <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${escapeHtml(semanticQuestionState.query || "Semantic answers")}</h1>
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Vector Search</p>
+        <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${escapeHtml(semanticQuestionState.query || "Dense semantic results")}</h1>
         <p class="mt-3 text-sm text-stone-600">${escapeHtml(statusMessage)}</p>
       </header>
       <div class="mt-8 grid gap-3">
@@ -1736,8 +1826,8 @@ function renderAskResultsPage(context: RuntimeContext, centerNode: HTMLDivElemen
 }
 
 function renderCenter(context: RuntimeContext, centerNode: HTMLDivElement, current: SearchResult | null): void {
-  if (currentView === "ask") {
-    renderAskResultsPage(context, centerNode);
+  if (currentView === "vector") {
+    renderVectorResultsPage(context, centerNode);
     return;
   }
   if (currentView === "results" && current) {
@@ -1778,13 +1868,21 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   const queryInput = document.querySelector<HTMLInputElement>("#query");
   const homeButton = document.querySelector<HTMLButtonElement>("#go-home");
   const clearQueryButton = document.querySelector<HTMLButtonElement>("#clear-query");
-  const experienceSearchButton = document.querySelector<HTMLButtonElement>("#experience-search");
-  const experienceAskButton = document.querySelector<HTMLButtonElement>("#experience-ask");
+  const lexicalVariantButton = document.querySelector<HTMLButtonElement>("#variant-lexical");
+  const sparseVariantButton = document.querySelector<HTMLButtonElement>("#variant-sparse");
+  const sparseHybridVariantButton = document.querySelector<HTMLButtonElement>("#variant-sparse-hybrid");
+  const vectorVariantButton = document.querySelector<HTMLButtonElement>("#variant-vector");
+  const vectorHybridVariantButton = document.querySelector<HTMLButtonElement>("#variant-vector-hybrid");
   const modeSelect = document.querySelector<HTMLSelectElement>("#mode");
   const rankingSelect = document.querySelector<HTMLSelectElement>("#ranking");
   const operationSelect = document.querySelector<HTMLSelectElement>("#operation");
   const prefixInput = document.querySelector<HTMLInputElement>("#prefix");
   const excludeAdvancedInput = document.querySelector<HTMLInputElement>("#exclude-advanced");
+  const lexicalControls = document.querySelector<HTMLDivElement>("#lexical-controls");
+  const variantCardLabel = document.querySelector<HTMLParagraphElement>("#search-variant-card-label");
+  const variantCardTitle = document.querySelector<HTMLHeadingElement>("#search-variant-card-title");
+  const variantCardBody = document.querySelector<HTMLParagraphElement>("#search-variant-card-body");
+  const variantCardMeta = document.querySelector<HTMLParagraphElement>("#search-variant-card-meta");
   const suggestionsNode = document.querySelector<HTMLDivElement>("#suggestions");
   const summaryNode = document.querySelector<HTMLParagraphElement>("#summary");
   const centerNode = document.querySelector<HTMLDivElement>("#center-view");
@@ -1800,13 +1898,21 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     !queryInput ||
     !homeButton ||
     !clearQueryButton ||
-    !experienceSearchButton ||
-    !experienceAskButton ||
+    !lexicalVariantButton ||
+    !sparseVariantButton ||
+    !sparseHybridVariantButton ||
+    !vectorVariantButton ||
+    !vectorHybridVariantButton ||
     !modeSelect ||
     !rankingSelect ||
     !operationSelect ||
     !prefixInput ||
     !excludeAdvancedInput ||
+    !lexicalControls ||
+    !variantCardLabel ||
+    !variantCardTitle ||
+    !variantCardBody ||
+    !variantCardMeta ||
     !suggestionsNode ||
     !summaryNode ||
     !centerNode ||
@@ -1865,7 +1971,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   const goHome = () => {
     state = searchContext.replace({ ...initialState });
-    activeExperience = "ask";
     submittedResult = null;
     suggestionResult = null;
     semanticQuestionState = {
@@ -1889,30 +1994,38 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   };
 
   const syncControls = () => {
-    const isAsk = activeExperience === "ask";
-    const usesNonLexicalRetrieval = state.mode === "sparse" || state.mode === "ann";
+    const variantInfo = searchVariantDescription(context);
+    const showsLexicalControls = state.variant === "lexical";
     const sharedQuery = state.query;
     queryInput.value = sharedQuery;
-    queryInput.placeholder = isAsk ? "Ask a question like: how do I use vector search?" : "Search Querylight TS documentation";
+    queryInput.placeholder =
+      state.variant === "vector"
+        ? "Search by meaning, e.g. how do I preload indexes in the browser?"
+        : "Search Querylight TS documentation";
     modeSelect.value = state.mode;
     rankingSelect.value = state.ranking;
     operationSelect.value = state.operation;
     prefixInput.checked = state.prefix;
     excludeAdvancedInput.checked = state.excludeAdvanced;
     clearQueryButton.disabled = sharedQuery.length === 0;
-    experienceSearchButton.classList.toggle("nav-result-active", !isAsk);
-    experienceAskButton.classList.toggle("nav-result-active", isAsk);
-    modeSelect.disabled = isAsk;
-    modeSelect.closest("label")?.classList.toggle("opacity-45", isAsk);
-    excludeAdvancedInput.disabled = isAsk;
-    excludeAdvancedInput.closest("label")?.classList.toggle("opacity-45", isAsk);
-    [rankingSelect, operationSelect, prefixInput].forEach((control) => {
-      control.disabled = isAsk || usesNonLexicalRetrieval;
-      control.closest("label")?.classList.toggle("opacity-45", isAsk || usesNonLexicalRetrieval);
-    });
+    lexicalVariantButton.classList.toggle("nav-result-active", state.variant === "lexical");
+    sparseVariantButton.classList.toggle("nav-result-active", state.variant === "sparse");
+    sparseHybridVariantButton.classList.toggle("nav-result-active", state.variant === "sparse-hybrid");
+    vectorVariantButton.classList.toggle("nav-result-active", state.variant === "vector");
+    vectorHybridVariantButton.classList.toggle("nav-result-active", state.variant === "vector-hybrid");
+    lexicalControls.classList.toggle("hidden", !showsLexicalControls);
+    variantCardLabel.textContent = searchVariantLabel(state.variant);
+    variantCardTitle.textContent = variantInfo.title;
+    variantCardBody.textContent = variantInfo.body;
+    variantCardMeta.textContent = variantInfo.meta;
+    modeSelect.disabled = !showsLexicalControls;
+    rankingSelect.disabled = !showsLexicalControls;
+    operationSelect.disabled = !showsLexicalControls;
+    prefixInput.disabled = !showsLexicalControls;
+    excludeAdvancedInput.disabled = !showsLexicalControls;
     const submitLabel = queryForm.querySelector<HTMLButtonElement>("#submit-query");
     if (submitLabel) {
-      submitLabel.textContent = isAsk ? "Ask" : "Search";
+      submitLabel.textContent = "Search";
     }
   };
 
@@ -1973,7 +2086,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       return;
     }
 
-    activeExperience = "ask";
     const firstLoad = browserEmbeddingExtractorPromise === null;
     semanticQuestionState = {
       ...semanticQuestionState,
@@ -1998,7 +2110,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
         results,
         error: null
       };
-      currentView = "ask";
+      currentView = "vector";
     } catch (error: unknown) {
       semanticQuestionState = {
         ...semanticQuestionState,
@@ -2006,9 +2118,10 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
         results: [],
         error: error instanceof Error ? error.message : String(error)
       };
-      currentView = "ask";
+      currentView = "vector";
     }
 
+    clearDetailHash();
     renderApp();
   };
 
@@ -2042,20 +2155,32 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     const nextQuery = params.get("q") ?? "";
     const nextApi = params.get("api");
     const nextTag = params.get("tag");
+    const nextVariant = params.get("variant");
 
     state = searchContext.replace({ ...initialState });
     submittedResult = null;
     suggestionResult = null;
     activeDocId = "";
     activeChunkId = null;
-    activeExperience = nextQuery || nextApi || nextTag ? "search" : "ask";
     state = searchContext.patch({
       offset: 0,
+      variant:
+        nextVariant === "vector" ||
+        nextVariant === "vector-hybrid" ||
+        nextVariant === "sparse" ||
+        nextVariant === "sparse-hybrid" ||
+        nextVariant === "lexical"
+          ? nextVariant
+          : initialState.variant,
       api: nextApi,
       tag: nextTag
     });
     syncSharedQuery(nextQuery);
 
+    if (state.query.trim() && state.variant === "vector") {
+      await runSemanticSearch();
+      return;
+    }
     if (state.query.trim()) {
       setSearchModeFromQuery(state.query);
       submittedResult = await searchContext.resultFor(state);
@@ -2063,7 +2188,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     } else if (state.tag || state.api || state.section || state.significantTerm || state.wordCountFacet || state.excludeAdvanced) {
       submittedResult = await searchContext.resultFor(state);
       currentView = "results";
-    } else if (currentView !== "ask") {
+    } else {
       submittedResult = null;
       suggestionResult = null;
       activeDocId = "";
@@ -2078,7 +2203,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     if (pendingSuggestions !== null) {
       window.clearTimeout(pendingSuggestions);
     }
-    if (activeExperience !== "search" || !state.query.trim() || state.mode === "ann") {
+    if (state.variant === "vector" || !state.query.trim()) {
       suggestionResult = null;
       renderSuggestionsOnly();
       return;
@@ -2119,7 +2244,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       hideSuggestions();
       return;
     }
-    if (event.key === "Enter" && activeExperience === "ask") {
+    if (event.key === "Enter" && state.variant === "vector") {
       event.preventDefault();
       void runSemanticSearch();
     }
@@ -2127,7 +2252,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   queryForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (activeExperience === "ask") {
+    if (state.variant === "vector") {
       void runSemanticSearch();
     } else {
       void runSubmittedSearch("results");
@@ -2147,24 +2272,43 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     goHome();
   }, { signal });
 
-  experienceSearchButton.addEventListener("click", () => {
+  lexicalVariantButton.addEventListener("click", () => {
     syncSharedQuery(queryInput.value);
-    activeExperience = "search";
-    if (!submittedResult && !state.query.trim()) {
-      currentView = "home";
-    } else if (submittedResult) {
-      currentView = currentView === "detail" ? "detail" : "results";
-    }
-    renderApp();
+    void applySearchVariant("lexical");
   }, { signal });
 
-  experienceAskButton.addEventListener("click", () => {
+  sparseVariantButton.addEventListener("click", () => {
     syncSharedQuery(queryInput.value);
-    activeExperience = "ask";
-    currentView = semanticQuestionState.results.length > 0 ? "ask" : "home";
-    hideSuggestions();
-    renderApp();
+    void applySearchVariant("sparse");
   }, { signal });
+
+  sparseHybridVariantButton.addEventListener("click", () => {
+    syncSharedQuery(queryInput.value);
+    void applySearchVariant("sparse-hybrid");
+  }, { signal });
+
+  vectorVariantButton.addEventListener("click", () => {
+    syncSharedQuery(queryInput.value);
+    void applySearchVariant("vector");
+  }, { signal });
+
+  vectorHybridVariantButton.addEventListener("click", () => {
+    syncSharedQuery(queryInput.value);
+    void applySearchVariant("vector-hybrid");
+  }, { signal });
+
+  const runForCurrentVariant = async () => {
+    if (!state.query.trim() && !submittedResult) {
+      currentView = "home";
+      renderApp();
+      return;
+    }
+    if (state.variant === "vector") {
+      await runSemanticSearch();
+      return;
+    }
+    await runSubmittedSearch("results");
+  };
 
   const applySearchOptions = async () => {
     if (currentView === "home" && !submittedResult) {
@@ -2172,6 +2316,22 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       return;
     }
     await runSubmittedSearch(currentView === "detail" ? "detail" : "results");
+  };
+
+  const applySearchVariant = async (variant: SearchVariant) => {
+    if (state.variant === variant) {
+      return;
+    }
+    state = searchContext.patch({ variant, offset: 0 });
+    submittedResult = variant === "vector" ? null : submittedResult;
+    suggestionResult = null;
+    activeChunkId = null;
+    if (!state.query.trim()) {
+      currentView = "home";
+      renderApp();
+      return;
+    }
+    await runForCurrentVariant();
   };
 
   modeSelect.addEventListener("change", () => {
@@ -2232,11 +2392,12 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
     const backToResults = target.closest<HTMLElement>("[data-action='back-to-results']");
     if (backToResults) {
-      if (submittedResult) {
+      if (state.variant === "vector" && semanticQuestionState.results.length > 0) {
+        currentView = "vector";
+      } else if (submittedResult) {
         currentView = "results";
       }
       activeChunkId = null;
-      activeExperience = "search";
       if (window.location.pathname.startsWith("/docs/")) {
         window.history.back();
         return;
@@ -2273,7 +2434,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       const chunkId = docTarget?.dataset.chunkId ?? null;
       activeDocId = doc.id;
       activeChunkId = chunkId;
-      activeExperience = currentView === "ask" ? "ask" : "search";
       currentView = "detail";
       updateDetailHash(doc, chunkId);
       closeMobilePanel();
@@ -2310,7 +2470,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       state = searchContext.patch({ offset: 0 });
     }
     closeMobilePanel();
-    activeExperience = "search";
     void (async () => {
       submittedResult = await searchContext.resultFor(state);
       currentView = "results";
@@ -2363,7 +2522,6 @@ function resetSearchState(): void {
   activeDocId = "";
   activeChunkId = null;
   currentView = "home";
-  activeExperience = "ask";
   submittedResult = null;
   suggestionResult = null;
   semanticQuestionState = {
