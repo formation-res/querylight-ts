@@ -1,7 +1,7 @@
 ---
 id: json-dsl-search
 section: Other Features
-title: OpenSearch-Style JSON DSL Search
+title: OpenSearch-Style Search Requests
 summary: Parse and run OpenSearch-style JSON search requests with queries, highlights, aggregations, geo, vector, and script clauses.
 tags: [json, dsl, opensearch, elasticsearch, query, aggregation]
 apis: [searchJsonDsl, parseJsonDslQuery, KnnQuery, SparseVectorQuery, VectorRescoreQuery]
@@ -9,7 +9,7 @@ level: advanced
 order: 15
 ---
 
-# OpenSearch-Style JSON DSL Search
+# OpenSearch-Style Search Requests
 
 Querylight TS now includes a JSON request layer for teams that prefer request objects over class-based query construction.
 

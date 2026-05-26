@@ -27,7 +27,7 @@ If you are here for vector search, start with these four pages:
 - [Introducing Querylight TS](./overview/introduction.md)
 - [What Querylight TS Covers](./overview/what-querylight-ts-covers.md)
 - [Getting Started with Browser Search](./overview/getting-started-with-browser-search.md)
-- [OpenSearch-Style JSON DSL Search](./features/json-dsl-search.md)
+- [OpenSearch-Style Search Requests](./features/json-dsl-search.md)
 - [Comparing Querylight TS to Other Browser Search Libraries](./overview/browser-search-library-comparison.md)
 - [Other Work Related to Querylight TS](./overview/other-work-related-to-querylight-ts.md)
 - [Why Local-First Data Exploration Helps API Prototyping](./overview/why-local-first-data-exploration-helps-api-prototyping.md)

@@ -144,7 +144,7 @@ Expected result:
 ## More guides
 
 - [Choosing a Schema for Search](./../schema/choosing-a-schema-for-search.md)
-- [OpenSearch-Style JSON DSL Search](./../features/json-dsl-search.md)
+- [OpenSearch-Style Search Requests](./../features/json-dsl-search.md)
 - [Analyzer and Tokenization Deep Dive](./../analysis/analyzer-and-tokenization-deep-dive.md)
 - [How To Build Autocomplete](./../guides/how-to-build-autocomplete.md)
 - [How To Build Faceted Navigation](./../guides/how-to-build-faceted-navigation.md)
