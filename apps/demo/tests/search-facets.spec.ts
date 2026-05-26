@@ -79,9 +79,21 @@ test("dev console button opens the console and regular search controls sync the 
   await expect(page.locator("#dsl-console-screen")).toBeVisible();
   await expect(page.locator("#reader-layout")).toBeHidden();
   await expect(page.locator("#dsl-query-editor")).toBeFocused();
+  await expect(page.locator("#open-dsl-console")).toHaveClass(/nav-result-active/);
+  await expect(page.locator('a[href="/"]').first()).not.toHaveClass(/nav-result-active/);
 
   await expect.poll(async () => await page.locator("#dsl-query-editor").inputValue()).toContain("\"query\": \"terms\"");
   await expect.poll(async () => await page.locator("#dsl-query-editor").inputValue()).toContain("\"operator\": \"and\"");
+});
+
+test("dashboard header links to the console screen", async ({ page }) => {
+  await page.goto("/dashboard/");
+
+  await page.getByRole("link", { name: "Console" }).click();
+
+  await expect(page).toHaveURL(/\/\?view=console$/);
+  await expect(page.locator("#dsl-console-screen")).toBeVisible();
+  await expect(page.locator("#open-dsl-console")).toHaveClass(/nav-result-active/);
 });
 
 test("dev console preserves manual edits, resets to generated query, and runs requests", async ({ page }) => {

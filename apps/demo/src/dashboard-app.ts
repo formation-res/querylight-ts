@@ -361,18 +361,19 @@ function renderDashboard(payload: DashboardDataPayload): string {
   return `
     <main class="dashboard-shell mx-auto w-[min(1560px,calc(100vw-24px))] py-6 lg:py-8">
       <section class="surface dashboard-hero p-6 sm:p-8">
-        <div class="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <div class="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div class="max-w-4xl">
-            <p class="dashboard-kicker">Querylight TS Dashboard Demo</p>
-            <h1 class="dashboard-title">Slice raw API payloads into exploratory dashboards without shipping them to another analytics backend.</h1>
-            <p class="dashboard-lead">
-              This route turns three pre-downloaded open datasets into charts with lazy in-browser indexes, subset filters, and aggregation calls. The point is not that Querylight TS is a chart library. The point is that it gives raw records enough search structure to become one.
+            <p class="dashboard-kicker">Dashboard</p>
+            <h1 class="font-serif text-2xl leading-tight text-stone-950 sm:text-3xl">Querylight Documentation &amp; Demo</h1>
+            <p class="mt-4 max-w-3xl text-base leading-7 text-stone-600">
+              Three in-browser dataset demos showing how Querylight can turn raw records into filters, aggregations, and charts without a separate analytics backend.
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
             <a href="/" class="chip-button">Docs Search</a>
             <a href="/docs/api/" class="chip-button">API Reference</a>
             <a href="/dashboard/" class="chip-button nav-result-active">Dashboard</a>
+            <a href="/?view=console" class="chip-button">Console</a>
           </div>
         </div>
         <div class="dashboard-hero-grid mt-8">

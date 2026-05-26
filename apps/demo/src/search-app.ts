@@ -402,6 +402,9 @@ function buildDetailQuery(): string {
   if (state.variant !== "lexical") {
     params.set("variant", state.variant);
   }
+  if (currentView === "console") {
+    params.set("view", "console");
+  }
   return params.toString();
 }
 
@@ -443,6 +446,27 @@ function buildDocHref(doc: DocEntry, chunkId?: string | null): string {
 
 function normalizeDocUrl(pathname: string): string {
   return pathname.endsWith("/") ? pathname : `${pathname}/`;
+}
+
+function buildSearchRouteHref(view: "search" | "console"): string {
+  const params = new URLSearchParams();
+  if (state.query.trim()) {
+    params.set("q", state.query.trim());
+  }
+  if (state.variant !== "lexical") {
+    params.set("variant", state.variant);
+  }
+  if (state.api) {
+    params.set("api", state.api);
+  }
+  if (state.tag) {
+    params.set("tag", state.tag);
+  }
+  if (view === "console") {
+    params.set("view", "console");
+  }
+  const query = params.toString();
+  return query ? `/?${query}` : "/";
 }
 
 function isSearchRoute(pathname: string): boolean {
@@ -1079,7 +1103,7 @@ function createShell(context: RuntimeContext): void {
   const navSections = createNavSections(context);
   const buildTimeLabel = formatRelativeBuildTime(BUILD_TIMESTAMP);
   const currentPath = window.location.pathname;
-  const docsSearchClass = currentPath === "/" ? " nav-result-active" : "";
+  const docsSearchClass = isSearchRoute(currentPath) && currentView !== "console" ? " nav-result-active" : "";
   const apiReferenceClass = currentPath.startsWith("/docs/api/") ? " nav-result-active" : "";
   const consoleClass = currentView === "console" ? " nav-result-active" : "";
 
@@ -1090,9 +1114,9 @@ function createShell(context: RuntimeContext): void {
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <h1 class="font-serif text-2xl leading-tight text-stone-950 sm:text-3xl">Querylight Documentation &amp; Demo</h1>
           <div class="flex flex-wrap gap-2 lg:justify-end">
-            <a href="/" class="chip-button${docsSearchClass}">Docs Search</a>
-            <a href="/docs/api/" class="chip-button${apiReferenceClass}">API Reference</a>
-            <a href="/dashboard/" class="chip-button">Dashboard</a>
+            <a id="nav-docs-search" href="/" class="chip-button${docsSearchClass}">Docs Search</a>
+            <a id="nav-api-reference" href="/docs/api/" class="chip-button${apiReferenceClass}">API Reference</a>
+            <a id="nav-dashboard" href="/dashboard/" class="chip-button">Dashboard</a>
             <button id="open-dsl-console" type="button" class="chip-button${consoleClass}">Console</button>
           </div>
         </div>
@@ -1881,6 +1905,8 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   const dslConsoleScreen = document.querySelector<HTMLElement>("#dsl-console-screen");
   const closeDslConsoleButton = document.querySelector<HTMLButtonElement>("#close-dsl-console");
   const openDslConsoleButton = document.querySelector<HTMLButtonElement>("#open-dsl-console");
+  const docsSearchLink = document.querySelector<HTMLAnchorElement>("#nav-docs-search");
+  const apiReferenceLink = document.querySelector<HTMLAnchorElement>("#nav-api-reference");
   const homeButton = document.querySelector<HTMLButtonElement>("#go-home");
   const clearQueryButton = document.querySelector<HTMLButtonElement>("#clear-query");
   const lexicalVariantButton = document.querySelector<HTMLButtonElement>("#variant-lexical");
@@ -1919,6 +1945,8 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     !dslConsoleScreen ||
     !closeDslConsoleButton ||
     !openDslConsoleButton ||
+    !docsSearchLink ||
+    !apiReferenceLink ||
     !homeButton ||
     !clearQueryButton ||
     !lexicalVariantButton ||
@@ -2071,11 +2099,14 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     prefixInput.checked = state.prefix;
     excludeAdvancedInput.checked = state.excludeAdvanced;
     clearQueryButton.disabled = sharedQuery.length === 0;
+    docsSearchLink.classList.toggle("nav-result-active", isSearchRoute(window.location.pathname) && currentView !== "console" && !window.location.pathname.startsWith("/docs/api/"));
+    apiReferenceLink.classList.toggle("nav-result-active", window.location.pathname.startsWith("/docs/api/"));
     lexicalVariantButton.classList.toggle("nav-result-active", state.variant === "lexical");
     sparseVariantButton.classList.toggle("nav-result-active", state.variant === "sparse");
     sparseHybridVariantButton.classList.toggle("nav-result-active", state.variant === "sparse-hybrid");
     vectorVariantButton.classList.toggle("nav-result-active", state.variant === "vector");
     vectorHybridVariantButton.classList.toggle("nav-result-active", state.variant === "vector-hybrid");
+    openDslConsoleButton.classList.toggle("nav-result-active", currentView === "console");
     lexicalControls.classList.toggle("hidden", !showsLexicalControls);
     variantCardLabel.textContent = searchVariantLabel(state.variant);
     variantCardTitle.textContent = variantInfo.title;
@@ -2192,6 +2223,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     const nextApi = params.get("api");
     const nextTag = params.get("tag");
     const nextVariant = params.get("variant");
+    const nextView = params.get("view");
 
     state = searchContext.replace({ ...initialState });
     submittedResult = null;
@@ -2216,16 +2248,16 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     if (state.query.trim()) {
       setSearchModeFromQuery(state.query);
       submittedResult = await searchContext.resultFor(state);
-      currentView = "results";
+      currentView = nextView === "console" ? "console" : "results";
     } else if (state.tag || state.api || state.section || state.significantTerm || state.wordCountFacet || state.excludeAdvanced) {
       submittedResult = await searchContext.resultFor(state);
-      currentView = "results";
+      currentView = nextView === "console" ? "console" : "results";
     } else {
       submittedResult = null;
       suggestionResult = null;
       activeDocId = "";
       activeChunkId = null;
-      currentView = "home";
+      currentView = nextView === "console" ? "console" : "home";
     }
     renderApp();
   };
@@ -2296,6 +2328,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   openDslConsoleButton.addEventListener("click", () => {
     currentView = "console";
+    window.history.pushState({ view: "console" }, "", buildSearchRouteHref("console"));
     renderApp();
     window.setTimeout(() => {
       dslQueryEditor.focus();
@@ -2304,6 +2337,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   closeDslConsoleButton.addEventListener("click", () => {
     currentView = submittedResult ? "results" : "home";
+    window.history.pushState({ view: currentView }, "", buildSearchRouteHref("search"));
     renderApp();
   }, { signal });
 
