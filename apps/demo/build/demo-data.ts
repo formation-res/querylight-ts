@@ -12,6 +12,7 @@ import {
   NgramTokenFilter,
   RankingAlgorithm,
   serializeDocumentIndex,
+  StoredSourceIndex,
   TextFieldIndex,
   bigramVector,
   type Document,
@@ -169,7 +170,8 @@ function toDocument(entry: DocEntry): Document {
       combined: [entry.title, entry.summary, entry.body, entry.tags.join(" "), entry.apis.join(" ")].join(" "),
       suggest: [entry.title, entry.tags.join(" "), entry.apis.join(" ")].join(" "),
       order: [String(entry.order)]
-    }
+    },
+    source: entry
   };
 }
 
@@ -186,7 +188,8 @@ function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
     wordCount: new NumericFieldIndex(),
     combined: new TextFieldIndex(undefined, undefined, ranking),
     suggest: new TextFieldIndex(edgeAnalyzer, edgeAnalyzer, ranking),
-    order: new TextFieldIndex(tagAnalyzer, tagAnalyzer)
+    order: new TextFieldIndex(tagAnalyzer, tagAnalyzer),
+    _source: new StoredSourceIndex()
   });
 }
 

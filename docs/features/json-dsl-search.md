@@ -17,36 +17,88 @@ The JSON DSL is modeled after the OpenSearch and Elasticsearch request format as
 
 ## Basic search request
 
+Raw request JSON:
+
+```json
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "match": {
+            "title": {
+              "query": "vector search",
+              "operator": "and"
+            }
+          }
+        }
+      ],
+      "filter": [
+        {
+          "term": {
+            "tags": "tutorial"
+          }
+        }
+      ]
+    }
+  },
+  "from": 0,
+  "size": 10,
+  "highlight": {
+    "fields": {
+      "title": {},
+      "body": {
+        "fragment_size": 120
+      }
+    }
+  },
+  "aggs": {
+    "tags": {
+      "terms": {
+        "field": "tags",
+        "size": 10
+      }
+    },
+    "prices": {
+      "stats": {
+        "field": "price"
+      }
+    }
+  }
+}
+```
+
+Send that request from TypeScript like this:
+
 ```ts
 import { searchJsonDsl } from "@tryformation/querylight-ts";
 
-const response = await searchJsonDsl({
-  index,
-  request: {
-    query: {
-      bool: {
-        must: [
-          { match: { title: { query: "vector search", operator: "and" } } }
-        ],
-        filter: [
-          { term: { tags: "tutorial" } }
-        ]
-      }
-    },
-    from: 0,
-    size: 10,
-    highlight: {
-      fields: {
-        title: {},
-        body: { fragment_size: 120 }
-      }
-    },
-    aggs: {
-      tags: { terms: { field: "tags", size: 10 } },
-      prices: { stats: { field: "price" } }
+const request = {
+  query: {
+    bool: {
+      must: [
+        { match: { title: { query: "vector search", operator: "and" } } }
+      ],
+      filter: [
+        { term: { tags: "tutorial" } }
+      ]
     }
+  },
+  from: 0,
+  size: 10,
+  highlight: {
+    fields: {
+      title: {},
+      body: { fragment_size: 120 }
+    }
+  },
+  aggs: {
+    tags: { terms: { field: "tags", size: 10 } },
+    prices: { stats: { field: "price" } }
   }
-});
+};
+
+const response = await searchJsonDsl({ index, request });
 ```
 
 The response shape follows the familiar OpenSearch layout:

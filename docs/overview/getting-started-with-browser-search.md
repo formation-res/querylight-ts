@@ -101,6 +101,47 @@ The beginner helper is just a convenience layer around the lower-level primitive
 
 This is the same idea done manually:
 
+Raw request JSON:
+
+```json
+{
+  "query": {
+    "rrf": {
+      "rank_constant": 20,
+      "weights": [3, 1],
+      "queries": [
+        {
+          "bool": {
+            "should": [
+              { "match_phrase": { "title": { "query": "range filters", "slop": 1, "boost": 8 } } },
+              { "match_phrase": { "description": { "query": "range filters", "slop": 2, "boost": 3 } } },
+              { "match_phrase": { "body": { "query": "range filters", "slop": 2, "boost": 3 } } },
+              { "match": { "title": { "query": "range filters", "operator": "and", "boost": 6 } } },
+              { "match": { "description": { "query": "range filters", "operator": "and", "boost": 2.5 } } },
+              { "match": { "body": { "query": "range filters", "operator": "and", "boost": 2 } } },
+              { "match": { "primarySuggest": { "query": "range filters", "operator": "or", "prefix_match": true, "boost": 4 } } },
+              { "match": { "secondarySuggest": { "query": "range filters", "operator": "or", "prefix_match": true, "boost": 2 } } }
+            ]
+          }
+        },
+        {
+          "match": {
+            "combined": {
+              "query": "range filters",
+              "operator": "or",
+              "boost": 1.5
+            }
+          }
+        }
+      ]
+    }
+  },
+  "size": 20
+}
+```
+
+Send the same shape from TypeScript like this:
+
 ```ts
 import {
   Analyzer,
@@ -148,42 +189,44 @@ for (const doc of documents) {
 }
 
 async function search(query: string) {
-  const response = await searchJsonDsl({
-    index,
-    request: {
-      query: {
-        rrf: {
-          rank_constant: 20,
-          weights: [3, 1],
-          queries: [
-            {
-              bool: {
-                should: [
-                  { match_phrase: { title: { query, slop: 1, boost: 8 } } },
-                  { match_phrase: { description: { query, slop: 2, boost: 3 } } },
-                  { match_phrase: { body: { query, slop: 2, boost: 3 } } },
-                  { match: { title: { query, operator: "and", boost: 6 } } },
-                  { match: { description: { query, operator: "and", boost: 2.5 } } },
-                  { match: { body: { query, operator: "and", boost: 2 } } },
-                  { match: { primarySuggest: { query, operator: "or", prefix_match: true, boost: 4 } } },
-                  { match: { secondarySuggest: { query, operator: "or", prefix_match: true, boost: 2 } } }
-                ]
-              }
-            },
-            {
-              match: {
-                combined: {
-                  query,
-                  operator: "or",
-                  boost: 1.5
-                }
+  const request = {
+    query: {
+      rrf: {
+        rank_constant: 20,
+        weights: [3, 1],
+        queries: [
+          {
+            bool: {
+              should: [
+                { match_phrase: { title: { query, slop: 1, boost: 8 } } },
+                { match_phrase: { description: { query, slop: 2, boost: 3 } } },
+                { match_phrase: { body: { query, slop: 2, boost: 3 } } },
+                { match: { title: { query, operator: "and", boost: 6 } } },
+                { match: { description: { query, operator: "and", boost: 2.5 } } },
+                { match: { body: { query, operator: "and", boost: 2 } } },
+                { match: { primarySuggest: { query, operator: "or", prefix_match: true, boost: 4 } } },
+                { match: { secondarySuggest: { query, operator: "or", prefix_match: true, boost: 2 } } }
+              ]
+            }
+          },
+          {
+            match: {
+              combined: {
+                query,
+                operator: "or",
+                boost: 1.5
               }
             }
-          ]
-        }
-      },
-      size: 20
-    }
+          }
+        ]
+      }
+    },
+    size: 20
+  };
+
+  const response = await searchJsonDsl({
+    index,
+    request
   });
 
   return response.hits.hits;

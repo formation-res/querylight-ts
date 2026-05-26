@@ -7,9 +7,9 @@ import {
   NgramTokenFilter,
   NumericFieldIndex,
   OP,
-  RangeQuery,
   RankingAlgorithm,
   searchJsonDsl,
+  StoredSourceIndex,
   type JsonDslQueryClause,
   type JsonDslSearchHit,
   type SignificantTermsBucket,
@@ -92,17 +92,12 @@ type SearchState = {
 type FacetKind = "api" | "section" | "tag" | "significant-term" | "word-count";
 
 type SearchResult = {
-  lexicalHits: Hits;
-  fuzzyHits: Hits;
-  sparseHits: Hits;
-  finalHits: Hits;
   visibleHits: Hits;
   totalHits: number;
   offset: number;
   pageSize: number;
   responseTimeMs: number;
   highlightsById: Map<string, Record<string, string[]>>;
-  selectedIds: Set<string>;
   tagFacets: Record<string, number>;
   sectionFacets: Record<string, number>;
   apiFacets: Record<string, number>;
@@ -275,7 +270,7 @@ const initialState: SearchState = {
 let state: SearchState = { ...initialState };
 let activeDocId = "";
 let activeChunkId: string | null = null;
-let currentView: "home" | "results" | "detail" | "vector" = "home";
+let currentView: "home" | "results" | "detail" = "home";
 let submittedResult: SearchResult | null = null;
 let suggestionResult: SearchResult | null = null;
 let semanticQuestionState: SemanticQuestionState = {
@@ -521,7 +516,8 @@ function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
     wordCount: new NumericFieldIndex(),
     combined: new TextFieldIndex(undefined, undefined, ranking),
     suggest: new TextFieldIndex(edgeAnalyzer, edgeAnalyzer, ranking),
-    order: new TextFieldIndex(tagAnalyzer, tagAnalyzer)
+    order: new TextFieldIndex(tagAnalyzer, tagAnalyzer),
+    _source: new StoredSourceIndex()
   });
 }
 
@@ -692,39 +688,6 @@ async function getSemanticQuestionResults(context: RuntimeContext, queryVector: 
   return [...byDocId.values()].slice(0, limit);
 }
 
-function rerankWithTitleBoost(context: RuntimeContext, rawQuery: string, hits: Hits): Hits {
-  const normalizedQuery = rawQuery.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return hits;
-  }
-
-  const queryTerms = normalizedQuery.split(/\s+/).filter(Boolean);
-  return hits
-    .map(([id, score]) => {
-      const title = context.byId.get(id)?.title.toLowerCase() ?? "";
-      let boost = 0;
-
-      if (title === normalizedQuery) {
-        boost += 12;
-      }
-      if (title.startsWith(normalizedQuery)) {
-        boost += 8;
-      }
-      if (title.includes(normalizedQuery)) {
-        boost += 6;
-      }
-      if (queryTerms.every((term) => title.includes(term))) {
-        boost += 4;
-      }
-      if (queryTerms.some((term) => title.startsWith(term))) {
-        boost += 2;
-      }
-
-      return [id, score + boost] as const;
-    })
-    .sort((a, b) => b[1] - a[1]);
-}
-
 function parseQueryInput(rawQuery: string): { queryText: string; quotedPhrase: string | null } {
   const quotedPhrase = rawQuery.match(/"([^"]+)"/)?.[1] ?? null;
   return {
@@ -788,20 +751,22 @@ function highlightsFromResponse(hits: JsonDslSearchHit[]): Map<string, Record<st
 
 let dslLogSequence = 0;
 
+function formatDslLogJson(value: unknown): string {
+  const formatted = JSON.stringify(value, null, 2);
+  return formatted ?? "null";
+}
+
 function logDslExchange(label: string, request: Record<string, unknown>, response: unknown): void {
   dslLogSequence += 1;
   const prefix = `[Querylight DSL ${dslLogSequence}] ${label}`;
   console.groupCollapsed(prefix);
-  console.log("request", request);
-  console.log("response", response);
+  console.log("request\n%s", formatDslLogJson(request));
+  console.log("response\n%s", formatDslLogJson(response));
   console.groupEnd();
 }
 
 async function executeDslSearch(index: DocumentIndex, request: Record<string, unknown>, label = "search") {
-  const fullRequest = {
-    size: Number.MAX_SAFE_INTEGER,
-    ...request
-  };
+  const fullRequest = { ...request };
   const response = await searchJsonDsl({
     index,
     request: fullRequest
@@ -829,7 +794,9 @@ function boolQuery(params: {
 async function searchForState(context: RuntimeContext, current: SearchState): Promise<SearchResult> {
   const startedAt = performance.now();
   const active = context.indexes[current.ranking];
-  const index = active.hydrated;
+  const bm25Index = context.indexes[RankingAlgorithm.BM25].hydrated;
+  let index = active.hydrated;
+  let resultLabel = "lexical-hybrid-results";
   const { queryText, quotedPhrase } = parseQueryInput(current.query);
   const trimmed = queryText.trim();
   const allowPrefixSuggestions = trimmed.length >= 2;
@@ -924,247 +891,117 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
     ? null
     : await embedSemanticQuery(trimmed, context.semantic.model.modelId);
 
-  const lexicalResponse = trimmed.length === 0
-    ? await executeDslSearch(index, { query: filterOnlyQuery }, "lexical-filter-only")
-    : await executeDslSearch(index, { query: hybridLexicalQuery }, "lexical-hybrid");
-  const bm25LexicalResponse = trimmed.length === 0
-    ? lexicalResponse
-    : current.ranking === RankingAlgorithm.BM25
-      ? lexicalResponse
-      : await executeDslSearch(context.indexes[RankingAlgorithm.BM25].hydrated, { query: hybridLexicalQuery }, "bm25-lexical-hybrid");
-  const fuzzyResponse = trimmed.length === 0
-    ? await executeDslSearch(index, { query: filterOnlyQuery }, "fuzzy-filter-only")
-    : await executeDslSearch(index, { query: fuzzyQuery }, "fuzzy");
-  const phraseResponse = trimmed.length === 0
-    ? lexicalResponse
-    : await executeDslSearch(index, { query: phraseQuery }, "phrase");
-  const matchResponse = trimmed.length === 0
-    ? lexicalResponse
-    : await executeDslSearch(index, { query: baseTextQuery }, "match");
-  const sparseResponse = sparseVector == null
-    ? lexicalResponse
-    : await executeDslSearch(index, {
-        query: boolQuery({
-          must: [{ sparse_vector: { sparseEmbedding: { vector: sparseVector, k: Number.MAX_SAFE_INTEGER } } }],
-          filter: filters,
-          must_not: mustNot
-        })
-      }, "sparse-vector");
-  const annResponse = semanticVector == null
-    ? lexicalResponse
-    : await executeDslSearch(index, {
-        query: boolQuery({
-          must: [{ knn: { semanticEmbedding: { vector: semanticVector, k: Number.MAX_SAFE_INTEGER } } }],
-          filter: filters,
-          must_not: mustNot
-        })
-      }, "dense-vector");
-
-  let resultResponse;
-  let lexicalHits: Hits;
+  const corpusSize = index.ids().size;
+  const exactDenseVectorQuery = semanticVector == null
+    ? filterOnlyQuery
+    : {
+        vector_rescore: {
+          field: "semanticEmbedding",
+          vector: semanticVector,
+          query: filterOnlyQuery,
+          window_size: corpusSize,
+          query_weight: 0,
+          rescore_query_weight: 1
+        }
+      } satisfies JsonDslQueryClause;
+  let resultQuery: JsonDslQueryClause = trimmed.length === 0 ? filterOnlyQuery : hybridLexicalQuery;
 
   switch (current.variant) {
     case "vector-hybrid":
-      lexicalHits = hitsFromResponse(bm25LexicalResponse.hits.hits);
-      resultResponse = trimmed.length === 0
-        ? lexicalResponse
-        : await executeDslSearch(index, {
-            query: {
-              rrf: {
-                rank_constant: 20,
-                queries: [
-                  hybridLexicalQuery,
-                  boolQuery({
-                    must: [{ knn: { semanticEmbedding: { vector: semanticVector!, k: Number.MAX_SAFE_INTEGER } } }],
-                    filter: filters,
-                    must_not: mustNot
-                  })
-                ]
-              }
-            },
-            highlight: {
-              fields: {
-                title: {},
-                tagline: {},
-                body: {}
-              }
-            },
-            aggs: {
-              tags: { terms: { field: "tags", size: 12 } },
-              sections: { terms: { field: "section", size: 8 } },
-              apis: { terms: { field: "api", size: 10 } },
-              wordCountStats: { stats: { field: "wordCount" } },
-              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
-              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
-              significantTerms: { significant_terms: { field: "body", size: 20 } }
-            }
-          }, "vector-hybrid-results");
+      index = bm25Index;
+      resultLabel = "vector-hybrid-results";
+      resultQuery = trimmed.length === 0 ? filterOnlyQuery : {
+        rrf: {
+          rank_constant: 20,
+          queries: [
+            hybridLexicalQuery,
+            exactDenseVectorQuery
+          ]
+        }
+      };
       break;
     case "vector":
-      lexicalHits = [];
-      resultResponse = semanticVector == null
-        ? lexicalResponse
-        : await executeDslSearch(index, {
-            query: boolQuery({
-              must: [{ knn: { semanticEmbedding: { vector: semanticVector, k: Number.MAX_SAFE_INTEGER } } }],
-              filter: filters,
-              must_not: mustNot
-            }),
-            aggs: {
-              tags: { terms: { field: "tags", size: 12 } },
-              sections: { terms: { field: "section", size: 8 } },
-              apis: { terms: { field: "api", size: 10 } },
-              wordCountStats: { stats: { field: "wordCount" } },
-              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
-              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
-              significantTerms: { significant_terms: { field: "body", size: 20 } }
-            }
-          }, "vector-results");
+      resultLabel = "vector-results";
+      resultQuery = exactDenseVectorQuery;
       break;
     case "sparse-hybrid":
-      lexicalHits = hitsFromResponse(bm25LexicalResponse.hits.hits);
-      resultResponse = sparseVector == null
-        ? lexicalResponse
-        : await executeDslSearch(index, {
-            query: {
-              rrf: {
-                rank_constant: 20,
-                queries: [
-                  hybridLexicalQuery,
-                  boolQuery({
-                    must: [{ sparse_vector: { sparseEmbedding: { vector: sparseVector, k: Number.MAX_SAFE_INTEGER } } }],
-                    filter: filters,
-                    must_not: mustNot
-                  })
-                ]
-              }
-            },
-            highlight: {
-              fields: {
-                title: {},
-                tagline: {},
-                body: {}
-              }
-            },
-            aggs: {
-              tags: { terms: { field: "tags", size: 12 } },
-              sections: { terms: { field: "section", size: 8 } },
-              apis: { terms: { field: "api", size: 10 } },
-              wordCountStats: { stats: { field: "wordCount" } },
-              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
-              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
-              significantTerms: { significant_terms: { field: "body", size: 20 } }
-            }
-          }, "sparse-hybrid-results");
-      break;
-    case "sparse":
-      lexicalHits = [];
-      resultResponse = sparseVector == null
-        ? lexicalResponse
-        : await executeDslSearch(index, {
-            query: boolQuery({
-              must: [{ sparse_vector: { sparseEmbedding: { vector: sparseVector, k: Number.MAX_SAFE_INTEGER } } }],
+      index = bm25Index;
+      resultLabel = "sparse-hybrid-results";
+      resultQuery = {
+        rrf: {
+          rank_constant: 20,
+          queries: [
+            hybridLexicalQuery,
+            boolQuery({
+              must: [{ sparse_vector: { sparseEmbedding: { vector: sparseVector!, k: corpusSize } } }],
               filter: filters,
               must_not: mustNot
-            }),
-            aggs: {
-              tags: { terms: { field: "tags", size: 12 } },
-              sections: { terms: { field: "section", size: 8 } },
-              apis: { terms: { field: "api", size: 10 } },
-              wordCountStats: { stats: { field: "wordCount" } },
-              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
-              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
-              significantTerms: { significant_terms: { field: "body", size: 20 } }
-            }
-          }, "sparse-results");
+            })
+          ]
+        }
+      };
+      break;
+    case "sparse":
+      resultLabel = "sparse-results";
+      resultQuery = boolQuery({
+        must: [{ sparse_vector: { sparseEmbedding: { vector: sparseVector!, k: corpusSize } } }],
+        filter: filters,
+        must_not: mustNot
+      });
       break;
     case "lexical":
     default: {
       switch (current.mode) {
         case "phrase":
-          lexicalHits = hitsFromResponse(phraseResponse.hits.hits);
-          resultResponse = await executeDslSearch(index, {
-            query: phraseQuery,
-            highlight: { fields: { title: {}, tagline: {}, body: {} } },
-            aggs: {
-              tags: { terms: { field: "tags", size: 12 } },
-              sections: { terms: { field: "section", size: 8 } },
-              apis: { terms: { field: "api", size: 10 } },
-              wordCountStats: { stats: { field: "wordCount" } },
-              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
-              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
-              significantTerms: { significant_terms: { field: "body", size: 20 } }
-            }
-          }, "phrase-results");
+          resultLabel = "phrase-results";
+          resultQuery = phraseQuery;
           break;
         case "fuzzy":
-          lexicalHits = trimmed.length === 0 ? hitsFromResponse(lexicalResponse.hits.hits) : [];
-          resultResponse = await executeDslSearch(index, {
-            query: trimmed.length === 0 ? filterOnlyQuery : fuzzyQuery,
-            aggs: {
-              tags: { terms: { field: "tags", size: 12 } },
-              sections: { terms: { field: "section", size: 8 } },
-              apis: { terms: { field: "api", size: 10 } },
-              wordCountStats: { stats: { field: "wordCount" } },
-              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
-              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
-              significantTerms: { significant_terms: { field: "body", size: 20 } }
-            }
-          }, "fuzzy-results");
+          resultLabel = "fuzzy-results";
+          resultQuery = trimmed.length === 0 ? filterOnlyQuery : fuzzyQuery;
           break;
         case "match":
-          lexicalHits = hitsFromResponse(matchResponse.hits.hits);
-          resultResponse = await executeDslSearch(index, {
-            query: baseTextQuery,
-            highlight: { fields: { title: {}, tagline: {}, body: {} } },
-            aggs: {
-              tags: { terms: { field: "tags", size: 12 } },
-              sections: { terms: { field: "section", size: 8 } },
-              apis: { terms: { field: "api", size: 10 } },
-              wordCountStats: { stats: { field: "wordCount" } },
-              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
-              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
-              significantTerms: { significant_terms: { field: "body", size: 20 } }
-            }
-          }, "match-results");
+          resultLabel = "match-results";
+          resultQuery = baseTextQuery;
           break;
         case "hybrid":
         default:
-          lexicalHits = hitsFromResponse(lexicalResponse.hits.hits);
-          resultResponse = await executeDslSearch(index, {
-            query: trimmed.length === 0 ? filterOnlyQuery : {
-              rrf: {
-                rank_constant: 20,
-                weights: [3, 1],
-                queries: [hybridLexicalQuery, fuzzyQuery]
-              }
-            },
-            highlight: { fields: { title: {}, tagline: {}, body: {} } },
-            aggs: {
-              tags: { terms: { field: "tags", size: 12 } },
-              sections: { terms: { field: "section", size: 8 } },
-              apis: { terms: { field: "api", size: 10 } },
-              wordCountStats: { stats: { field: "wordCount" } },
-              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
-              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
-              significantTerms: { significant_terms: { field: "body", size: 20 } }
+          resultLabel = "lexical-hybrid-results";
+          resultQuery = trimmed.length === 0 ? filterOnlyQuery : {
+            rrf: {
+              rank_constant: 20,
+              weights: [3, 1],
+              queries: [hybridLexicalQuery, fuzzyQuery]
             }
-          }, "lexical-hybrid-results");
+          };
           break;
       }
       break;
     }
   }
 
-  const fullFinalHits = rerankWithTitleBoost(context, trimmed, hitsFromResponse(resultResponse.hits.hits));
-  const normalizedOffset = Math.max(0, Math.min(current.offset, Math.max(fullFinalHits.length - 1, 0)));
-  const visibleHits = fullFinalHits.slice(normalizedOffset, normalizedOffset + SEARCH_RESULTS_PAGE_SIZE);
+  const resultResponse = await executeDslSearch(index, {
+    from: current.offset,
+    size: SEARCH_RESULTS_PAGE_SIZE,
+    query: resultQuery,
+    highlight: { fields: { title: {}, tagline: {}, body: {} } },
+    aggs: {
+      tags: { terms: { field: "tags", size: 12 } },
+      sections: { terms: { field: "section", size: 8 } },
+      apis: { terms: { field: "api", size: 10 } },
+      wordCountStats: { stats: { field: "wordCount" } },
+      wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
+      wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
+      significantTerms: { significant_terms: { field: "body", size: 20 } }
+    }
+  }, resultLabel);
+  const normalizedOffset = Math.max(0, Math.min(current.offset, Math.max(resultResponse.hits.total.value - 1, 0)));
+  const visibleHits = hitsFromResponse(resultResponse.hits.hits);
   const visibleIds = new Set(visibleHits.map(([id]) => id));
   const highlightsById = new Map(
     [...highlightsFromResponse(resultResponse.hits.hits).entries()]
       .filter(([id]) => visibleIds.has(id))
   );
-  const selectedIds = new Set(fullFinalHits.map(([id]) => id));
   const tagFacets = Object.fromEntries(((resultResponse.aggregations?.tags?.buckets as Array<{ key: string; doc_count: number }> | undefined) ?? []).map((bucket) => [bucket.key, bucket.doc_count]));
   const sectionFacets = Object.fromEntries(((resultResponse.aggregations?.sections?.buckets as Array<{ key: string; doc_count: number }> | undefined) ?? []).map((bucket) => [bucket.key, bucket.doc_count]));
   const apiFacets = Object.fromEntries(((resultResponse.aggregations?.apis?.buckets as Array<{ key: string; doc_count: number }> | undefined) ?? []).map((bucket) => [bucket.key, bucket.doc_count]));
@@ -1187,22 +1024,15 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
     }))
     .filter((bucket) => !/^\d+$/.test(bucket.key) && bucket.score > 1.05 && bucket.subsetDocCount > 1)
     .slice(0, 10));
-  const fuzzyHits = hitsFromResponse(fuzzyResponse.hits.hits);
-  const sparseHits = hitsFromResponse(sparseResponse.hits.hits);
   const responseTimeMs = Math.max(1, Math.round(performance.now() - startedAt));
 
   return {
-    lexicalHits,
-    fuzzyHits,
-    sparseHits,
-    finalHits: fullFinalHits,
     visibleHits,
-    totalHits: fullFinalHits.length,
+    totalHits: resultResponse.hits.total.value,
     offset: normalizedOffset,
     pageSize: SEARCH_RESULTS_PAGE_SIZE,
     responseTimeMs,
     highlightsById,
-    selectedIds,
     tagFacets,
     sectionFacets,
     apiFacets,
@@ -1435,15 +1265,6 @@ function syncSemanticBusyOverlay(): void {
 }
 
 function updateSummary(context: RuntimeContext, summaryNode: HTMLParagraphElement, current: SearchResult | null): void {
-  if (state.variant === "vector") {
-    summaryNode.textContent =
-      semanticQuestionState.status === "ready"
-        ? `${semanticQuestionState.results.length} dense matches · semantic chunks · ${context.semantic.backend === "webgpu" ? "WebGPU" : "CPU fallback"}`
-        : semanticQuestionState.status === "error"
-          ? "Vector search unavailable"
-          : "Vector search";
-    return;
-  }
   if (!current) {
     summaryNode.textContent = "No active search";
     return;
@@ -1460,12 +1281,7 @@ function updateSummary(context: RuntimeContext, summaryNode: HTMLParagraphElemen
 }
 
 function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNode: HTMLParagraphElement, current: SearchResult | null): void {
-  const hasMatches = Boolean(current?.finalHits.length);
-  const enabledIds = current?.finalHits.length ? current.selectedIds : new Set(context.docs.map((doc) => doc.id));
-
-  tocStatusNode.textContent = hasMatches
-    ? `${enabledIds.size} of ${context.docs.length} pages active`
-    : `${context.docs.length} pages available`;
+  tocStatusNode.textContent = `${context.docs.length} pages available`;
 
   createNavSections(context).forEach((section) => {
     const sectionShell = tocNode.querySelector<HTMLElement>(`[data-section-shell="${CSS.escape(section.name)}"]`);
@@ -1474,20 +1290,18 @@ function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNo
     if (!sectionShell || !sectionNode || !countNode) {
       return;
     }
-    const activeCount = section.docs.filter((doc) => enabledIds.has(doc.id)).length;
-    sectionShell.dataset.hasActive = activeCount > 0 ? "true" : "false";
+    const activeCount = section.docs.length;
+    sectionShell.dataset.hasActive = "true";
     countNode.textContent = `${activeCount}/${section.docs.length}`;
 
     sectionNode.innerHTML = section.docs
       .map((doc) => {
         const isActive = doc.id === activeDocId;
-        const isEnabled = enabledIds.has(doc.id) || isActive;
         const meta = [doc.level, ...doc.tags.slice(0, 2)].join(" · ");
         return `
           <button
-            class="toc-link ${isActive ? "toc-link-active" : ""} ${!isEnabled ? "toc-link-disabled" : ""}"
+            class="toc-link ${isActive ? "toc-link-active" : ""}"
             data-doc="${escapeHtml(doc.id)}"
-            ${isEnabled ? "" : "disabled"}
           >
             <span class="min-w-0 toc-link-body">
               <span class="toc-link-title">${escapeHtml(doc.title)}</span>
@@ -1501,14 +1315,14 @@ function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNo
 }
 
 function renderSuggestions(context: RuntimeContext, suggestionsNode: HTMLDivElement, current: SearchResult | null): void {
-  if (currentView !== "home" || state.variant === "vector" || !state.query.trim() || !current || current.finalHits.length === 0) {
+  if (currentView !== "home" || state.variant === "vector" || !state.query.trim() || !current || current.visibleHits.length === 0) {
     suggestionsNode.classList.add("hidden");
     suggestionsNode.innerHTML = "";
     return;
   }
 
   suggestionsNode.classList.remove("hidden");
-  suggestionsNode.innerHTML = current.finalHits
+  suggestionsNode.innerHTML = current.visibleHits
     .slice(0, 5)
     .map(([id, score], index) => {
       const doc = context.byId.get(id);
@@ -1949,52 +1763,7 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
   }
 }
 
-function renderVectorResultsPage(context: RuntimeContext, centerNode: HTMLDivElement): void {
-  const statusMessage =
-    semanticQuestionState.status === "loading-model"
-      ? "Loading the embedding model for the first semantic query."
-      : semanticQuestionState.status === "searching"
-        ? "Matching your question against semantic chunks."
-        : semanticQuestionState.status === "error"
-          ? semanticQuestionState.error ?? "Semantic search failed."
-        : semanticQuestionState.status === "ready"
-            ? `${semanticQuestionState.results.length} semantic matches · ${context.semantic.backend === "webgpu" ? "WebGPU" : "CPU fallback"}`
-            : `Search with dense vectors against documentation chunks. ${context.semantic.backend === "webgpu" ? "WebGPU acceleration is active." : "Using CPU fallback."}`;
-
-  centerNode.innerHTML = `
-    <article class="surface reader-page px-6 py-8 sm:px-8 sm:py-10">
-      <header>
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Vector Search</p>
-        <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${escapeHtml(semanticQuestionState.query || "Dense semantic results")}</h1>
-        <p class="mt-3 text-sm text-stone-600">${escapeHtml(statusMessage)}</p>
-      </header>
-      <div class="mt-8 grid gap-3">
-        ${
-          semanticQuestionState.results.length === 0
-            ? `<div class="rounded-3xl border border-dashed border-stone-900/10 bg-stone-50/80 px-5 py-4 text-sm text-stone-600">No semantic matches found. Try a broader question.</div>`
-            : semanticQuestionState.results
-                .map(({ chunk, doc, score }, index) => `
-                  <button class="nav-result" data-doc="${escapeHtml(doc.id)}" data-chunk-id="${escapeHtml(chunk.chunkId)}" data-open-doc="true">
-                    <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
-                      <span>${index + 1}. ${escapeHtml(doc.section)} · ${escapeHtml(formatHeadingPath(chunk.headingPath))}</span>
-                      <span>${score.toFixed(2)}</span>
-                    </div>
-                    <h2 class="result-title">${escapeHtml(doc.title)}</h2>
-                    <p class="result-summary">${escapeHtml(chunk.text)}</p>
-                  </button>
-                `)
-                .join("")
-        }
-      </div>
-    </article>
-  `;
-}
-
 function renderCenter(context: RuntimeContext, centerNode: HTMLDivElement, current: SearchResult | null): void {
-  if (currentView === "vector") {
-    renderVectorResultsPage(context, centerNode);
-    return;
-  }
   if (currentView === "results" && current) {
     renderResultsPage(context, centerNode, current);
     return;
@@ -2028,7 +1797,6 @@ function normalizeResultOffset(result: SearchResult): number {
 
 async function wireApp(context: RuntimeContext): Promise<() => void> {
   const searchContext = new SearchContextController(context, initialState);
-  await searchContext.resultFor({ ...initialState });
   const queryForm = document.querySelector<HTMLFormElement>("#query-form");
   const queryInput = document.querySelector<HTMLInputElement>("#query");
   const homeButton = document.querySelector<HTMLButtonElement>("#go-home");
@@ -2125,13 +1893,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   const syncSharedQuery = (query: string): void => {
     state = searchContext.patch({ query, offset: 0 });
-    semanticQuestionState = {
-      ...semanticQuestionState,
-      query,
-      status: query.trim() ? semanticQuestionState.status : "idle",
-      error: null,
-      ...(query.trim() ? {} : { results: [] })
-    };
   };
 
   const goHome = () => {
@@ -2237,59 +1998,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     currentView = "detail";
   };
 
-  const runSemanticSearch = async () => {
-    const trimmed = semanticQuestionState.query.trim();
-    if (!trimmed) {
-      semanticQuestionState = {
-        query: "",
-        status: "idle",
-        results: [],
-        error: null
-      };
-      currentView = "home";
-      renderApp();
-      return;
-    }
-
-    const firstLoad = browserEmbeddingExtractorPromise === null;
-    semanticQuestionState = {
-      ...semanticQuestionState,
-      status: firstLoad ? "loading-model" : "searching",
-      results: [],
-      error: null
-    };
-    renderApp();
-
-    try {
-      const embedding = await embedSemanticQuery(trimmed, context.semantic.model.modelId);
-      semanticQuestionState = {
-        ...semanticQuestionState,
-        status: "searching"
-      };
-      renderApp();
-
-      const results = await getSemanticQuestionResults(context, embedding);
-      semanticQuestionState = {
-        ...semanticQuestionState,
-        status: "ready",
-        results,
-        error: null
-      };
-      currentView = "vector";
-    } catch (error: unknown) {
-      semanticQuestionState = {
-        ...semanticQuestionState,
-        status: "error",
-        results: [],
-        error: error instanceof Error ? error.message : String(error)
-      };
-      currentView = "vector";
-    }
-
-    clearDetailHash();
-    renderApp();
-  };
-
   const runSubmittedSearch = async (nextView: "results" | "detail" = "results") => {
     suggestionResult = null;
     submittedResult = await searchContext.resultFor(state);
@@ -2298,8 +2006,8 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       state = searchContext.patch({ offset: normalizedOffset });
       submittedResult = await searchContext.resultFor(state);
     }
-    if (submittedResult.finalHits.length > 0 && !submittedResult.selectedIds.has(activeDocId)) {
-      activeDocId = submittedResult.finalHits[0]?.[0] ?? "";
+    if (submittedResult.visibleHits.length > 0 && !submittedResult.visibleHits.some(([id]) => id === activeDocId)) {
+      activeDocId = submittedResult.visibleHits[0]?.[0] ?? "";
     }
     currentView = nextView;
     if (nextView !== "detail") {
@@ -2342,10 +2050,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     });
     syncSharedQuery(nextQuery);
 
-    if (state.query.trim() && state.variant === "vector") {
-      await runSemanticSearch();
-      return;
-    }
     if (state.query.trim()) {
       setSearchModeFromQuery(state.query);
       submittedResult = await searchContext.resultFor(state);
@@ -2389,9 +2093,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       activeChunkId = null;
       clearDetailHash();
     }
-    if (!semanticQuestionState.query.trim()) {
-      semanticQuestionState = { query: "", status: "idle", results: [], error: null };
-    }
   };
 
   queryInput.addEventListener("input", () => {
@@ -2407,21 +2108,12 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   queryInput.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       hideSuggestions();
-      return;
-    }
-    if (event.key === "Enter" && state.variant === "vector") {
-      event.preventDefault();
-      void runSemanticSearch();
     }
   }, { signal });
 
   queryForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (state.variant === "vector") {
-      void runSemanticSearch();
-    } else {
-      void runSubmittedSearch("results");
-    }
+    void runSubmittedSearch("results");
   }, { signal });
 
   clearQueryButton.addEventListener("click", () => {
@@ -2468,10 +2160,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       renderApp();
       return;
     }
-    if (state.variant === "vector") {
-      await runSemanticSearch();
-      return;
-    }
     await runSubmittedSearch("results");
   };
 
@@ -2488,7 +2176,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       return;
     }
     state = searchContext.patch({ variant, offset: 0 });
-    submittedResult = variant === "vector" ? null : submittedResult;
     suggestionResult = null;
     activeChunkId = null;
     if (!state.query.trim()) {
@@ -2557,9 +2244,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
     const backToResults = target.closest<HTMLElement>("[data-action='back-to-results']");
     if (backToResults) {
-      if (state.variant === "vector" && semanticQuestionState.results.length > 0) {
-        currentView = "vector";
-      } else if (submittedResult) {
+      if (submittedResult) {
         currentView = "results";
       }
       activeChunkId = null;

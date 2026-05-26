@@ -109,7 +109,6 @@ export interface JsonDslResponse {
 /** Params object for {@link parseJsonDslQuery}. */
 export interface ParseJsonDslQueryParams {
   query: JsonDslQueryClause;
-  dsl?: JsonDslQueryClause | undefined;
 }
 
 /** Params object for {@link searchJsonDsl}. */
@@ -556,8 +555,8 @@ function parseTopLevelQuery(request: JsonDslRequest): Query | undefined {
 }
 
 /** Parses one JSON DSL query clause into the equivalent Querylight query object. */
-export function parseJsonDslQuery({ query, dsl }: ParseJsonDslQueryParams): Query {
-  const body = assertRecord(query ?? dsl, "query");
+export function parseJsonDslQuery({ query }: ParseJsonDslQueryParams): Query {
+  const body = assertRecord(query, "query");
   const [kind, rawConfig] = singleFieldEntry(body, "query");
 
   switch (kind) {
@@ -859,7 +858,7 @@ export async function searchJsonDsl({ index, request, indexName = "querylight" }
   const documentIndex = rootDocumentIndex(index);
   const query = parseTopLevelQuery(request);
   const from = request.from ?? 0;
-  const size = request.size ?? 10;
+  const size = request.size ?? 20;
   const allHits = request.simple_text_search
     ? (() => {
         if (!isSimpleTextSearchIndex(index)) {
