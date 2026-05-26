@@ -2253,6 +2253,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       submittedResult = await searchContext.resultFor(state);
       currentView = nextView === "console" ? "console" : "results";
     } else {
+      await searchContext.resultFor(state);
       submittedResult = null;
       suggestionResult = null;
       activeDocId = "";

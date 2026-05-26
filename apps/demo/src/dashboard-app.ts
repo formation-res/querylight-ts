@@ -1,6 +1,7 @@
 import * as echarts from "echarts";
 import {
   Analyzer,
+  DateFieldIndex,
   DocumentIndex,
   GeoFieldIndex,
   KeywordTokenizer,

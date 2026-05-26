@@ -42,6 +42,14 @@ test("docs search boots from the gzipped demo payload", async ({ page }) => {
   await expect(page.locator("#query")).toBeVisible();
 });
 
+test("home route eventually replaces the facet loading placeholder", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.locator("#facet-sections")).not.toContainText("Loading facets…");
+  await expect(page.locator("#facet-sections")).toContainText("Sections");
+  await expect(page.locator("#summary")).toHaveText("No active search");
+});
+
 test("home view defaults to ask mode with a shared query input", async ({ page }) => {
   await page.goto("/");
 
@@ -94,6 +102,24 @@ test("dashboard header links to the console screen", async ({ page }) => {
   await expect(page).toHaveURL(/\/\?view=console$/);
   await expect(page.locator("#dsl-console-screen")).toBeVisible();
   await expect(page.locator("#open-dsl-console")).toHaveClass(/nav-result-active/);
+});
+
+test("dashboard lazy sections build after scrolling into view", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => {
+    pageErrors.push(error.message);
+  });
+
+  await page.goto("/dashboard/");
+  await page.locator("#earthquake-section").scrollIntoViewIfNeeded();
+
+  await expect(page.locator("#earthquake-section [data-lazy-status]")).toContainText("Index built lazily", { timeout: 10_000 });
+  await expect(page.locator("#weather-section [data-lazy-status]")).toHaveText("Index not built yet. Scroll-triggered lazy init pending.");
+
+  await page.locator("#weather-section").scrollIntoViewIfNeeded();
+  await expect(page.locator("#weather-section [data-lazy-status]")).toContainText("Index built lazily", { timeout: 10_000 });
+
+  expect(pageErrors).toEqual([]);
 });
 
 test("dev console preserves manual edits, resets to generated query, and runs requests", async ({ page }) => {
