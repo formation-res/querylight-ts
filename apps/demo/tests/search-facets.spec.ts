@@ -69,6 +69,53 @@ test("home view defaults to ask mode with a shared query input", async ({ page }
   await expect(queryInput).toHaveValue("");
 });
 
+test("dev console button opens the console and regular search controls sync the generated request", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator("#query").fill("terms");
+  await page.locator("#operation").selectOption("AND");
+  await expect(page.locator("#dsl-console-screen")).toBeHidden();
+  await page.locator("#open-dsl-console").click();
+  await expect(page.locator("#dsl-console-screen")).toBeVisible();
+  await expect(page.locator("#reader-layout")).toBeHidden();
+  await expect(page.locator("#dsl-query-editor")).toBeFocused();
+
+  await expect.poll(async () => await page.locator("#dsl-query-editor").inputValue()).toContain("\"query\": \"terms\"");
+  await expect.poll(async () => await page.locator("#dsl-query-editor").inputValue()).toContain("\"operator\": \"and\"");
+});
+
+test("dev console preserves manual edits, resets to generated query, and runs requests", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#open-dsl-console").click();
+
+  const editor = page.locator("#dsl-query-editor");
+  const response = page.locator("#dsl-response-viewer");
+  const reset = page.locator("#dsl-reset-query");
+  const run = page.locator("#dsl-run-query");
+
+  await expect.poll(async () => await editor.inputValue()).toContain("\"match_all\"");
+
+  await editor.fill("{\n  \"size\": 1,\n  \"query\": {\n    \"match\": {\n      \"title\": {\n        \"query\": \"terms\",\n        \"operator\": \"or\",\n        \"boost\": 1\n      }\n    }\n  }\n}");
+  await page.locator("#query").fill("vector");
+  await expect(editor).toHaveValue(/"query": "terms"/);
+
+  await reset.click();
+  await expect.poll(async () => await editor.inputValue()).toContain("\"query\": \"vector\"");
+
+  await editor.fill("{\n  \"size\": 1,\n  \"query\": {\n    \"match\": {\n      \"title\": {\n        \"query\": \"terms\",\n        \"operator\": \"or\",\n        \"boost\": 1\n      }\n    }\n  }\n}");
+  await run.click();
+
+  await expect(page.locator("#dsl-console-status")).toHaveText("Request executed. Reset Query to resync.");
+  await expect(response).toHaveValue(/"hits"/);
+  await expect(page.locator("#dsl-console-screen")).toBeVisible();
+  await expect(response).toHaveValue(/"Terms Aggregation"/);
+
+  await editor.fill("{\n  \"size\": 1,\n  \"query\": {\n    \"match\": {\n      \"title\": {\n        \"query\": \"vector\",\n        \"operator\": \"or\",\n        \"boost\": 1\n      }\n    }\n  }\n}");
+  await editor.press(process.platform === "darwin" ? "Meta+Enter" : "Control+Enter");
+  await expect(page.locator("#dsl-console-status")).toHaveText("Request executed. Reset Query to resync.");
+  await expect(response).toHaveValue(/"hits"/);
+});
+
 test("query-param boot keeps lexical search active", async ({ page }) => {
   await page.goto("/?q=terms");
 

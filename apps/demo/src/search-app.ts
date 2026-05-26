@@ -97,6 +97,8 @@ type SearchResult = {
   offset: number;
   pageSize: number;
   responseTimeMs: number;
+  dslRequest: Record<string, unknown>;
+  dslResponse: unknown;
   highlightsById: Map<string, Record<string, string[]>>;
   tagFacets: Record<string, number>;
   sectionFacets: Record<string, number>;
@@ -169,6 +171,14 @@ type SparseRuntime = {
   index: SparseVectorFieldIndex;
   query: SparseQueryWeights;
 };
+
+type SearchExecutionPlan = {
+  index: DocumentIndex;
+  request: Record<string, unknown>;
+  label: string;
+};
+
+type SearchDslResponse = Awaited<ReturnType<typeof searchJsonDsl>>;
 
 type SemanticQuestionState = {
   query: string;
@@ -270,7 +280,7 @@ const initialState: SearchState = {
 let state: SearchState = { ...initialState };
 let activeDocId = "";
 let activeChunkId: string | null = null;
-let currentView: "home" | "results" | "detail" = "home";
+let currentView: "home" | "results" | "detail" | "console" = "home";
 let submittedResult: SearchResult | null = null;
 let suggestionResult: SearchResult | null = null;
 let semanticQuestionState: SemanticQuestionState = {
@@ -791,8 +801,7 @@ function boolQuery(params: {
   };
 }
 
-async function searchForState(context: RuntimeContext, current: SearchState): Promise<SearchResult> {
-  const startedAt = performance.now();
+async function buildSearchExecutionPlan(context: RuntimeContext, current: SearchState): Promise<SearchExecutionPlan> {
   const active = context.indexes[current.ranking];
   const bm25Index = context.indexes[RankingAlgorithm.BM25].hydrated;
   let index = active.hydrated;
@@ -975,12 +984,15 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
             }
           };
           break;
-      }
+        }
       break;
     }
   }
 
-  const resultResponse = await executeDslSearch(index, {
+  return {
+    index,
+    label: resultLabel,
+    request: {
     from: current.offset,
     size: SEARCH_RESULTS_PAGE_SIZE,
     query: resultQuery,
@@ -994,8 +1006,19 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
       wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
       significantTerms: { significant_terms: { field: "body", size: 20 } }
     }
-  }, resultLabel);
-  const normalizedOffset = Math.max(0, Math.min(current.offset, Math.max(resultResponse.hits.total.value - 1, 0)));
+    }
+  };
+}
+
+function searchResultFromDslResponse(
+  current: SearchState,
+  request: Record<string, unknown>,
+  resultResponse: SearchDslResponse,
+  startedAt: number
+): SearchResult {
+  const requestOffset = typeof request.from === "number" ? request.from : current.offset;
+  const requestPageSize = typeof request.size === "number" ? request.size : SEARCH_RESULTS_PAGE_SIZE;
+  const normalizedOffset = Math.max(0, Math.min(requestOffset, Math.max(resultResponse.hits.total.value - 1, 0)));
   const visibleHits = hitsFromResponse(resultResponse.hits.hits);
   const visibleIds = new Set(visibleHits.map(([id]) => id));
   const highlightsById = new Map(
@@ -1030,8 +1053,10 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
     visibleHits,
     totalHits: resultResponse.hits.total.value,
     offset: normalizedOffset,
-    pageSize: SEARCH_RESULTS_PAGE_SIZE,
+    pageSize: requestPageSize,
     responseTimeMs,
+    dslRequest: request,
+    dslResponse: resultResponse,
     highlightsById,
     tagFacets,
     sectionFacets,
@@ -1043,12 +1068,20 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
   };
 }
 
+async function searchForState(context: RuntimeContext, current: SearchState): Promise<SearchResult> {
+  const startedAt = performance.now();
+  const plan = await buildSearchExecutionPlan(context, current);
+  const resultResponse = await executeDslSearch(plan.index, plan.request, plan.label);
+  return searchResultFromDslResponse(current, plan.request, resultResponse, startedAt);
+}
+
 function createShell(context: RuntimeContext): void {
   const navSections = createNavSections(context);
   const buildTimeLabel = formatRelativeBuildTime(BUILD_TIMESTAMP);
   const currentPath = window.location.pathname;
   const docsSearchClass = currentPath === "/" ? " nav-result-active" : "";
   const apiReferenceClass = currentPath.startsWith("/docs/api/") ? " nav-result-active" : "";
+  const consoleClass = currentView === "console" ? " nav-result-active" : "";
 
   requireApp().innerHTML = `
     <main id="demo-shell" class="demo-shell mx-auto w-[min(1560px,calc(100vw-24px))] py-6 lg:py-8" data-busy="false">
@@ -1060,6 +1093,7 @@ function createShell(context: RuntimeContext): void {
             <a href="/" class="chip-button${docsSearchClass}">Docs Search</a>
             <a href="/docs/api/" class="chip-button${apiReferenceClass}">API Reference</a>
             <a href="/dashboard/" class="chip-button">Dashboard</a>
+            <button id="open-dsl-console" type="button" class="chip-button${consoleClass}">Console</button>
           </div>
         </div>
         <div class="mt-5 inline-flex flex-wrap rounded-[1.75rem] border border-stone-900/10 bg-white/75 p-1">
@@ -1078,6 +1112,46 @@ function createShell(context: RuntimeContext): void {
           </div>
         </form>
         <div id="active-filters-inline" class="mt-4 flex flex-wrap gap-2"></div>
+      </section>
+
+      <section id="dsl-console-screen" class="mt-5 hidden">
+        <section id="dsl-console" class="dsl-console">
+          <div class="dsl-console-header">
+            <div>
+              <p class="dsl-console-kicker">Dev Console</p>
+              <h2 class="dsl-console-title">Current Query and Response</h2>
+            </div>
+            <div class="flex items-center gap-3">
+              <button id="close-dsl-console" type="button" class="chip-button">Back</button>
+              <button id="dsl-run-query" type="button" class="control-button">Run</button>
+              <button id="dsl-reset-query" type="button" class="chip-button" disabled>Reset Query</button>
+              <p id="dsl-console-status" class="dsl-console-status">Query synced from the search controls.</p>
+            </div>
+          </div>
+          <div class="dsl-console-grid">
+            <label class="dsl-console-pane">
+              <span class="dsl-console-pane-label">Request</span>
+              <textarea
+                id="dsl-query-editor"
+                class="dsl-console-editor"
+                spellcheck="false"
+                aria-label="JSON DSL request editor"
+              ></textarea>
+            </label>
+            <label class="dsl-console-pane">
+              <span class="dsl-console-pane-label">Response</span>
+              <textarea
+                id="dsl-response-viewer"
+                class="dsl-console-editor dsl-console-editor-readonly"
+                spellcheck="false"
+                readonly
+                aria-label="JSON DSL response viewer"
+                placeholder="Run a search to inspect the JSON response."
+              ></textarea>
+            </label>
+          </div>
+          <p class="dsl-console-hint">Press Cmd+Enter or Ctrl+Enter to execute the current request against the selected search variant.</p>
+        </section>
       </section>
 
       <section id="reader-layout" class="reader-layout reader-layout-below mt-5" data-mobile-panel="none">
@@ -1799,6 +1873,14 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   const searchContext = new SearchContextController(context, initialState);
   const queryForm = document.querySelector<HTMLFormElement>("#query-form");
   const queryInput = document.querySelector<HTMLInputElement>("#query");
+  const dslQueryEditor = document.querySelector<HTMLTextAreaElement>("#dsl-query-editor");
+  const dslResponseViewer = document.querySelector<HTMLTextAreaElement>("#dsl-response-viewer");
+  const dslRunQueryButton = document.querySelector<HTMLButtonElement>("#dsl-run-query");
+  const dslResetQueryButton = document.querySelector<HTMLButtonElement>("#dsl-reset-query");
+  const dslConsoleStatus = document.querySelector<HTMLParagraphElement>("#dsl-console-status");
+  const dslConsoleScreen = document.querySelector<HTMLElement>("#dsl-console-screen");
+  const closeDslConsoleButton = document.querySelector<HTMLButtonElement>("#close-dsl-console");
+  const openDslConsoleButton = document.querySelector<HTMLButtonElement>("#open-dsl-console");
   const homeButton = document.querySelector<HTMLButtonElement>("#go-home");
   const clearQueryButton = document.querySelector<HTMLButtonElement>("#clear-query");
   const lexicalVariantButton = document.querySelector<HTMLButtonElement>("#variant-lexical");
@@ -1829,6 +1911,14 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   if (
     !queryForm ||
     !queryInput ||
+    !dslQueryEditor ||
+    !dslResponseViewer ||
+    !dslRunQueryButton ||
+    !dslResetQueryButton ||
+    !dslConsoleStatus ||
+    !dslConsoleScreen ||
+    !closeDslConsoleButton ||
+    !openDslConsoleButton ||
     !homeButton ||
     !clearQueryButton ||
     !lexicalVariantButton ||
@@ -1861,6 +1951,53 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   const eventController = new AbortController();
   const { signal } = eventController;
+  let pendingDslSync: ReturnType<typeof window.setTimeout> | null = null;
+  let dslSyncSequence = 0;
+  let latestGeneratedDslRequestText = "";
+  let customDslRequestText: string | null = null;
+
+  const setDslConsoleStatus = (message: string, tone: "muted" | "success" | "error" = "muted") => {
+    dslConsoleStatus.textContent = message;
+    dslConsoleStatus.dataset.tone = tone;
+  };
+
+  const syncDslConsoleResponse = () => {
+    dslResponseViewer.value = submittedResult ? formatDslLogJson(submittedResult.dslResponse) : "";
+  };
+
+  const scheduleDslConsoleSync = () => {
+    if (pendingDslSync !== null) {
+      window.clearTimeout(pendingDslSync);
+    }
+    if (customDslRequestText !== null) {
+      dslResetQueryButton.disabled = false;
+      setDslConsoleStatus("Edited request preserved. Reset Query to resync.");
+      return;
+    }
+    const syncToken = ++dslSyncSequence;
+    const snapshot = { ...state };
+    pendingDslSync = window.setTimeout(() => {
+      pendingDslSync = null;
+      void (async () => {
+        try {
+          const plan = await buildSearchExecutionPlan(context, snapshot);
+          if (syncToken !== dslSyncSequence) {
+            return;
+          }
+          latestGeneratedDslRequestText = formatDslLogJson(plan.request);
+          dslQueryEditor.value = latestGeneratedDslRequestText;
+          dslResetQueryButton.disabled = true;
+          setDslConsoleStatus("Query synced from the search controls.");
+        } catch (error) {
+          if (syncToken !== dslSyncSequence) {
+            return;
+          }
+          const message = error instanceof Error ? error.message : "Failed to build JSON DSL request.";
+          setDslConsoleStatus(message, "error");
+        }
+      })();
+    }, 90);
+  };
 
   const setSectionCollapsed = (sectionName: string, collapsed: boolean) => {
     const sectionNode = tocNode.querySelector<HTMLDetailsElement>(`[data-section-shell="${CSS.escape(sectionName)}"]`);
@@ -1957,6 +2094,10 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   const renderShell = () => {
     syncControls();
+    scheduleDslConsoleSync();
+    syncDslConsoleResponse();
+    dslConsoleScreen.classList.toggle("hidden", currentView !== "console");
+    readerLayout.classList.toggle("hidden", currentView === "console");
     syncSemanticBusyOverlay();
     updateSummary(context, summaryNode, submittedResult);
     renderToc(context, tocNode, tocStatusNode, submittedResult);
@@ -1972,6 +2113,28 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   const hideSuggestions = () => {
     suggestionResult = null;
     renderSuggestions(context, suggestionsNode, suggestionResult);
+  };
+
+  const runDslConsoleQuery = async () => {
+    try {
+      setDslConsoleStatus("Executing request...", "muted");
+      const parsedRequest = JSON.parse(dslQueryEditor.value) as Record<string, unknown>;
+      const plan = await buildSearchExecutionPlan(context, state);
+      const startedAt = performance.now();
+      const response = await executeDslSearch(plan.index, parsedRequest, "dev-console");
+      customDslRequestText = dslQueryEditor.value;
+      dslResetQueryButton.disabled = false;
+      submittedResult = searchResultFromDslResponse(state, parsedRequest, response, startedAt);
+      activeChunkId = null;
+      suggestionResult = null;
+      syncDslConsoleResponse();
+      renderApp();
+      setDslConsoleStatus("Request executed. Reset Query to resync.", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to execute JSON DSL request.";
+      dslResponseViewer.value = formatDslLogJson({ error: message });
+      setDslConsoleStatus(message, "error");
+    }
   };
 
   const renderApp = () => {
@@ -2098,6 +2261,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   queryInput.addEventListener("input", () => {
     syncSharedQuery(queryInput.value);
     syncControls();
+    scheduleDslConsoleSync();
     scheduleSuggestions();
   }, { signal });
 
@@ -2109,6 +2273,46 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     if (event.key === "Escape") {
       hideSuggestions();
     }
+  }, { signal });
+
+  dslQueryEditor.addEventListener("keydown", (event) => {
+    const submitsConsoleQuery = event.key === "Enter" && (event.metaKey || event.ctrlKey);
+    if (!submitsConsoleQuery) {
+      return;
+    }
+    event.preventDefault();
+    void runDslConsoleQuery();
+  }, { signal });
+
+  dslRunQueryButton.addEventListener("click", () => {
+    void runDslConsoleQuery();
+  }, { signal });
+
+  dslQueryEditor.addEventListener("input", () => {
+    customDslRequestText = dslQueryEditor.value;
+    dslResetQueryButton.disabled = false;
+    setDslConsoleStatus("Edited request preserved. Reset Query to resync.");
+  }, { signal });
+
+  openDslConsoleButton.addEventListener("click", () => {
+    currentView = "console";
+    renderApp();
+    window.setTimeout(() => {
+      dslQueryEditor.focus();
+    }, 0);
+  }, { signal });
+
+  closeDslConsoleButton.addEventListener("click", () => {
+    currentView = submittedResult ? "results" : "home";
+    renderApp();
+  }, { signal });
+
+  dslResetQueryButton.addEventListener("click", () => {
+    customDslRequestText = null;
+    dslQueryEditor.value = latestGeneratedDslRequestText;
+    dslResetQueryButton.disabled = true;
+    setDslConsoleStatus("Query synced from the search controls.");
+    scheduleDslConsoleSync();
   }, { signal });
 
   queryForm.addEventListener("submit", (event) => {
@@ -2337,6 +2541,9 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   syncViewportState();
 
   return () => {
+    if (pendingDslSync !== null) {
+      window.clearTimeout(pendingDslSync);
+    }
     if (pendingSuggestions !== null) {
       window.clearTimeout(pendingSuggestions);
     }
