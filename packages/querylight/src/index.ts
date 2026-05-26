@@ -31,6 +31,9 @@ export type { RandomSource } from "./random";
 export { SimpleStringTrie, TrieNode } from "./trie";
 export type { TrieNodeState } from "./trie";
 
+export { deserializeCompressedJson, serializeCompressedJson } from "./compressed-json";
+export type { DeserializeCompressedJsonParams, SerializeCompressedJsonParams } from "./compressed-json";
+
 export {
   type Bm25Config,
   type DateFieldIndexState,
@@ -60,6 +63,7 @@ export {
   type ReciprocalRankFusionOptions,
   type SearchRequest,
   type SignificantTermsBucket,
+  type StoredSourceIndexState,
   type TermPos,
   type TextFieldIndexState,
   andHits,
@@ -71,7 +75,17 @@ export {
   reciprocalRankFusion
 } from "./shared";
 
-export { DateFieldIndex, DocumentIndex, GeoFieldIndex, NumericFieldIndex, TextFieldIndex } from "./document-index";
+export {
+  DateFieldIndex,
+  deserializeDocumentIndex,
+  DocumentIndex,
+  GeoFieldIndex,
+  NumericFieldIndex,
+  serializeDocumentIndex,
+  StoredSourceIndex,
+  TextFieldIndex
+} from "./document-index";
+export type { DeserializeDocumentIndexParams, SerializeDocumentIndexParams } from "./document-index";
 
 export {
   BoolQuery,
@@ -188,10 +202,15 @@ export type {
 
 export {
   createSimpleTextSearchIndex,
+  deserializeSimpleTextSearchIndex,
+  serializeSimpleTextSearchIndex,
   simpleTextSearch
 } from "./simple-text-search";
 export type {
   CreateSimpleTextSearchIndexOptions,
+  DeserializeSimpleTextSearchIndexParams,
+  SerializeSimpleTextSearchIndexParams,
   SimpleTextSearchIndex,
+  SimpleTextSearchIndexState,
   SimpleTextSearchRequest
 } from "./simple-text-search";

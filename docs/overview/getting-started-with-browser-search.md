@@ -206,7 +206,7 @@ In a Node.js build script:
 
 ```ts
 import fs from "node:fs/promises";
-import { createSimpleTextSearchIndex } from "@tryformation/querylight-ts";
+import { createSimpleTextSearchIndex, serializeSimpleTextSearchIndex } from "@tryformation/querylight-ts";
 
 const documents = await loadYourDocsSomehow();
 const search = createSimpleTextSearchIndex({
@@ -215,19 +215,9 @@ const search = createSimpleTextSearchIndex({
   secondaryFields: ["description", "body"]
 });
 
-const payload = {
-  search: {
-    idField: search.idField,
-    primaryFields: search.primaryFields,
-    secondaryFields: search.secondaryFields,
-    ranking: search.ranking,
-    documentIndexState: JSON.parse(JSON.stringify(search.documentIndex.indexState)),
-    fuzzyIndexState: JSON.parse(JSON.stringify(search.fuzzyIndex.indexState))
-  },
-  documents
-};
+const compressed = serializeSimpleTextSearchIndex({ index: search });
 
-await fs.writeFile("dist/search-index.json", JSON.stringify(payload));
+await fs.writeFile("dist/search-index.json.gz", compressed);
 ```
 
 ### Browser step
@@ -235,23 +225,10 @@ await fs.writeFile("dist/search-index.json", JSON.stringify(payload));
 In the browser:
 
 ```ts
-import { createSimpleTextSearchIndex, DocumentIndex, RankingAlgorithm, TextFieldIndex, simpleTextSearch } from "@tryformation/querylight-ts";
+import { deserializeSimpleTextSearchIndex, simpleTextSearch } from "@tryformation/querylight-ts";
 
-const payload = await fetch("/search-index.json").then((response) => response.json());
-
-const search = createSimpleTextSearchIndex({
-  documents: payload.documents,
-  primaryFields: payload.search.primaryFields,
-  secondaryFields: payload.search.secondaryFields,
-  idField: payload.search.idField,
-  ranking: payload.search.ranking as RankingAlgorithm
-});
-
-const hydratedSearch = {
-  ...search,
-  documentIndex: search.documentIndex.loadState(payload.search.documentIndexState),
-  fuzzyIndex: search.fuzzyIndex.loadState(payload.search.fuzzyIndexState)
-};
+const compressed = new Uint8Array(await fetch("/search-index.json.gz").then((response) => response.arrayBuffer()));
+const hydratedSearch = deserializeSimpleTextSearchIndex({ compressed });
 
 const hits = simpleTextSearch(hydratedSearch, { query: "range fi", limit: 5 });
 

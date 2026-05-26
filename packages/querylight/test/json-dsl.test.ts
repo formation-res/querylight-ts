@@ -6,6 +6,7 @@ import {
   GeoFieldIndex,
   NumericFieldIndex,
   SparseVectorFieldIndex,
+  StoredSourceIndex,
   TextFieldIndex,
   VectorFieldIndex,
   createSeededRandom,
@@ -69,7 +70,16 @@ describe("json dsl", () => {
     });
 
     expect(response.hits.total.value).toBe(1);
+    expect(response.hits.max_score).toBeGreaterThan(0);
+    expect(response.hits.hits[0]?._index).toBe("querylight");
     expect(response.hits.hits[0]?._id).toBe("1");
+    expect(response.hits.hits[0]?._source).toEqual({
+      title: ["Vector search tutorial"],
+      body: ["Portable search with vector ranking"],
+      tags: ["vector", "tutorial"],
+      price: ["10"],
+      publishedAt: ["2025-01-02T00:00:00.000Z"]
+    });
     expect(response.hits.hits[0]?.highlight?.title?.[0]).toContain("Vector search tutorial");
     expect(response.aggregations?.tags?.buckets).toEqual([
       { key: "vector", doc_count: 1 },
@@ -390,6 +400,75 @@ describe("json dsl", () => {
     });
 
     expect(response.hits.hits[0]?._id).toBe("serialization");
+    expect(response.hits.hits[0]?._source).toMatchObject({
+      id: "serialization",
+      title: "Index State Serialization"
+    });
     expect(response.aggregations?.tags?.buckets).toContainEqual({ key: "serialization", doc_count: 1 });
+  });
+
+  it("returns an OpenSearch-style envelope for empty hit pages", async () => {
+    const index = new DocumentIndex({
+      title: new TextFieldIndex()
+    });
+    index.index({ id: "1", fields: { title: ["alpha"] } });
+
+    const response = await searchJsonDsl({
+      index,
+      request: {
+        query: {
+          match_all: {}
+        },
+        from: 10,
+        size: 5
+      },
+      indexName: "docs"
+    });
+
+    expect(response.hits.total).toEqual({ value: 1, relation: "eq" });
+    expect(response.hits.max_score).toBeNull();
+    expect(response.hits.hits).toEqual([]);
+  });
+
+  it("uses stored source payloads for _source when a StoredSourceIndex is configured", async () => {
+    const index = new DocumentIndex({
+      title: new TextFieldIndex(),
+      _source: new StoredSourceIndex()
+    });
+
+    index.index({
+      id: "1",
+      fields: {
+        title: ["alpha"]
+      },
+      source: {
+        id: "1",
+        title: "alpha",
+        metadata: {
+          section: "docs",
+          views: 12
+        }
+      }
+    });
+
+    const response = await searchJsonDsl({
+      index,
+      request: {
+        query: {
+          term: {
+            title: "alpha"
+          }
+        }
+      }
+    });
+
+    expect(response.hits.hits[0]?._source).toEqual({
+      id: "1",
+      title: "alpha",
+      metadata: {
+        section: "docs",
+        views: 12
+      }
+    });
   });
 });

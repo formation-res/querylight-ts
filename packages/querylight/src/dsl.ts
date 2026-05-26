@@ -79,9 +79,10 @@ export interface JsonDslRequest {
 
 /** One hit returned by {@link searchJsonDsl}. */
 export interface JsonDslSearchHit {
+  _index: string;
   _id: string;
   _score: number;
-  _source: Document["fields"];
+  _source: Record<string, unknown>;
   highlight?: Record<string, string[]> | undefined;
 }
 
@@ -91,6 +92,7 @@ export interface JsonDslHits {
     value: number;
     relation: "eq";
   };
+  max_score: number | null;
   hits: JsonDslSearchHit[];
 }
 
@@ -114,6 +116,7 @@ export interface ParseJsonDslQueryParams {
 export interface SearchJsonDslParams {
   index: DocumentIndex | SimpleTextSearchIndex;
   request: JsonDslRequest;
+  indexName?: string | undefined;
 }
 
 /** Request payload for driving the built-in simpleTextSearch flow through the JSON DSL. */
@@ -402,6 +405,13 @@ function isSimpleTextSearchIndex(index: DocumentIndex | SimpleTextSearchIndex): 
 
 function rootDocumentIndex(index: DocumentIndex | SimpleTextSearchIndex): DocumentIndex {
   return isSimpleTextSearchIndex(index) ? index.documentIndex : index;
+}
+
+function sourceForHit(index: DocumentIndex | SimpleTextSearchIndex, id: string): Record<string, unknown> | undefined {
+  if (isSimpleTextSearchIndex(index)) {
+    return index.documentsById.get(id) ?? index.documentIndex.get(id)?.fields;
+  }
+  return index.getSource(id) ?? index.get(id)?.source ?? index.get(id)?.fields;
 }
 
 function computeAggregation(index: DocumentIndex, subsetDocIds: Set<string>, clause: JsonDslAggregationClause): JsonDslAggregationResult {
@@ -844,7 +854,7 @@ export function parseJsonDslQuery({ query, dsl }: ParseJsonDslQueryParams): Quer
 }
 
 /** Executes an OpenSearch-style JSON request and returns hits, highlights, and aggregations. */
-export async function searchJsonDsl({ index, request }: SearchJsonDslParams): Promise<JsonDslResponse> {
+export async function searchJsonDsl({ index, request, indexName = "querylight" }: SearchJsonDslParams): Promise<JsonDslResponse> {
   const startedAt = Date.now();
   const documentIndex = rootDocumentIndex(index);
   const query = parseTopLevelQuery(request);
@@ -866,16 +876,18 @@ export async function searchJsonDsl({ index, request }: SearchJsonDslParams): Pr
       : Promise.resolve([...documentIndex.ids()].map((id): [string, number] => [id, 1.0]));
   const resolvedHits = await allHits;
   const pageHits = resolvedHits.slice(from, Math.min(from + size, resolvedHits.length));
+  const maxScore = pageHits.length > 0 ? Math.max(...pageHits.map(([, score]) => score)) : null;
 
   const hits: JsonDslSearchHit[] = pageHits.flatMap(([id, score]) => {
-      const document = documentIndex.get(id);
-      if (!document) {
+      const source = sourceForHit(index, id);
+      if (!source) {
         return [];
       }
       return [definedProps({
+        _index: indexName,
         _id: id,
         _score: score,
-        _source: document.fields,
+        _source: source,
         highlight: formatHighlight(documentIndex, id, query, request.highlight)
       }) as JsonDslSearchHit];
     });
@@ -895,6 +907,7 @@ export async function searchJsonDsl({ index, request }: SearchJsonDslParams): Pr
         value: resolvedHits.length,
         relation: "eq" as const
       },
+      max_score: maxScore,
       hits
     },
     aggregations

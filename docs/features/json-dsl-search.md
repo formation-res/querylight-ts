@@ -49,7 +49,13 @@ const response = await searchJsonDsl({
 });
 ```
 
-The response shape follows the familiar `hits.total`, `hits.hits`, and `aggregations` layout.
+The response shape follows the familiar OpenSearch layout:
+
+- `took`
+- `hits.total`
+- `hits.max_score`
+- `hits.hits`
+- `aggregations`
 
 ## Supported query clauses
 
@@ -103,5 +109,8 @@ The response shape follows the familiar `hits.total`, `hits.hits`, and `aggregat
 - Dense vector retrieval uses `knn`.
 - Sparse retrieval accepts both `neural_sparse` and `sparse_vector`.
 - Beginner-search bundles created by `createSimpleTextSearchIndex(...)` can be executed with a top-level `simple_text_search` request.
+- Per-hit `_source` comes from `StoredSourceIndex` when your `DocumentIndex` mapping includes `_source: new StoredSourceIndex()`.
+- Without `StoredSourceIndex`, the fallback `_source` for plain `DocumentIndex` searches is the indexed field map.
+- `SimpleTextSearchIndex` responses still return the original source object because that helper keeps the input documents around.
 
 If you prefer the existing TypeScript-first API, the class-based query types remain fully supported.

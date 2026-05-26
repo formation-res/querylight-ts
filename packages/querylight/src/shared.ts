@@ -7,6 +7,7 @@ import { type DocumentIndex } from "./document-index";
 export interface Document {
   id: string;
   fields: Record<string, string[]>;
+  source?: Record<string, unknown>;
 }
 
 /** `[documentId, score]` tuple returned by search operations. */
@@ -130,6 +131,13 @@ export interface DateFieldIndexState extends IndexStateBase {
   documents: Record<string, number[]>;
 }
 
+/** Serialized state for {@link StoredSourceIndex}. */
+export interface StoredSourceIndexState extends IndexStateBase {
+  kind: "StoredSourceIndexState";
+  compression: "gzip";
+  documents: Record<string, string>;
+}
+
 /** Aggregate statistics over numeric values. */
 export interface NumericStatsAggregation {
   count: number;
@@ -176,7 +184,14 @@ export interface SignificantTermsBucket {
 }
 
 /** Union of all serialized field index state payloads. */
-export type IndexState = TextFieldIndexState | GeoFieldIndexState | NumericFieldIndexState | DateFieldIndexState | VectorFieldIndexState | SparseVectorFieldIndexState;
+export type IndexState =
+  | TextFieldIndexState
+  | GeoFieldIndexState
+  | NumericFieldIndexState
+  | DateFieldIndexState
+  | StoredSourceIndexState
+  | VectorFieldIndexState
+  | SparseVectorFieldIndexState;
 
 /** Serialized state for a full {@link DocumentIndex}. */
 export interface DocumentIndexState {
@@ -189,6 +204,7 @@ export interface FieldIndex {
   readonly indexState: IndexState;
   loadState(fieldIndexState: IndexState): FieldIndex;
   indexValue?(documentId: string, value: string): void;
+  indexDocument?(document: Document): void;
 }
 
 /** Built-in scoring algorithms for lexical ranking. */

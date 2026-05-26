@@ -1,4 +1,6 @@
 import { Analyzer } from "./analysis";
+import { deserializeCompressedJson, serializeCompressedJson } from "./compressed-json";
+import { gzip, ungzip } from "pako";
 import {
   encodeGeohash,
   type Geometry,
@@ -25,6 +27,7 @@ import {
   type Hit,
   type Hits,
   type IndexState,
+  type StoredSourceIndexState,
   type NumericHistogramBucket,
   type NumericRangeAggregationBucket,
   type NumericRangeAggregationRange,
@@ -42,6 +45,17 @@ import { SimpleStringTrie, TrieNode } from "./trie";
 
 interface RankingStrategy {
   score(index: TextFieldIndex, docIds: string[]): Hits;
+}
+
+/** Params for {@link serializeDocumentIndex}. */
+export interface SerializeDocumentIndexParams {
+  index: DocumentIndex;
+}
+
+/** Params for {@link deserializeDocumentIndex}. */
+export interface DeserializeDocumentIndexParams {
+  index: DocumentIndex;
+  compressed: Uint8Array | ArrayBuffer | ArrayLike<number>;
 }
 
 class TfIdfRankingStrategy implements RankingStrategy {
@@ -393,7 +407,16 @@ export class DocumentIndex {
       fieldState[key] = value.indexState;
     }
     return {
-      documents: this.documents,
+      documents: Object.fromEntries(
+        Object.entries(this.documents).map(([id, document]) => [
+          id,
+          {
+            id: document.id,
+            fields: document.fields,
+            ...(document.source ? { source: document.source } : {})
+          }
+        ])
+      ),
       fieldState
     };
   }
@@ -409,6 +432,9 @@ export class DocumentIndex {
 
   index(document: Document): void {
     this.documents[document.id] = document;
+    for (const fieldIndex of Object.values(this.mapping)) {
+      fieldIndex.indexDocument?.(document);
+    }
     for (const [field, texts] of Object.entries(document.fields)) {
       let fieldIndex = this.mapping[field];
       if (!fieldIndex) {
@@ -427,6 +453,14 @@ export class DocumentIndex {
 
   get(id: string): Document | undefined {
     return this.documents[id];
+  }
+
+  getSource(id: string): Record<string, unknown> | undefined {
+    const sourceIndex = this.mapping._source;
+    if (sourceIndex instanceof StoredSourceIndex) {
+      return sourceIndex.get(id);
+    }
+    return this.documents[id]?.source;
   }
 
   async search(query: { hits(documentIndex: DocumentIndex, context?: QueryContext): Promise<Hits> }, from = 0, limit = 200): Promise<Hits> {
@@ -1023,4 +1057,75 @@ export class DateFieldIndex implements FieldIndex {
     }
     return createDateHistogramBuckets(this.documents, intervalMs, subsetDocIds);
   }
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
+  }
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+function decodeBase64(value: string): Uint8Array {
+  if (typeof Buffer !== "undefined") {
+    return Uint8Array.from(Buffer.from(value, "base64"));
+  }
+  const binary = atob(value);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function compressSource(value: Record<string, unknown>): string {
+  const encoded = new TextEncoder().encode(JSON.stringify(value));
+  return encodeBase64(gzip(encoded));
+}
+
+function decompressSource(value: string): Record<string, unknown> {
+  return JSON.parse(new TextDecoder().decode(ungzip(decodeBase64(value)))) as Record<string, unknown>;
+}
+
+/** Stores `_source` payloads as gzipped JSON strings with index-state round-tripping. */
+export class StoredSourceIndex implements FieldIndex {
+  private readonly documents: Record<string, string>;
+
+  constructor(documents: Record<string, string> = {}) {
+    this.documents = documents;
+  }
+
+  get indexState(): StoredSourceIndexState {
+    return {
+      kind: "StoredSourceIndexState",
+      compression: "gzip",
+      documents: { ...this.documents }
+    };
+  }
+
+  loadState(fieldIndexState: IndexState): FieldIndex {
+    if (fieldIndexState.kind !== "StoredSourceIndexState") {
+      throw new Error(`wrong index type; expecting StoredSourceIndexState but was ${fieldIndexState.kind}`);
+    }
+    return new StoredSourceIndex({ ...fieldIndexState.documents });
+  }
+
+  indexDocument(document: Document): void {
+    this.documents[document.id] = compressSource(document.source ?? document.fields);
+  }
+
+  get(id: string): Record<string, unknown> | undefined {
+    const compressed = this.documents[id];
+    return compressed ? decompressSource(compressed) : undefined;
+  }
+}
+
+/** Serializes a full {@link DocumentIndex} state to gzipped bytes. */
+export function serializeDocumentIndex({ index }: SerializeDocumentIndexParams): Uint8Array {
+  return serializeCompressedJson({ value: index.indexState });
+}
+
+/** Hydrates a {@link DocumentIndex} from gzipped serialized bytes. */
+export function deserializeDocumentIndex({ index, compressed }: DeserializeDocumentIndexParams): DocumentIndex {
+  return index.loadState(deserializeCompressedJson<DocumentIndexState>({ compressed }));
 }
