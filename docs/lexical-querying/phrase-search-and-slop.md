@@ -2,7 +2,7 @@
 id: phrase-search
 section: Lexical Querying
 title: Phrase Search and Slop
-summary: Match analyzed terms in sequence, with optional movement tolerance.
+summary: Match analyzed terms in sequence, with optional movement tolerance, using the JSON DSL first.
 tags: [query, phrase, slop, ranking, exactness]
 apis: [MatchPhrase, Analyzer, TextFieldIndex]
 level: querying
@@ -11,9 +11,23 @@ order: 30
 
 # Phrase Search and Slop
 
-`MatchPhrase` checks whether analyzed terms occur in order.
+`match_phrase` checks whether analyzed terms occur in order. The class form is still available as the equivalent internal TypeScript API.
 
 ## Exact phrase
+
+```json
+{
+  "query": {
+    "match_phrase": {
+      "body": {
+        "query": "vector search"
+      }
+    }
+  }
+}
+```
+
+Equivalent internal TypeScript API:
 
 ```ts
 import { MatchPhrase } from "@tryformation/querylight-ts";
@@ -25,8 +39,18 @@ const exact = new MatchPhrase({ field: "body", text: "vector search" });
 
 Slop allows nearby terms to count even when there is a little distance between them.
 
-```ts
-const tolerant = new MatchPhrase({ field: "body", text: "portable json index state", slop: 2, boost: 2.0 });
+```json
+{
+  "query": {
+    "match_phrase": {
+      "body": {
+        "query": "portable json index state",
+        "slop": 2,
+        "boost": 2
+      }
+    }
+  }
+}
 ```
 
 ## Good queries to try in the demo

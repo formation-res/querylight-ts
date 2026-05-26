@@ -1,29 +1,22 @@
 import {
   Analyzer,
-  BoolQuery,
+  deserializeDocumentIndex,
   DocumentIndex,
-  type DocumentIndexState,
   EdgeNgramsTokenFilter,
   KeywordTokenizer,
-  MatchAll,
-  MatchPhrase,
-  MatchQuery,
-  MultiMatchQuery,
   NgramTokenFilter,
   NumericFieldIndex,
   OP,
-  type Query,
   RangeQuery,
   RankingAlgorithm,
-  reciprocalRankFusion,
+  searchJsonDsl,
+  type JsonDslQueryClause,
+  type JsonDslSearchHit,
   type SignificantTermsBucket,
   SparseVectorFieldIndex,
-  TermQuery,
   TextFieldIndex,
   VectorFieldIndex,
   createSeededRandom,
-  type HighlightFragment,
-  type HighlightResult,
   type Hits
 } from "@tryformation/querylight-ts";
 import hljs from "highlight.js/lib/core";
@@ -108,7 +101,7 @@ type SearchResult = {
   offset: number;
   pageSize: number;
   responseTimeMs: number;
-  highlightsById: Map<string, HighlightResult>;
+  highlightsById: Map<string, Record<string, string[]>>;
   selectedIds: Set<string>;
   tagFacets: Record<string, number>;
   sectionFacets: Record<string, number>;
@@ -129,8 +122,8 @@ type DemoDataPayload = {
   indexes: Record<
     RankingAlgorithm,
     {
-      hydrated: DocumentIndexState;
-      fuzzy: DocumentIndexState;
+      hydrated: number[];
+      fuzzy: number[];
     }
   >;
   semantic: SemanticPayload;
@@ -480,12 +473,6 @@ function formatRelativeBuildTime(timestamp: string): string {
   return `Built ${formatter.format(diffDays, "day")}`;
 }
 
-function renderHighlightFragment(fragment: HighlightFragment): string {
-  return fragment.parts
-    .map((part) => part.highlighted ? `<mark class="search-highlight">${escapeHtml(part.text)}</mark>` : escapeHtml(part.text))
-    .join("");
-}
-
 function renderLiteralHighlight(text: string, query: string): string {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -505,18 +492,18 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function fieldHighlight(highlight: HighlightResult | undefined, field: string): HighlightFragment | null {
-  return highlight?.fields.find((result) => result.field === field)?.fragments[0] ?? null;
+function fieldHighlight(highlight: Record<string, string[]> | undefined, field: string): string | null {
+  return highlight?.[field]?.[0] ?? null;
 }
 
-function bestExplanation(highlight: HighlightResult | undefined): { label: string; html: string } | null {
+function bestExplanation(highlight: Record<string, string[]> | undefined, rawQuery: string): { label: string; html: string } | null {
   const tagline = fieldHighlight(highlight, "tagline");
   if (tagline) {
-    return { label: "Summary", html: renderHighlightFragment(tagline) };
+    return { label: "Summary", html: renderLiteralHighlight(tagline, rawQuery) };
   }
   const body = fieldHighlight(highlight, "body");
   if (body) {
-    return { label: "Excerpt", html: renderHighlightFragment(body) };
+    return { label: "Excerpt", html: renderLiteralHighlight(body, rawQuery) };
   }
   return null;
 }
@@ -541,15 +528,15 @@ function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
 function loadSerializedIndexes(
   ranking: RankingAlgorithm,
   serializedIndexes: {
-    hydrated: DocumentIndexState;
-    fuzzy: DocumentIndexState;
+    hydrated: number[];
+    fuzzy: number[];
   }
 ): RuntimeIndexes {
   return {
-    hydrated: createDocIndex(ranking).loadState(serializedIndexes.hydrated),
-    fuzzy: new DocumentIndex({
+    hydrated: deserializeDocumentIndex({ index: createDocIndex(ranking), compressed: serializedIndexes.hydrated }),
+    fuzzy: deserializeDocumentIndex({ index: new DocumentIndex({
       combined: new TextFieldIndex(fuzzyAnalyzer, fuzzyAnalyzer, ranking)
-    }).loadState(serializedIndexes.fuzzy)
+    }), compressed: serializedIndexes.fuzzy })
   };
 }
 
@@ -614,6 +601,18 @@ async function createRuntimeContext(demoData: DemoDataPayload): Promise<RuntimeC
     [...sectionSet].filter((section) => !DOC_SECTION_ORDER.includes(section))
   );
 
+  const semantic = await createSemanticRuntime(demoData.semantic);
+  const sparse = createSparseRuntime(demoData.sparse, demoData.sparseQuery);
+  const indexes = {
+    [RankingAlgorithm.BM25]: loadSerializedIndexes(RankingAlgorithm.BM25, demoData.indexes[RankingAlgorithm.BM25]),
+    [RankingAlgorithm.TFIDF]: loadSerializedIndexes(RankingAlgorithm.TFIDF, demoData.indexes[RankingAlgorithm.TFIDF])
+  };
+  for (const runtime of Object.values(indexes)) {
+    runtime.hydrated.mapping.fuzzyCombined = runtime.fuzzy.getFieldIndex("combined") as TextFieldIndex;
+    runtime.hydrated.mapping.semanticEmbedding = semantic.articleIndex;
+    runtime.hydrated.mapping.sparseEmbedding = sparse.index;
+  }
+
   return {
     docs,
     byId: new Map(docs.map((doc) => [doc.id, doc])),
@@ -621,12 +620,9 @@ async function createRuntimeContext(demoData: DemoDataPayload): Promise<RuntimeC
     sections,
     allTags: [...new Set(docs.flatMap((doc) => doc.tags))].sort(),
     renderedMarkdown: new Map(),
-    indexes: {
-      [RankingAlgorithm.BM25]: loadSerializedIndexes(RankingAlgorithm.BM25, demoData.indexes[RankingAlgorithm.BM25]),
-      [RankingAlgorithm.TFIDF]: loadSerializedIndexes(RankingAlgorithm.TFIDF, demoData.indexes[RankingAlgorithm.TFIDF])
-    },
-    semantic: await createSemanticRuntime(demoData.semantic),
-    sparse: createSparseRuntime(demoData.sparse, demoData.sparseQuery)
+    indexes,
+    semantic,
+    sparse
   };
 }
 
@@ -738,292 +734,461 @@ function parseQueryInput(rawQuery: string): { queryText: string; quotedPhrase: s
 }
 
 function buildFacetFilterQueries(current: SearchState): QueryFilters {
-  const filters: Query[] = [];
-  const mustNot: TermQuery[] = [];
+  const filters: JsonDslQueryClause[] = [];
+  const mustNot: JsonDslQueryClause[] = [];
   if (current.section) {
-    filters.push(new TermQuery({ field: "section", text: current.section }));
+    filters.push({ term: { section: current.section } });
   }
   if (current.api) {
-    filters.push(new TermQuery({ field: "api", text: current.api }));
+    filters.push({ term: { api: current.api } });
   }
   if (current.tag) {
-    filters.push(new TermQuery({ field: "tags", text: current.tag }));
+    filters.push({ term: { tags: current.tag } });
   }
   if (current.significantTerm) {
-    filters.push(new TermQuery({ field: "body", text: current.significantTerm }));
+    filters.push({ term: { body: current.significantTerm } });
   }
   const wordCountFacet = wordCountFacetByKey(current.wordCountFacet);
   if (wordCountFacet) {
-    filters.push(new RangeQuery({
-      field: "wordCount",
+    filters.push({
       range: {
+        wordCount: {
         ...(wordCountFacet.from == null ? {} : { gte: String(wordCountFacet.from) }),
         ...(wordCountFacet.to == null ? {} : { lt: String(wordCountFacet.to) })
+        }
       }
-    }));
+    });
   }
   if (current.excludeAdvanced) {
-    mustNot.push(new TermQuery({ field: "level", text: "advanced" }));
+    mustNot.push({ term: { level: "advanced" } });
   }
   return { filters, mustNot };
 }
 
 type QueryFilters = {
-  filters: Query[];
-  mustNot: TermQuery[];
+  filters: JsonDslQueryClause[];
+  mustNot: JsonDslQueryClause[];
 };
 
 function wordCountFacetByKey(key: string | null): WordCountFacet | null {
   return WORD_COUNT_FACETS.find((facet) => facet.key === key) ?? null;
 }
 
+function hitsFromResponse(hits: JsonDslSearchHit[]): Hits {
+  return hits.map((hit) => [hit._id, hit._score] as const);
+}
+
+function highlightsFromResponse(hits: JsonDslSearchHit[]): Map<string, Record<string, string[]>> {
+  return new Map(
+    hits
+      .filter((hit) => hit.highlight && Object.keys(hit.highlight).length > 0)
+      .map((hit) => [hit._id, hit.highlight!] as const)
+  );
+}
+
+let dslLogSequence = 0;
+
+function logDslExchange(label: string, request: Record<string, unknown>, response: unknown): void {
+  dslLogSequence += 1;
+  const prefix = `[Querylight DSL ${dslLogSequence}] ${label}`;
+  console.groupCollapsed(prefix);
+  console.log("request", request);
+  console.log("response", response);
+  console.groupEnd();
+}
+
+async function executeDslSearch(index: DocumentIndex, request: Record<string, unknown>, label = "search") {
+  const fullRequest = {
+    size: Number.MAX_SAFE_INTEGER,
+    ...request
+  };
+  const response = await searchJsonDsl({
+    index,
+    request: fullRequest
+  });
+  logDslExchange(label, fullRequest, response);
+  return response;
+}
+
+function boolQuery(params: {
+  must?: JsonDslQueryClause[];
+  should?: JsonDslQueryClause[];
+  filter?: JsonDslQueryClause[];
+  must_not?: JsonDslQueryClause[];
+  minimum_should_match?: number;
+}): JsonDslQueryClause {
+  return {
+    bool: Object.fromEntries(
+      Object.entries(params).filter(([, value]) =>
+        value != null && (!Array.isArray(value) || value.length > 0)
+      )
+    )
+  };
+}
+
 async function searchForState(context: RuntimeContext, current: SearchState): Promise<SearchResult> {
   const startedAt = performance.now();
-  // One search pass produces both the visible result list and the derived facet
-  // data so the sidebar always reflects the currently selected result set.
   const active = context.indexes[current.ranking];
   const index = active.hydrated;
-  const bodyIndex = index.getFieldIndex("body") as TextFieldIndex;
-  const tagIndex = index.getFieldIndex("tags") as TextFieldIndex;
-  const sectionIndex = index.getFieldIndex("section") as TextFieldIndex;
-  const apiIndex = index.getFieldIndex("api") as TextFieldIndex;
-  const wordCountIndex = index.getFieldIndex("wordCount") as NumericFieldIndex;
   const { queryText, quotedPhrase } = parseQueryInput(current.query);
   const trimmed = queryText.trim();
   const allowPrefixSuggestions = trimmed.length >= 2;
   const { filters, mustNot } = buildFacetFilterQueries(current);
-  const filterOnlyQuery = filters.length > 0 || mustNot.length > 0 ? new BoolQuery({ filter: filters, mustNot }) : new MatchAll();
+  const filterOnlyQuery = filters.length > 0 || mustNot.length > 0
+    ? boolQuery({ filter: filters, must_not: mustNot })
+    : { match_all: {} };
   const requiredTextQuery =
     trimmed.length === 0 || current.operation !== OP.AND
       ? null
-      : new MultiMatchQuery({
-          fields: [...SEARCHABLE_TEXT_FIELDS],
-          text: trimmed,
-          operation: OP.AND,
-          prefixMatch: current.prefix
-        });
+      : {
+          multi_match: {
+            fields: [...SEARCHABLE_TEXT_FIELDS],
+            query: trimmed,
+            operator: "and",
+            prefix_match: current.prefix
+          }
+        } satisfies JsonDslQueryClause;
 
   const baseTextQuery =
     trimmed.length === 0
-      ? new MatchAll()
-      : new BoolQuery({
+      ? ({ match_all: {} } satisfies JsonDslQueryClause)
+      : boolQuery({
           must: requiredTextQuery ? [requiredTextQuery] : [],
           should: [
-            new MatchQuery({ field: "title", text: trimmed, operation: current.operation, prefixMatch: current.prefix, boost: 7 }),
-            new MatchQuery({ field: "tagline", text: trimmed, operation: current.operation, prefixMatch: current.prefix, boost: 2.5 }),
-            new MatchQuery({ field: "body", text: trimmed, operation: current.operation, prefixMatch: current.prefix, boost: 2 }),
-            new MatchQuery({ field: "api", text: trimmed, operation: OP.OR, prefixMatch: current.prefix, boost: 2.75 }),
-            new MatchQuery({ field: "tags", text: trimmed, operation: OP.OR, prefixMatch: current.prefix, boost: 2.25 })
+            { match: { title: { query: trimmed, operator: current.operation.toLowerCase(), prefix_match: current.prefix, boost: 7 } } },
+            { match: { tagline: { query: trimmed, operator: current.operation.toLowerCase(), prefix_match: current.prefix, boost: 2.5 } } },
+            { match: { body: { query: trimmed, operator: current.operation.toLowerCase(), prefix_match: current.prefix, boost: 2 } } },
+            { match: { api: { query: trimmed, operator: "or", prefix_match: current.prefix, boost: 2.75 } } },
+            { match: { tags: { query: trimmed, operator: "or", prefix_match: current.prefix, boost: 2.25 } } }
           ],
           filter: filters,
-          mustNot
+          must_not: mustNot
         });
 
   const phraseQuery =
     trimmed.length === 0
       ? filterOnlyQuery
-      : new BoolQuery({
+      : boolQuery({
           should: [
-            new MatchPhrase({ field: "title", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 0 : 1, boost: 8 }),
-            new MatchPhrase({ field: "body", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 1 : 2, boost: 3 })
+            { match_phrase: { title: { query: quotedPhrase ?? trimmed, slop: quotedPhrase ? 0 : 1, boost: 8 } } },
+            { match_phrase: { body: { query: quotedPhrase ?? trimmed, slop: quotedPhrase ? 1 : 2, boost: 3 } } }
           ],
           filter: filters,
-          mustNot
+          must_not: mustNot
         });
 
   const hybridLexicalQuery =
     trimmed.length === 0
       ? filterOnlyQuery
-      : new BoolQuery({
+      : boolQuery({
           must: requiredTextQuery ? [requiredTextQuery] : [],
           should: [
-            new MatchPhrase({ field: "title", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 0 : 1, boost: 8 }),
-            new MatchPhrase({ field: "body", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 1 : 2, boost: 3 }),
+            { match_phrase: { title: { query: quotedPhrase ?? trimmed, slop: quotedPhrase ? 0 : 1, boost: 8 } } },
+            { match_phrase: { body: { query: quotedPhrase ?? trimmed, slop: quotedPhrase ? 1 : 2, boost: 3 } } },
             ...(quotedPhrase
               ? []
               : [
-                  new MatchQuery({ field: "title", text: trimmed, operation: current.operation, boost: 6 }),
-                  new MatchQuery({ field: "tagline", text: trimmed, operation: current.operation, boost: 2.5 }),
-                  new MatchQuery({ field: "body", text: trimmed, operation: current.operation, boost: 2 }),
-                  new MatchQuery({ field: "api", text: trimmed, operation: OP.OR, boost: 2.75 }),
-                  new MatchQuery({ field: "tags", text: trimmed, operation: OP.OR, boost: 2.25 }),
+                  { match: { title: { query: trimmed, operator: current.operation.toLowerCase(), boost: 6 } } },
+                  { match: { tagline: { query: trimmed, operator: current.operation.toLowerCase(), boost: 2.5 } } },
+                  { match: { body: { query: trimmed, operator: current.operation.toLowerCase(), boost: 2 } } },
+                  { match: { api: { query: trimmed, operator: "or", boost: 2.75 } } },
+                  { match: { tags: { query: trimmed, operator: "or", boost: 2.25 } } },
                   ...(allowPrefixSuggestions
                     ? [
-                        new MatchQuery({ field: "title", text: trimmed, operation: OP.OR, prefixMatch: true, boost: 4 }),
-                        new MatchQuery({ field: "suggest", text: trimmed, operation: OP.OR, prefixMatch: true, boost: 3 })
+                        { match: { title: { query: trimmed, operator: "or", prefix_match: true, boost: 4 } } },
+                        { match: { suggest: { query: trimmed, operator: "or", prefix_match: true, boost: 3 } } }
                       ]
                     : [])
                 ])
           ],
           filter: filters,
-          mustNot
+          must_not: mustNot
         });
 
-  const requiredIds =
-    requiredTextQuery == null
-      ? undefined
-      : new Set((await index.searchRequest({
-          query: new BoolQuery({
-            must: [requiredTextQuery],
-            filter: filters,
-            mustNot
-          }),
-          limit: Number.MAX_SAFE_INTEGER
-        })).map(([id]) => id));
+  const fuzzyQuery =
+    trimmed.length === 0
+      ? filterOnlyQuery
+      : boolQuery({
+          must: requiredTextQuery ? [requiredTextQuery] : [],
+          should: [
+            { match: { fuzzyCombined: { query: trimmed, operator: "or", boost: 1.5 } } }
+          ],
+          filter: filters,
+          must_not: mustNot
+        });
 
-  const fuzzyHits =
-    trimmed.length === 0
-      ? []
-      : (await active.fuzzy.searchRequest({
-          query: new MatchQuery({ field: "combined", text: trimmed, operation: OP.OR, boost: 1.5 }),
-          limit: Number.MAX_SAFE_INTEGER
-        })).filter(([id]) => requiredIds == null || requiredIds.has(id));
+  const sparseVector = trimmed.length === 0
+    ? null
+    : await encodeSparseQuery(trimmed, context.sparse.model.modelId, context.sparse.query.tokenWeights);
+  const semanticVector = trimmed.length === 0
+    ? null
+    : await embedSemanticQuery(trimmed, context.semantic.model.modelId);
 
-  const allowedIds =
-    filters.length > 0 || mustNot.length > 0
-      ? (await index.searchRequest({ query: filterOnlyQuery })).map(([id]) => id)
-      : undefined;
-  const filterOnlySet = new Set(allowedIds ?? context.docs.map((doc) => doc.id));
-  const filterOnlyHits: Hits = context.docs
-    .filter((doc) => filterOnlySet.has(doc.id))
-    .map((doc) => [doc.id, 1] as const);
+  const lexicalResponse = trimmed.length === 0
+    ? await executeDslSearch(index, { query: filterOnlyQuery }, "lexical-filter-only")
+    : await executeDslSearch(index, { query: hybridLexicalQuery }, "lexical-hybrid");
+  const bm25LexicalResponse = trimmed.length === 0
+    ? lexicalResponse
+    : current.ranking === RankingAlgorithm.BM25
+      ? lexicalResponse
+      : await executeDslSearch(context.indexes[RankingAlgorithm.BM25].hydrated, { query: hybridLexicalQuery }, "bm25-lexical-hybrid");
+  const fuzzyResponse = trimmed.length === 0
+    ? await executeDslSearch(index, { query: filterOnlyQuery }, "fuzzy-filter-only")
+    : await executeDslSearch(index, { query: fuzzyQuery }, "fuzzy");
+  const phraseResponse = trimmed.length === 0
+    ? lexicalResponse
+    : await executeDslSearch(index, { query: phraseQuery }, "phrase");
+  const matchResponse = trimmed.length === 0
+    ? lexicalResponse
+    : await executeDslSearch(index, { query: baseTextQuery }, "match");
+  const sparseResponse = sparseVector == null
+    ? lexicalResponse
+    : await executeDslSearch(index, {
+        query: boolQuery({
+          must: [{ sparse_vector: { sparseEmbedding: { vector: sparseVector, k: Number.MAX_SAFE_INTEGER } } }],
+          filter: filters,
+          must_not: mustNot
+        })
+      }, "sparse-vector");
+  const annResponse = semanticVector == null
+    ? lexicalResponse
+    : await executeDslSearch(index, {
+        query: boolQuery({
+          must: [{ knn: { semanticEmbedding: { vector: semanticVector, k: Number.MAX_SAFE_INTEGER } } }],
+          filter: filters,
+          must_not: mustNot
+        })
+      }, "dense-vector");
 
-  const phraseHits =
-    trimmed.length === 0
-      ? filterOnlyHits
-      : await index.searchRequest({ query: phraseQuery, limit: Number.MAX_SAFE_INTEGER });
-  const hybridLexicalHits =
-    trimmed.length === 0
-      ? filterOnlyHits
-      : await index.searchRequest({ query: hybridLexicalQuery, limit: Number.MAX_SAFE_INTEGER });
-  const bm25HybridLexicalHits =
-    trimmed.length === 0
-      ? filterOnlyHits
-      : await context.indexes[RankingAlgorithm.BM25].hydrated.searchRequest({ query: hybridLexicalQuery, limit: Number.MAX_SAFE_INTEGER });
-  const sparseHits =
-    trimmed.length === 0
-      ? filterOnlyHits
-      : context.sparse.index.query(
-          await encodeSparseQuery(trimmed, context.sparse.model.modelId, context.sparse.query.tokenWeights),
-          Number.MAX_SAFE_INTEGER,
-          allowedIds
-        );
-  const annHits =
-    trimmed.length === 0
-      ? filterOnlyHits
-      : await context.semantic.articleIndex.rerankAsync(
-          await embedSemanticQuery(trimmed, context.semantic.model.modelId),
-          allowedIds ?? context.semantic.articleIds,
-          Number.MAX_SAFE_INTEGER
-        );
-
-  let fullFinalHits: Hits;
+  let resultResponse;
   let lexicalHits: Hits;
-  let highlightQuery: BoolQuery | MatchAll | null = null;
 
   switch (current.variant) {
     case "vector-hybrid":
-      lexicalHits = bm25HybridLexicalHits;
-      fullFinalHits =
-        trimmed.length === 0
-          ? filterOnlyHits
-          : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([bm25HybridLexicalHits, annHits], { rankConstant: 20 }));
-      highlightQuery = hybridLexicalQuery;
+      lexicalHits = hitsFromResponse(bm25LexicalResponse.hits.hits);
+      resultResponse = trimmed.length === 0
+        ? lexicalResponse
+        : await executeDslSearch(index, {
+            query: {
+              rrf: {
+                rank_constant: 20,
+                queries: [
+                  hybridLexicalQuery,
+                  boolQuery({
+                    must: [{ knn: { semanticEmbedding: { vector: semanticVector!, k: Number.MAX_SAFE_INTEGER } } }],
+                    filter: filters,
+                    must_not: mustNot
+                  })
+                ]
+              }
+            },
+            highlight: {
+              fields: {
+                title: {},
+                tagline: {},
+                body: {}
+              }
+            },
+            aggs: {
+              tags: { terms: { field: "tags", size: 12 } },
+              sections: { terms: { field: "section", size: 8 } },
+              apis: { terms: { field: "api", size: 10 } },
+              wordCountStats: { stats: { field: "wordCount" } },
+              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
+              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
+              significantTerms: { significant_terms: { field: "body", size: 20 } }
+            }
+          }, "vector-hybrid-results");
       break;
     case "vector":
       lexicalHits = [];
-      fullFinalHits = annHits;
-      highlightQuery = null;
+      resultResponse = semanticVector == null
+        ? lexicalResponse
+        : await executeDslSearch(index, {
+            query: boolQuery({
+              must: [{ knn: { semanticEmbedding: { vector: semanticVector, k: Number.MAX_SAFE_INTEGER } } }],
+              filter: filters,
+              must_not: mustNot
+            }),
+            aggs: {
+              tags: { terms: { field: "tags", size: 12 } },
+              sections: { terms: { field: "section", size: 8 } },
+              apis: { terms: { field: "api", size: 10 } },
+              wordCountStats: { stats: { field: "wordCount" } },
+              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
+              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
+              significantTerms: { significant_terms: { field: "body", size: 20 } }
+            }
+          }, "vector-results");
       break;
     case "sparse-hybrid":
-      lexicalHits = bm25HybridLexicalHits;
-      fullFinalHits =
-        trimmed.length === 0
-          ? filterOnlyHits
-          : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([bm25HybridLexicalHits, sparseHits], { rankConstant: 20 }));
-      highlightQuery = hybridLexicalQuery;
+      lexicalHits = hitsFromResponse(bm25LexicalResponse.hits.hits);
+      resultResponse = sparseVector == null
+        ? lexicalResponse
+        : await executeDslSearch(index, {
+            query: {
+              rrf: {
+                rank_constant: 20,
+                queries: [
+                  hybridLexicalQuery,
+                  boolQuery({
+                    must: [{ sparse_vector: { sparseEmbedding: { vector: sparseVector, k: Number.MAX_SAFE_INTEGER } } }],
+                    filter: filters,
+                    must_not: mustNot
+                  })
+                ]
+              }
+            },
+            highlight: {
+              fields: {
+                title: {},
+                tagline: {},
+                body: {}
+              }
+            },
+            aggs: {
+              tags: { terms: { field: "tags", size: 12 } },
+              sections: { terms: { field: "section", size: 8 } },
+              apis: { terms: { field: "api", size: 10 } },
+              wordCountStats: { stats: { field: "wordCount" } },
+              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
+              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
+              significantTerms: { significant_terms: { field: "body", size: 20 } }
+            }
+          }, "sparse-hybrid-results");
       break;
     case "sparse":
       lexicalHits = [];
-      fullFinalHits = sparseHits;
-      highlightQuery = null;
+      resultResponse = sparseVector == null
+        ? lexicalResponse
+        : await executeDslSearch(index, {
+            query: boolQuery({
+              must: [{ sparse_vector: { sparseEmbedding: { vector: sparseVector, k: Number.MAX_SAFE_INTEGER } } }],
+              filter: filters,
+              must_not: mustNot
+            }),
+            aggs: {
+              tags: { terms: { field: "tags", size: 12 } },
+              sections: { terms: { field: "section", size: 8 } },
+              apis: { terms: { field: "api", size: 10 } },
+              wordCountStats: { stats: { field: "wordCount" } },
+              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
+              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
+              significantTerms: { significant_terms: { field: "body", size: 20 } }
+            }
+          }, "sparse-results");
       break;
     case "lexical":
-    default:
+    default: {
       switch (current.mode) {
         case "phrase":
-          lexicalHits = phraseHits;
-          fullFinalHits = lexicalHits;
-          highlightQuery = phraseQuery;
+          lexicalHits = hitsFromResponse(phraseResponse.hits.hits);
+          resultResponse = await executeDslSearch(index, {
+            query: phraseQuery,
+            highlight: { fields: { title: {}, tagline: {}, body: {} } },
+            aggs: {
+              tags: { terms: { field: "tags", size: 12 } },
+              sections: { terms: { field: "section", size: 8 } },
+              apis: { terms: { field: "api", size: 10 } },
+              wordCountStats: { stats: { field: "wordCount" } },
+              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
+              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
+              significantTerms: { significant_terms: { field: "body", size: 20 } }
+            }
+          }, "phrase-results");
           break;
         case "fuzzy":
-          lexicalHits = trimmed.length === 0 ? filterOnlyHits : [];
-          fullFinalHits = trimmed.length === 0 ? lexicalHits : fuzzyHits;
-          highlightQuery = null;
+          lexicalHits = trimmed.length === 0 ? hitsFromResponse(lexicalResponse.hits.hits) : [];
+          resultResponse = await executeDslSearch(index, {
+            query: trimmed.length === 0 ? filterOnlyQuery : fuzzyQuery,
+            aggs: {
+              tags: { terms: { field: "tags", size: 12 } },
+              sections: { terms: { field: "section", size: 8 } },
+              apis: { terms: { field: "api", size: 10 } },
+              wordCountStats: { stats: { field: "wordCount" } },
+              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
+              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
+              significantTerms: { significant_terms: { field: "body", size: 20 } }
+            }
+          }, "fuzzy-results");
           break;
         case "match":
-          lexicalHits = await index.searchRequest({ query: baseTextQuery, limit: Number.MAX_SAFE_INTEGER });
-          fullFinalHits = rerankWithTitleBoost(context, trimmed, lexicalHits);
-          highlightQuery = baseTextQuery;
+          lexicalHits = hitsFromResponse(matchResponse.hits.hits);
+          resultResponse = await executeDslSearch(index, {
+            query: baseTextQuery,
+            highlight: { fields: { title: {}, tagline: {}, body: {} } },
+            aggs: {
+              tags: { terms: { field: "tags", size: 12 } },
+              sections: { terms: { field: "section", size: 8 } },
+              apis: { terms: { field: "api", size: 10 } },
+              wordCountStats: { stats: { field: "wordCount" } },
+              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
+              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
+              significantTerms: { significant_terms: { field: "body", size: 20 } }
+            }
+          }, "match-results");
           break;
         case "hybrid":
         default:
-          lexicalHits = hybridLexicalHits;
-          fullFinalHits =
-            trimmed.length === 0
-              ? lexicalHits
-              : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([hybridLexicalHits, fuzzyHits], { rankConstant: 20, weights: [3, 1] }));
-          highlightQuery = hybridLexicalQuery;
+          lexicalHits = hitsFromResponse(lexicalResponse.hits.hits);
+          resultResponse = await executeDslSearch(index, {
+            query: trimmed.length === 0 ? filterOnlyQuery : {
+              rrf: {
+                rank_constant: 20,
+                weights: [3, 1],
+                queries: [hybridLexicalQuery, fuzzyQuery]
+              }
+            },
+            highlight: { fields: { title: {}, tagline: {}, body: {} } },
+            aggs: {
+              tags: { terms: { field: "tags", size: 12 } },
+              sections: { terms: { field: "section", size: 8 } },
+              apis: { terms: { field: "api", size: 10 } },
+              wordCountStats: { stats: { field: "wordCount" } },
+              wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
+              wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
+              significantTerms: { significant_terms: { field: "body", size: 20 } }
+            }
+          }, "lexical-hybrid-results");
           break;
       }
       break;
+    }
   }
+
+  const fullFinalHits = rerankWithTitleBoost(context, trimmed, hitsFromResponse(resultResponse.hits.hits));
   const normalizedOffset = Math.max(0, Math.min(current.offset, Math.max(fullFinalHits.length - 1, 0)));
   const visibleHits = fullFinalHits.slice(normalizedOffset, normalizedOffset + SEARCH_RESULTS_PAGE_SIZE);
-
+  const visibleIds = new Set(visibleHits.map(([id]) => id));
   const highlightsById = new Map(
-    (highlightQuery && trimmed.length > 0 ? visibleHits : [])
-      .map(([id]) => [
-        id,
-        index.highlight(id, highlightQuery!, {
-          fields: ["title", "tagline", "body"],
-          fragmentSize: 140,
-          numberOfFragments: 1,
-          requireFieldMatch: true
-        })
-      ] as const)
+    [...highlightsFromResponse(resultResponse.hits.hits).entries()]
+      .filter(([id]) => visibleIds.has(id))
   );
-
   const selectedIds = new Set(fullFinalHits.map(([id]) => id));
-  const tagFacets = tagIndex.termsAggregation(12, selectedIds.size > 0 ? selectedIds : undefined);
-  const sectionFacets = sectionIndex.termsAggregation(8, selectedIds.size > 0 ? selectedIds : undefined);
-  const apiFacets = apiIndex.termsAggregation(10, selectedIds.size > 0 ? selectedIds : undefined);
-  const wordCountStats = wordCountIndex.stats(selectedIds.size > 0 ? selectedIds : undefined);
-  const wordCountFacets = wordCountIndex
-    .rangeAggregation(WORD_COUNT_FACETS, selectedIds.size > 0 ? selectedIds : undefined)
+  const tagFacets = Object.fromEntries(((resultResponse.aggregations?.tags?.buckets as Array<{ key: string; doc_count: number }> | undefined) ?? []).map((bucket) => [bucket.key, bucket.doc_count]));
+  const sectionFacets = Object.fromEntries(((resultResponse.aggregations?.sections?.buckets as Array<{ key: string; doc_count: number }> | undefined) ?? []).map((bucket) => [bucket.key, bucket.doc_count]));
+  const apiFacets = Object.fromEntries(((resultResponse.aggregations?.apis?.buckets as Array<{ key: string; doc_count: number }> | undefined) ?? []).map((bucket) => [bucket.key, bucket.doc_count]));
+  const wordCountStats = (resultResponse.aggregations?.wordCountStats as SearchResult["wordCountStats"] | undefined) ?? { count: 0, min: null, max: null, sum: 0, avg: null };
+  const wordCountFacets = (((resultResponse.aggregations?.wordCountFacets?.buckets as Array<{ key: string; doc_count: number }> | undefined) ?? []).map((bucket) => ({
+    key: bucket.key,
+    label: WORD_COUNT_FACETS.find((facet) => facet.key === bucket.key)?.label ?? bucket.key,
+    docCount: bucket.doc_count
+  })));
+  const wordCountHistogram = (((resultResponse.aggregations?.wordCountHistogram?.buckets as Array<{ key: number; doc_count: number }> | undefined) ?? []).map((bucket) => ({
+    key: bucket.key,
+    docCount: bucket.doc_count
+  })));
+  const significantTerms = (((resultResponse.aggregations?.significantTerms?.buckets as Array<{ key: string; score: number; doc_count: number; bg_count: number }> | undefined) ?? [])
     .map((bucket) => ({
       key: bucket.key,
-      label: WORD_COUNT_FACETS.find((facet) => facet.key === bucket.key)?.label ?? bucket.key,
-      docCount: bucket.docCount
-    }));
-  const wordCountHistogram = wordCountIndex.histogram(
-    WORD_COUNT_HISTOGRAM_INTERVAL,
-    selectedIds.size > 0 ? selectedIds : undefined
-  );
-  const hasScopedSearch = trimmed.length > 0 || filters.length > 0 || mustNot.length > 0;
-  const significantTermsSubset =
-    !hasScopedSearch
-      ? null
-      : selectedIds.size > 0 && selectedIds.size <= Math.floor(context.docs.length * 0.9)
-        ? selectedIds
-        : new Set(visibleHits.map(([id]) => id));
-  const significantTerms =
-    significantTermsSubset && significantTermsSubset.size > 0
-      ? bodyIndex
-          .significantTermsAggregation(20, significantTermsSubset)
-          .filter((bucket) => !/^\d+$/.test(bucket.key) && bucket.score > 1.05 && bucket.subsetDocCount > 1)
-          .slice(0, 10)
-      : [];
+      score: bucket.score,
+      subsetDocCount: bucket.doc_count,
+      backgroundDocCount: bucket.bg_count
+    }))
+    .filter((bucket) => !/^\d+$/.test(bucket.key) && bucket.score > 1.05 && bucket.subsetDocCount > 1)
+    .slice(0, 10));
+  const fuzzyHits = hitsFromResponse(fuzzyResponse.hits.hits);
+  const sparseHits = hitsFromResponse(sparseResponse.hits.hits);
   const responseTimeMs = Math.max(1, Math.round(performance.now() - startedAt));
 
   return {
@@ -1352,11 +1517,11 @@ function renderSuggestions(context: RuntimeContext, suggestionsNode: HTMLDivElem
       }
       const highlight = current.highlightsById.get(id);
       const title = fieldHighlight(highlight, "title");
-      const explanation = bestExplanation(highlight);
+      const explanation = bestExplanation(highlight, state.query);
       return `
         <button type="button" class="suggestion-item" data-doc="${escapeHtml(id)}" data-suggestion="true">
           <span class="text-xs uppercase tracking-[0.12em] text-stone-500">${index + 1}. ${escapeHtml(doc.section)} · ${score.toFixed(2)}</span>
-          <span class="suggestion-title">${title ? renderHighlightFragment(title) : renderLiteralHighlight(doc.title, state.query)}</span>
+          <span class="suggestion-title">${title ? renderLiteralHighlight(title, state.query) : renderLiteralHighlight(doc.title, state.query)}</span>
           <span class="suggestion-summary">${explanation?.html ?? escapeHtml(doc.summary)}</span>
         </button>
       `;
@@ -1650,14 +1815,14 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
                   }
                   const highlight = current.highlightsById.get(id);
                   const title = fieldHighlight(highlight, "title");
-                  const explanation = bestExplanation(highlight);
+                  const explanation = bestExplanation(highlight, state.query);
                   return `
                     <button class="nav-result" data-doc="${escapeHtml(id)}" data-open-doc="true">
                       <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
                         <span>${current.offset + index + 1}. ${escapeHtml(doc.section)}</span>
                         <span>${score.toFixed(2)}</span>
                       </div>
-                      <h2 class="result-title">${title ? renderHighlightFragment(title) : renderLiteralHighlight(doc.title, state.query)}</h2>
+                      <h2 class="result-title">${title ? renderLiteralHighlight(title, state.query) : renderLiteralHighlight(doc.title, state.query)}</h2>
                       <p class="result-summary">${escapeHtml(doc.summary)}</p>
                       ${explanation ? `<p class="result-explanation"><span class="result-explanation-label">${escapeHtml(explanation.label)}</span>${explanation.html}</p>` : ""}
                     </button>
@@ -1710,7 +1875,7 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
                           <span>${index + 1}. ${escapeHtml(resultDoc.section)}</span>
                           <span>${score.toFixed(2)}</span>
                         </div>
-                        <h3 class="result-title result-title-sm">${title ? renderHighlightFragment(title) : renderLiteralHighlight(resultDoc.title, state.query)}</h3>
+                        <h3 class="result-title result-title-sm">${title ? renderLiteralHighlight(title, state.query) : renderLiteralHighlight(resultDoc.title, state.query)}</h3>
                         <p class="result-summary result-summary-sm">${escapeHtml(resultDoc.summary)}</p>
                       </button>
                     `;

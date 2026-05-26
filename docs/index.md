@@ -2,9 +2,9 @@
 id: documentation-index
 section: Overview
 title: Documentation Index
-summary: A section-by-section map of the Querylight TS documentation.
+summary: A section-by-section map of the Querylight TS documentation, with the JSON DSL as the main query path.
 tags: [overview, docs, navigation, reference]
-apis: [DocumentIndex, TextFieldIndex, Analyzer, MatchQuery, RankingAlgorithm]
+apis: [searchJsonDsl, parseJsonDslQuery, DocumentIndex, TextFieldIndex, Analyzer, RankingAlgorithm]
 level: foundation
 order: 5
 ---
@@ -12,6 +12,8 @@ order: 5
 # Documentation Index
 
 This index mirrors the documentation table of contents used by the demo.
+
+If you are learning the query surface, start with the JSON DSL. It is the primary public query shape in these docs, and it is designed to feel familiar if you already know OpenSearch or Elasticsearch. The lower-level TypeScript query classes are still documented as the equivalent internal API.
 
 If you are here for vector search, start with these four pages:
 
@@ -25,6 +27,7 @@ If you are here for vector search, start with these four pages:
 - [Introducing Querylight TS](./overview/introduction.md)
 - [What Querylight TS Covers](./overview/what-querylight-ts-covers.md)
 - [Getting Started with Browser Search](./overview/getting-started-with-browser-search.md)
+- [OpenSearch-Style JSON DSL Search](./features/json-dsl-search.md)
 - [Comparing Querylight TS to Other Browser Search Libraries](./overview/browser-search-library-comparison.md)
 - [Other Work Related to Querylight TS](./overview/other-work-related-to-querylight-ts.md)
 - [Why Local-First Data Exploration Helps API Prototyping](./overview/why-local-first-data-exploration-helps-api-prototyping.md)
@@ -85,7 +88,6 @@ If you are here for vector search, start with these four pages:
 ## Other Features
 
 - [SimpleTextSearch for Plain JSON Documents](./features/simple-text-search-for-plain-json-documents.md)
-- [OpenSearch-Style JSON DSL Search](./features/json-dsl-search.md)
 - [Highlighting with Querylight TS](./features/highlighting-with-querylight-ts.md)
 - [Approximate Nearest Neighbor Vector Search](./features/approximate-nearest-neighbor-vector-search.md)
 - [Sparse Vector Search](./features/sparse-vector-search.md)

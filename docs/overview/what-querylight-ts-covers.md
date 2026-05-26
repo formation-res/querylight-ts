@@ -2,9 +2,9 @@
 id: overview
 section: Overview
 title: What Querylight TS Covers
-summary: A compact browser and Node.js search toolkit for structured, explainable retrieval.
+summary: A compact browser and Node.js search toolkit for structured, explainable retrieval with an OpenSearch-style JSON DSL.
 tags: [overview, bm25, tfidf, document-index, browser]
-apis: [DocumentIndex, TextFieldIndex, MatchAll, RankingAlgorithm]
+apis: [searchJsonDsl, parseJsonDslQuery, DocumentIndex, TextFieldIndex, RankingAlgorithm]
 level: foundation
 order: 20
 ---
@@ -29,8 +29,8 @@ If you are new to search tooling, the easiest mental model is:
 
 - A `DocumentIndex` stores your documents.
 - Each `TextFieldIndex` indexes one field such as `title`, `body`, or `tags`.
-- A query object describes what you want to match.
-- `searchRequest(...)` returns scored hits as `[id, score]` tuples.
+- A JSON request describes what you want to match.
+- `searchJsonDsl(...)` returns an OpenSearch-style response with `hits`, `highlight`, and `aggregations`.
 
 ## Why it is broader than a fuzzy-only library
 
@@ -63,7 +63,7 @@ If you are evaluating fit, use this matrix instead of guessing from the API name
 ## Minimal setup
 
 ```ts
-import { DocumentIndex, MatchAll, TextFieldIndex } from "@tryformation/querylight-ts";
+import { DocumentIndex, searchJsonDsl, TextFieldIndex } from "@tryformation/querylight-ts";
 
 const index = new DocumentIndex({
   title: new TextFieldIndex(),
@@ -78,18 +78,30 @@ index.index({
   }
 });
 
-const hits = index.searchRequest({ query: new MatchAll(), limit: 10 });
+const response = await searchJsonDsl({
+  index,
+  request: {
+    query: { match_all: {} },
+    size: 10
+  }
+});
 ```
 
 Expected result:
 
 ```ts
-[
-  ["intro", 1]
-]
+response.hits.hits[0];
+// {
+//   _id: "intro",
+//   _score: 1,
+//   _source: {
+//     title: ["Querylight TS"],
+//     body: ["Portable search for browser and Node.js"]
+//   }
+// }
 ```
 
-That `1` is the score for the matching document. Scores are mainly useful for ordering results. The important part is that the hit tells you which document matched.
+That score is mainly useful for ordering. The important part is that each hit already carries the document id and source payload in an OpenSearch-style envelope.
 
 ## What the result ids are for
 
@@ -102,10 +114,9 @@ const sourceDocuments = new Map([
   ["intro", { title: "Querylight TS", url: "/docs/intro" }]
 ]);
 
-const hits = index.searchRequest({ query: new MatchAll(), limit: 10 });
-const results = hits.map(([id, score]) => ({
-  ...sourceDocuments.get(id),
-  score
+const results = response.hits.hits.map((hit) => ({
+  ...sourceDocuments.get(hit._id),
+  score: hit._score
 }));
 ```
 
@@ -124,7 +135,7 @@ Expected result:
 ## Common next steps
 
 - Add more fields such as `summary`, `tags`, or `api`.
-- Replace `MatchAll` with `MatchQuery`, `MatchPhrase`, or `BoolQuery`.
+- Replace `match_all` with `match`, `match_phrase`, `bool`, or vector clauses.
 - Use aggregations to build facets from the current result set.
 - Add dense vectors for semantic search or related-content features.
 - Add sparse vectors when your model emits learned token weights.
@@ -133,6 +144,7 @@ Expected result:
 ## More guides
 
 - [Choosing a Schema for Search](./../schema/choosing-a-schema-for-search.md)
+- [OpenSearch-Style JSON DSL Search](./../features/json-dsl-search.md)
 - [Analyzer and Tokenization Deep Dive](./../analysis/analyzer-and-tokenization-deep-dive.md)
 - [How To Build Autocomplete](./../guides/how-to-build-autocomplete.md)
 - [How To Build Faceted Navigation](./../guides/how-to-build-faceted-navigation.md)

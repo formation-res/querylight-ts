@@ -2,9 +2,9 @@
 id: raw-api-payloads-to-browser-dashboards
 section: Guides
 title: From Raw API Payloads to Browser Dashboards
-summary: A practical pattern for turning raw API responses into local-first dashboard interactions with Querylight TS.
+summary: A practical pattern for turning raw API responses into local-first dashboard interactions with Querylight TS and its JSON DSL.
 tags: [dashboard, api, browser, aggregations, local-first, echarts]
-apis: [DocumentIndex, TextFieldIndex, NumericFieldIndex, DateFieldIndex, GeoFieldIndex, BoolQuery, TermQuery, TermsQuery, RangeQuery]
+apis: [searchJsonDsl, DocumentIndex, TextFieldIndex, NumericFieldIndex, DateFieldIndex, GeoFieldIndex]
 level: querying
 order: 30
 ---
@@ -66,20 +66,31 @@ index.index({
 
 That is not very different from indexing documents for search. The difference is what you do with the matching ids afterward.
 
-## Use queries to define a subset
+## Use JSON DSL queries to define a subset
 
 In the dashboard demo, charts start with a filtered subset:
 
 ```ts
-const filters = [
-  new TermQuery({ field: "indicatorId", text: "SP.POP.TOTL" }),
-  new TermsQuery({ field: "country", terms: ["United States", "Germany", "Japan"] }),
-  new RangeQuery({ field: "year", range: { gte: "2018", lte: "2024" } })
-];
+const response = await searchJsonDsl({
+  index,
+  request: {
+    query: {
+      bool: {
+        filter: [
+          { term: { indicatorId: "SP.POP.TOTL" } },
+          { terms: { country: ["United States", "Germany", "Japan"] } },
+          { range: { year: { gte: "2018", lte: "2024" } } }
+        ]
+      }
+    },
+    aggs: {
+      values: { stats: { field: "value" } },
+      countries: { terms: { field: "country", size: 6 } }
+    }
+  }
+});
 
-const subset = new Set(
-  index.search(new BoolQuery({ filter: filters })).map(([id]) => id)
-);
+const subset = new Set(response.hits.hits.map((hit) => hit._id));
 ```
 
 Once you have `subset`, you can treat it as the current slice of the data.
@@ -92,11 +103,11 @@ It only needs arrays of numbers, labels, and series data.
 
 For example:
 
-- `termsAggregation(...)` gives you category counts
-- `stats(...)` gives you summary metrics
-- `histogram(...)` gives you numeric buckets
-- `dateHistogram(...)` gives you time buckets
-- `significantTermsAggregation(...)` gives you characteristic vocabulary for a slice
+- `terms` aggregation gives you category counts
+- `stats` gives you summary metrics
+- `histogram` gives you numeric buckets
+- `date_histogram` gives you time buckets
+- `significant_terms` gives you characteristic vocabulary for a slice
 
 That is enough to power:
 

@@ -2,7 +2,7 @@
 id: boosting-query
 section: Lexical Querying
 title: BoostingQuery for Soft Demotion Instead of Hard Exclusion
-summary: Keep relevant documents in the results while pushing down candidates that carry undesirable signals.
+summary: Keep relevant documents in the results while pushing down candidates that carry undesirable signals through the JSON DSL.
 tags: [query, boosting, relevance, ranking, demotion]
 apis: [BoostingQuery, MatchQuery, TermQuery, BoolQuery]
 level: advanced
@@ -11,7 +11,7 @@ order: 60
 
 # BoostingQuery for Soft Demotion Instead of Hard Exclusion
 
-`BoostingQuery` models a common search need: some documents are relevant, but some of those relevant documents should rank lower because they also match a negative signal.
+`boosting` models a common search need: some documents are relevant, but some of those relevant documents should rank lower because they also match a negative signal.
 
 This is different from `mustNot`.
 
@@ -25,6 +25,30 @@ This is different from `mustNot`.
 - a positive query
 - a negative query
 - a `negativeBoost` multiplier between `0` and `1`
+
+```json
+{
+  "query": {
+    "boosting": {
+      "positive": {
+        "match": {
+          "title": {
+            "query": "querylight"
+          }
+        }
+      },
+      "negative": {
+        "term": {
+          "tags": "deprecated"
+        }
+      },
+      "negative_boost": 0.2
+    }
+  }
+}
+```
+
+Equivalent internal TypeScript API:
 
 ```ts
 import { BoostingQuery, MatchQuery, TermQuery } from "@tryformation/querylight-ts";
@@ -51,12 +75,28 @@ If you already know a document should never appear, use `mustNot`.
 
 If the document is still acceptable but should lose ranking priority, use `BoostingQuery`.
 
-```ts
-const query = new BoostingQuery({
-  positive: new MatchQuery({ field: "body", text: "vector search" }),
-  negative: new BoolQuery({ filter: [new TermQuery({ field: "status", text: "draft" })] }),
-  negativeBoost: 0.3
-});
+```json
+{
+  "query": {
+    "boosting": {
+      "positive": {
+        "match": {
+          "body": {
+            "query": "vector search"
+          }
+        }
+      },
+      "negative": {
+        "bool": {
+          "filter": [
+            { "term": { "status": "draft" } }
+          ]
+        }
+      },
+      "negative_boost": 0.3
+    }
+  }
+}
 ```
 
 ## Tuning advice

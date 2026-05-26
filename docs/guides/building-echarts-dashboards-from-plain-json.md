@@ -2,9 +2,9 @@
 id: echarts-dashboards-from-plain-json
 section: Guides
 title: Build Interactive ECharts Dashboards from Plain JSON
-summary: Use Querylight TS to turn plain JSON records into the filtered series and buckets that Apache ECharts expects.
+summary: Use Querylight TS to turn plain JSON records into the filtered series and buckets that Apache ECharts expects, with the JSON DSL driving the slice.
 tags: [echarts, dashboard, browser, json, charts, aggregations]
-apis: [DocumentIndex, BoolQuery, TermQuery, TermsQuery, RangeQuery, NumericFieldIndex, DateFieldIndex, termsAggregation]
+apis: [searchJsonDsl, DocumentIndex]
 level: querying
 order: 32
 ---
@@ -33,11 +33,19 @@ That keeps the chart code simple.
 ## Example: bar chart from a terms aggregation
 
 ```ts
-const subset = new Set(
-  index.search(new BoolQuery({ filter: filters })).map(([id]) => id)
-);
+const response = await searchJsonDsl({
+  index,
+  request: {
+    query: { bool: { filter: filters } },
+    aggs: {
+      categories: { terms: { field: "placeCategory", size: 8 } }
+    }
+  }
+});
 
-const categories = placeCategoryField.termsAggregation(8, subset);
+const categories = Object.fromEntries(
+  (response.aggregations?.categories?.buckets ?? []).map((bucket) => [bucket.key, bucket.doc_count])
+);
 
 const option = {
   xAxis: { type: "category", data: Object.keys(categories) },
@@ -97,14 +105,13 @@ Then ECharts can render:
 ## Example: time buckets
 
 ```ts
-const dayMs = 24 * 60 * 60 * 1000;
-const buckets = observedAtField.dateHistogram(dayMs, subset);
+const buckets = response.aggregations?.observedAt?.buckets ?? [];
 ```
 
 That translates naturally into:
 
-- x-axis labels from `bucket.keyAsString`
-- y-axis values from `bucket.docCount`
+- x-axis labels from `bucket.key_as_string`
+- y-axis values from `bucket.doc_count`
 
 ## Why this combination works well
 

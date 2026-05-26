@@ -1,15 +1,11 @@
 import * as echarts from "echarts";
 import {
   Analyzer,
-  BoolQuery,
-  DateFieldIndex,
   DocumentIndex,
   GeoFieldIndex,
   KeywordTokenizer,
   NumericFieldIndex,
-  RangeQuery,
-  TermQuery,
-  TermsQuery,
+  searchJsonDsl,
   TextFieldIndex
 } from "@tryformation/querylight-ts";
 import packageMeta from "../../../packages/querylight/package.json";
@@ -22,6 +18,12 @@ import type {
 
 type Cleanup = () => void;
 type ChartMap = Map<string, echarts.ECharts>;
+type DashboardFilterClause = Record<string, unknown>;
+type TermsBucket = { key: string; doc_count: number };
+type HistogramBucket = { key: number; keyAsString?: string; docCount: number };
+type SignificantTermsBucket = { key: string; score: number; doc_count: number; bg_count: number };
+type StatsAggregation = { count: number; min: number | null; max: number | null; sum: number; avg: number | null };
+type AvgAggregation = { value: number | null };
 
 type SourceMetadata = DashboardDataPayload["datasets"]["worldBank"]["source"];
 
@@ -46,7 +48,6 @@ type WeatherRuntime = {
   byId: Map<string, WeatherRecord>;
 };
 
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const tagAnalyzer = new Analyzer([], new KeywordTokenizer());
 const DASHBOARD_DATA_CACHE_KEY = `querylight-dashboard:data:${packageMeta.version}`;
 
@@ -115,39 +116,50 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
-async function toHitsSubset(index: DocumentIndex, filters: Array<TermQuery | TermsQuery | RangeQuery>): Promise<Set<string>> {
-  if (filters.length === 0) {
-    return index.ids();
-  }
-  return new Set((await index.search(new BoolQuery({ filter: filters }))).map(([id]) => id));
+async function runDashboardSearch(index: DocumentIndex, filters: DashboardFilterClause[], aggs?: Record<string, Record<string, unknown>>) {
+  return await searchJsonDsl({
+    index,
+    request: {
+      query: filters.length === 0 ? { match_all: {} } : { bool: { filter: filters } },
+      size: Number.MAX_SAFE_INTEGER,
+      aggs
+    }
+  });
 }
 
-function getNumericField(index: DocumentIndex, field: string): NumericFieldIndex {
-  const fieldIndex = index.getFieldIndex(field);
-  if (!(fieldIndex instanceof NumericFieldIndex)) {
-    throw new Error(`expected numeric field ${field}`);
-  }
-  return fieldIndex;
-}
-
-function getDateField(index: DocumentIndex, field: string): DateFieldIndex {
-  const fieldIndex = index.getFieldIndex(field);
-  if (!(fieldIndex instanceof DateFieldIndex)) {
-    throw new Error(`expected date field ${field}`);
-  }
-  return fieldIndex;
-}
-
-function getTextField(index: DocumentIndex, field: string): TextFieldIndex {
-  const fieldIndex = index.getFieldIndex(field);
-  if (!(fieldIndex instanceof TextFieldIndex)) {
-    throw new Error(`expected text field ${field}`);
-  }
-  return fieldIndex;
+async function toHitsSubset(index: DocumentIndex, filters: DashboardFilterClause[]): Promise<Set<string>> {
+  const response = await runDashboardSearch(index, filters);
+  return new Set(response.hits.hits.map((hit) => hit._id));
 }
 
 function recordsForSubset<T extends { id: string }>(subset: Set<string>, byId: Map<string, T>): T[] {
   return [...subset].map((id) => byId.get(id)).filter((value): value is T => Boolean(value));
+}
+
+function termsAggregation(result: unknown): Record<string, number> {
+  const buckets = (result as { buckets?: TermsBucket[] } | undefined)?.buckets ?? [];
+  return Object.fromEntries(buckets.map((bucket) => [bucket.key, bucket.doc_count]));
+}
+
+function significantTermsAggregation(result: unknown): SignificantTermsBucket[] {
+  return (result as { buckets?: SignificantTermsBucket[] } | undefined)?.buckets ?? [];
+}
+
+function histogramAggregation(result: unknown): HistogramBucket[] {
+  const buckets = (result as { buckets?: Array<{ key: number; key_as_string?: string; doc_count: number }> } | undefined)?.buckets ?? [];
+  return buckets.map((bucket) => ({
+    key: bucket.key,
+    keyAsString: bucket.key_as_string,
+    docCount: bucket.doc_count
+  }));
+}
+
+function statsAggregation(result: unknown): StatsAggregation {
+  return (result as StatsAggregation | undefined) ?? { count: 0, min: null, max: null, sum: 0, avg: null };
+}
+
+function avgAggregation(result: unknown): number {
+  return (result as AvgAggregation | undefined)?.value ?? 0;
 }
 
 function renderAttribution(source: SourceMetadata): string {
@@ -401,10 +413,13 @@ function renderDashboard(payload: DashboardDataPayload): string {
   observedAt: new DateFieldIndex(),
   temperatureC: new NumericFieldIndex()
 });</code></pre>
-              <pre class="dashboard-code-block"><code>const subset = new Set(
-  index.search(new BoolQuery({ filter: filters })).map(([id]) =&gt; id)
-);
-const buckets = temperatureField.histogram(2, subset);</code></pre>
+              <pre class="dashboard-code-block"><code>const response = await searchJsonDsl({
+  index,
+  request: {
+    query: { bool: { filter: filters } },
+    aggs: { temperatures: { histogram: { field: "temperatureC", interval: 2 } } }
+  }
+});</code></pre>
             </div>
           </div>
         </section>
@@ -493,8 +508,8 @@ const buckets = temperatureField.histogram(2, subset);</code></pre>
         <div class="dashboard-ops-grid mt-5">
           <article class="dashboard-ops-card">
             <p class="dashboard-ops-label">Querylight operations used</p>
-            <p class="dashboard-copy"><code>TermQuery(indicatorId)</code> + <code>TermsQuery(country)</code> + <code>RangeQuery(year)</code> define the subset.</p>
-            <p class="dashboard-copy"><code>NumericFieldIndex.stats(value)</code> powers summary cards and <code>TextFieldIndex.significantTermsAggregation(corpus)</code> explains the slice.</p>
+            <p class="dashboard-copy"><code>term</code>, <code>terms</code>, and <code>range</code> clauses define the subset.</p>
+            <p class="dashboard-copy"><code>stats</code>, <code>terms</code>, and <code>significant_terms</code> aggregations explain the slice.</p>
           </article>
           <article class="dashboard-ops-card">
             <p class="dashboard-ops-label">Significant terms in this slice</p>
@@ -538,11 +553,11 @@ const buckets = temperatureField.histogram(2, subset);</code></pre>
         <div class="dashboard-chart-grid mt-5">
           <div>
             <div id="earthquake-histogram" class="dashboard-chart"></div>
-            <p class="dashboard-chart-caption"><code>NumericFieldIndex.histogram(1)</code> over the filtered magnitude field.</p>
+            <p class="dashboard-chart-caption"><code>histogram</code> aggregation over the filtered magnitude field.</p>
           </div>
           <div>
             <div id="earthquake-timeline" class="dashboard-chart"></div>
-            <p class="dashboard-chart-caption"><code>DateFieldIndex.dateHistogram(1 day)</code> over the filtered event timestamps.</p>
+            <p class="dashboard-chart-caption"><code>date_histogram</code> aggregation over the filtered event timestamps.</p>
           </div>
         </div>
         <div class="dashboard-chart-grid mt-5">
@@ -564,8 +579,8 @@ const buckets = temperatureField.histogram(2, subset);</code></pre>
         <div class="dashboard-ops-grid mt-5">
           <article class="dashboard-ops-card">
             <p class="dashboard-ops-label">Querylight operations used</p>
-            <p class="dashboard-copy"><code>RangeQuery(magnitude)</code> + <code>RangeQuery(depthKm)</code> + optional <code>TermQuery(placeCategory)</code> define the event subset.</p>
-            <p class="dashboard-copy"><code>TextFieldIndex.significantTermsAggregation(placeText)</code> surfaces the place words that dominate the current slice.</p>
+            <p class="dashboard-copy"><code>range</code> clauses on magnitude and depth, plus an optional <code>term</code> clause on place category, define the event subset.</p>
+            <p class="dashboard-copy"><code>significant_terms</code> surfaces the place words that dominate the current slice.</p>
           </article>
           <article class="dashboard-ops-card">
             <p class="dashboard-ops-label">Significant place terms</p>
@@ -635,7 +650,7 @@ const buckets = temperatureField.histogram(2, subset);</code></pre>
         <div class="dashboard-ops-grid mt-5">
           <article class="dashboard-ops-card">
             <p class="dashboard-ops-label">Querylight operations used</p>
-            <p class="dashboard-copy"><code>TermsQuery(city)</code> + <code>RangeQuery(observedAt)</code> define the slice. Grouped hour panels are built from repeated subset queries plus <code>NumericFieldIndex.avg(...)</code>.</p>
+            <p class="dashboard-copy"><code>terms</code> on city plus <code>range</code> on observed time define the slice. Grouped hour panels come from repeated DSL requests with top-level <code>avg</code> aggregations.</p>
           </article>
           <article class="dashboard-ops-card">
             <p class="dashboard-ops-label">What this proves</p>
@@ -713,26 +728,30 @@ function createWorldBankSection(
 
     const startYear = Number(startSelect.value);
     const endYear = Number(endSelect.value);
+    const minYear = Math.min(startYear, endYear);
+    const maxYear = Math.max(startYear, endYear);
     const filters = [
-      new TermQuery({ field: "indicatorId", text: indicatorSelect.value }),
-      new TermsQuery({ field: "country", terms: activeCountries }),
-      new RangeQuery({ field: "year", range: { gte: String(Math.min(startYear, endYear)), lte: String(Math.max(startYear, endYear)) } })
+      { term: { indicatorId: indicatorSelect.value } },
+      { terms: { country: activeCountries } },
+      { range: { year: { gte: String(minYear), lte: String(maxYear) } } }
     ];
     const subset = await toHitsSubset(runtime.index, filters);
     const records = recordsForSubset(subset, runtime.byId).sort((left, right) => left.year - right.year);
-    const valueField = getNumericField(runtime.index, "value");
-    const countryField = getTextField(runtime.index, "country");
-    const corpusField = getTextField(runtime.index, "corpus");
-    const stats = valueField.stats(subset);
-    const countryAgg = countryField.termsAggregation(6, subset);
-    const significantTerms = corpusField.significantTermsAggregation(6, subset);
+    const aggregationResponse = await runDashboardSearch(runtime.index, filters, {
+      valueStats: { stats: { field: "value" } },
+      countries: { terms: { field: "country", size: 6 } },
+      significantTerms: { significant_terms: { field: "corpus", size: 6 } }
+    });
+    const stats = statsAggregation(aggregationResponse.aggregations?.valueStats);
+    const countryAgg = termsAggregation(aggregationResponse.aggregations?.countries);
+    const significantTerms = significantTermsAggregation(aggregationResponse.aggregations?.significantTerms);
     const latestYear = records.length > 0 ? Math.max(...records.map((record) => record.year)) : Math.max(startYear, endYear);
     const indicatorName = indicators.find(([id]) => id === indicatorSelect.value)?.[1] ?? indicatorSelect.value;
 
     filtersNode.innerHTML = `
       <span class="dashboard-filter-pill">Indicator: ${escapeHtml(indicatorName)}</span>
       <span class="dashboard-filter-pill">Countries: ${escapeHtml(activeCountries.join(", "))}</span>
-      <span class="dashboard-filter-pill">Years: ${Math.min(startYear, endYear)}-${Math.max(startYear, endYear)}</span>
+      <span class="dashboard-filter-pill">Years: ${minYear}-${maxYear}</span>
     `;
 
     metricsNode.innerHTML = renderMetricCards([
@@ -745,7 +764,7 @@ function createWorldBankSection(
       .map((bucket) => `<span class="dashboard-term-pill" title="${escapeHtml(`${formatNumber(bucket.subsetDocCount, 0)} matching docs · ${formatNumber(bucket.backgroundDocCount, 0)} docs in corpus · significance ${formatNumber(bucket.score)}x`)}">${escapeHtml(bucket.key)} · ${escapeHtml(formatDocCount(bucket.subsetDocCount))}</span>`)
       .join("");
 
-    const activeYears = years.filter((year) => year >= Math.min(startYear, endYear) && year <= Math.max(startYear, endYear));
+    const activeYears = years.filter((year) => year >= minYear && year <= maxYear);
     const lineSeries = activeCountries.map((country) => ({
       name: country,
       type: "line",
@@ -882,25 +901,28 @@ function createEarthquakeSection(
     const runtime = registry.earthquakes();
     setSectionLoaded(section, runtime.builtAt);
 
-    const filters = [
-      new RangeQuery({ field: "magnitude", range: { gte: magnitudeInput.value } }),
-      new RangeQuery({ field: "depthKm", range: { lte: depthInput.value } })
+    const filters: DashboardFilterClause[] = [
+      { range: { magnitude: { gte: magnitudeInput.value } } },
+      { range: { depthKm: { lte: depthInput.value } } }
     ];
     if (placeSelect.value !== "all") {
-      filters.push(new TermQuery({ field: "placeCategory", text: placeSelect.value }));
+      filters.push({ term: { placeCategory: placeSelect.value } });
     }
 
     const subset = await toHitsSubset(runtime.index, filters);
     const records = recordsForSubset(subset, runtime.byId);
-    const magnitudeField = getNumericField(runtime.index, "magnitude");
-    const depthField = getNumericField(runtime.index, "depthKm");
-    const dateField = getDateField(runtime.index, "occurredAt");
-    const placeField = getTextField(runtime.index, "placeText");
-    const placeCategoryField = getTextField(runtime.index, "placeCategory");
-    const stats = magnitudeField.stats(subset);
-    const depthStats = depthField.stats(subset);
-    const significantTerms = placeField.significantTermsAggregation(8, subset);
-    const placeCategoryTerms = placeCategoryField.termsAggregation(8, subset);
+    const aggregationResponse = await runDashboardSearch(runtime.index, filters, {
+      magnitudeStats: { stats: { field: "magnitude" } },
+      depthStats: { stats: { field: "depthKm" } },
+      significantTerms: { significant_terms: { field: "placeText", size: 8 } },
+      placeCategories: { terms: { field: "placeCategory", size: 8 } },
+      magnitudeHistogram: { histogram: { field: "magnitude", interval: 1 } },
+      occurredTimeline: { date_histogram: { field: "occurredAt", fixed_interval: "1d" } }
+    });
+    const stats = statsAggregation(aggregationResponse.aggregations?.magnitudeStats);
+    const depthStats = statsAggregation(aggregationResponse.aggregations?.depthStats);
+    const significantTerms = significantTermsAggregation(aggregationResponse.aggregations?.significantTerms);
+    const placeCategoryTerms = termsAggregation(aggregationResponse.aggregations?.placeCategories);
 
     filtersNode.innerHTML = `
       <span class="dashboard-filter-pill">Min magnitude: ${escapeHtml(magnitudeInput.value)}</span>
@@ -916,7 +938,7 @@ function createEarthquakeSection(
       .map((bucket) => `<span class="dashboard-term-pill" title="${escapeHtml(`${formatNumber(bucket.subsetDocCount, 0)} matching docs · ${formatNumber(bucket.backgroundDocCount, 0)} docs in corpus · significance ${formatNumber(bucket.score)}x`)}">${escapeHtml(bucket.key)} · ${escapeHtml(formatDocCount(bucket.subsetDocCount))}</span>`)
       .join("");
 
-    const magnitudeBuckets = magnitudeField.histogram(1, subset);
+    const magnitudeBuckets = histogramAggregation(aggregationResponse.aggregations?.magnitudeHistogram);
     upsertChart(charts, "earthquake-histogram", {
       tooltip: { trigger: "axis" },
       grid: { left: 42, right: 18, top: 24, bottom: 30 },
@@ -925,11 +947,11 @@ function createEarthquakeSection(
       series: [{ type: "bar", itemStyle: { color: "#dc2626" }, data: magnitudeBuckets.map((bucket) => bucket.docCount) }]
     });
 
-    const dateBuckets = dateField.dateHistogram(ONE_DAY_MS, subset);
+    const dateBuckets = histogramAggregation(aggregationResponse.aggregations?.occurredTimeline);
     upsertChart(charts, "earthquake-timeline", {
       tooltip: { trigger: "axis" },
       grid: { left: 42, right: 18, top: 24, bottom: 42 },
-      xAxis: { type: "category", data: dateBuckets.map((bucket) => bucket.keyAsString.slice(5, 10)) },
+      xAxis: { type: "category", data: dateBuckets.map((bucket) => bucket.keyAsString?.slice(5, 10) ?? "") },
       yAxis: { type: "value" },
       series: [{ type: "line", smooth: true, itemStyle: { color: "#7c2d12" }, data: dateBuckets.map((bucket) => bucket.docCount) }]
     });
@@ -1053,16 +1075,20 @@ function createWeatherSection(
     const activeCities = [...selectedCities];
     const start = `${startSelect.value}T00:00:00.000Z`;
     const end = `${endSelect.value}T23:59:59.000Z`;
-    const filters = [
-      new TermsQuery({ field: "city", terms: activeCities }),
-      new RangeQuery({ field: "observedAt", range: { gte: start, lte: end } })
+    const filters: DashboardFilterClause[] = [
+      { terms: { city: activeCities } },
+      { range: { observedAt: { gte: start, lte: end } } }
     ];
     const subset = await toHitsSubset(runtime.index, filters);
     const records = recordsForSubset(subset, runtime.byId).sort((left, right) => left.observedAt.localeCompare(right.observedAt));
-    const numericField = getNumericField(runtime.index, metric.field);
-    const weatherCodeField = getTextField(runtime.index, "weatherCode");
-    const stats = numericField.stats(subset);
-    const codeTerms = weatherCodeField.termsAggregation(8, subset);
+    const aggregationResponse = await runDashboardSearch(runtime.index, filters, {
+      metricStats: { stats: { field: metric.field } },
+      metricHistogram: { histogram: { field: metric.field, interval: metric.interval } },
+      weatherCodes: { terms: { field: "weatherCode", size: 8 } }
+    });
+    const stats = statsAggregation(aggregationResponse.aggregations?.metricStats);
+    const histogram = histogramAggregation(aggregationResponse.aggregations?.metricHistogram);
+    const codeTerms = termsAggregation(aggregationResponse.aggregations?.weatherCodes);
 
     filtersNode.innerHTML = `
       <span class="dashboard-filter-pill">Metric: ${escapeHtml(metric.label)}</span>
@@ -1095,7 +1121,6 @@ function createWeatherSection(
       series: groupedByCity
     });
 
-    const histogram = numericField.histogram(metric.interval, subset);
     upsertChart(charts, "weather-histogram", {
       tooltip: { trigger: "axis" },
       grid: { left: 44, right: 18, top: 24, bottom: 30 },
@@ -1107,12 +1132,14 @@ function createWeatherSection(
     const hours = [...new Set(runtime.records.map((record) => record.hourOfDay))].sort();
     const heatmapData = await Promise.all(activeCities.flatMap((city, cityIndex) =>
       hours.map(async (hour, hourIndex) => {
-        const cellSubset = await toHitsSubset(runtime.index, [
+        const cellResponse = await runDashboardSearch(runtime.index, [
           ...filters,
-          new TermQuery({ field: "city", text: city }),
-          new TermQuery({ field: "hourOfDay", text: hour })
-        ]);
-        return [hourIndex, cityIndex, getNumericField(runtime.index, metric.field).avg(cellSubset) ?? 0];
+          { term: { city } },
+          { term: { hourOfDay: hour } }
+        ], {
+          cellAverage: { avg: { field: metric.field } }
+        });
+        return [hourIndex, cityIndex, avgAggregation(cellResponse.aggregations?.cellAverage)];
       })
     ));
 
@@ -1196,15 +1223,26 @@ async function loadDashboardPayload(): Promise<DashboardDataPayload> {
     if (cached) {
       return cached;
     }
-    const response = await fetch("/data/dashboard-data.json");
+    const response = await fetch("/data/dashboard-data.json.gz");
     if (!response.ok) {
       throw new Error(`failed to load dashboard data: ${response.status} ${response.statusText}`);
     }
-    const payload = await response.json() as DashboardDataPayload;
+    const payload = await readGzippedJson<DashboardDataPayload>(response);
     writeCachedDashboardPayload(payload);
     return payload;
   })();
   return await dashboardDataPromise;
+}
+
+async function readGzippedJson<T>(response: Response): Promise<T> {
+  if (!response.body) {
+    throw new Error("failed to read compressed dashboard data response body");
+  }
+  if (typeof DecompressionStream !== "function") {
+    throw new Error("this browser does not support gzip-compressed dashboard data");
+  }
+  const decompressed = response.body.pipeThrough(new DecompressionStream("gzip"));
+  return await new Response(decompressed).json() as T;
 }
 
 function renderLoading(app: HTMLDivElement): void {

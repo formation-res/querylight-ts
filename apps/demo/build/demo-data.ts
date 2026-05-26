@@ -11,10 +11,10 @@ import {
   KeywordTokenizer,
   NgramTokenFilter,
   RankingAlgorithm,
+  serializeDocumentIndex,
   TextFieldIndex,
   bigramVector,
   type Document,
-  type DocumentIndexState,
   type SparseVector
 } from "../../../packages/querylight/src/index";
 import {
@@ -56,8 +56,8 @@ export type DocEntry = {
 };
 
 export type SerializedRuntimeIndexes = {
-  hydrated: DocumentIndexState;
-  fuzzy: DocumentIndexState;
+  hydrated: number[];
+  fuzzy: number[];
   vectorEmbeddings: Record<string, number[]>;
 };
 
@@ -208,8 +208,8 @@ function createSerializedIndexes(docs: DocEntry[], ranking: RankingAlgorithm): S
   });
 
   return {
-    hydrated: JSON.parse(JSON.stringify(source.indexState)) as DocumentIndexState,
-    fuzzy: JSON.parse(JSON.stringify(fuzzy.indexState)) as DocumentIndexState,
+    hydrated: Array.from(serializeDocumentIndex({ index: source })),
+    fuzzy: Array.from(serializeDocumentIndex({ index: fuzzy })),
     vectorEmbeddings
   };
 }
