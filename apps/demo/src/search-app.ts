@@ -1,29 +1,22 @@
 import {
   Analyzer,
-  BoolQuery,
+  deserializeDocumentIndex,
   DocumentIndex,
-  type DocumentIndexState,
   EdgeNgramsTokenFilter,
   KeywordTokenizer,
-  MatchAll,
-  MatchPhrase,
-  MatchQuery,
-  MultiMatchQuery,
   NgramTokenFilter,
   NumericFieldIndex,
   OP,
-  type Query,
-  RangeQuery,
   RankingAlgorithm,
-  reciprocalRankFusion,
+  searchJsonDsl,
+  StoredSourceIndex,
+  type JsonDslQueryClause,
+  type JsonDslSearchHit,
   type SignificantTermsBucket,
   SparseVectorFieldIndex,
-  TermQuery,
   TextFieldIndex,
   VectorFieldIndex,
   createSeededRandom,
-  type HighlightFragment,
-  type HighlightResult,
   type Hits
 } from "@tryformation/querylight-ts";
 import hljs from "highlight.js/lib/core";
@@ -99,17 +92,14 @@ type SearchState = {
 type FacetKind = "api" | "section" | "tag" | "significant-term" | "word-count";
 
 type SearchResult = {
-  lexicalHits: Hits;
-  fuzzyHits: Hits;
-  sparseHits: Hits;
-  finalHits: Hits;
   visibleHits: Hits;
   totalHits: number;
   offset: number;
   pageSize: number;
   responseTimeMs: number;
-  highlightsById: Map<string, HighlightResult>;
-  selectedIds: Set<string>;
+  dslRequest: Record<string, unknown>;
+  dslResponse: unknown;
+  highlightsById: Map<string, Record<string, string[]>>;
   tagFacets: Record<string, number>;
   sectionFacets: Record<string, number>;
   apiFacets: Record<string, number>;
@@ -129,8 +119,8 @@ type DemoDataPayload = {
   indexes: Record<
     RankingAlgorithm,
     {
-      hydrated: DocumentIndexState;
-      fuzzy: DocumentIndexState;
+      hydrated: number[];
+      fuzzy: number[];
     }
   >;
   semantic: SemanticPayload;
@@ -181,6 +171,14 @@ type SparseRuntime = {
   index: SparseVectorFieldIndex;
   query: SparseQueryWeights;
 };
+
+type SearchExecutionPlan = {
+  index: DocumentIndex;
+  request: Record<string, unknown>;
+  label: string;
+};
+
+type SearchDslResponse = Awaited<ReturnType<typeof searchJsonDsl>>;
 
 type SemanticQuestionState = {
   query: string;
@@ -282,7 +280,7 @@ const initialState: SearchState = {
 let state: SearchState = { ...initialState };
 let activeDocId = "";
 let activeChunkId: string | null = null;
-let currentView: "home" | "results" | "detail" | "vector" = "home";
+let currentView: "home" | "results" | "detail" | "console" = "home";
 let submittedResult: SearchResult | null = null;
 let suggestionResult: SearchResult | null = null;
 let semanticQuestionState: SemanticQuestionState = {
@@ -404,6 +402,9 @@ function buildDetailQuery(): string {
   if (state.variant !== "lexical") {
     params.set("variant", state.variant);
   }
+  if (currentView === "console") {
+    params.set("view", "console");
+  }
   return params.toString();
 }
 
@@ -447,6 +448,27 @@ function normalizeDocUrl(pathname: string): string {
   return pathname.endsWith("/") ? pathname : `${pathname}/`;
 }
 
+function buildSearchRouteHref(view: "search" | "console"): string {
+  const params = new URLSearchParams();
+  if (state.query.trim()) {
+    params.set("q", state.query.trim());
+  }
+  if (state.variant !== "lexical") {
+    params.set("variant", state.variant);
+  }
+  if (state.api) {
+    params.set("api", state.api);
+  }
+  if (state.tag) {
+    params.set("tag", state.tag);
+  }
+  if (view === "console") {
+    params.set("view", "console");
+  }
+  const query = params.toString();
+  return query ? `/?${query}` : "/";
+}
+
 function isSearchRoute(pathname: string): boolean {
   return pathname === "/" || pathname.startsWith("/docs/");
 }
@@ -480,12 +502,6 @@ function formatRelativeBuildTime(timestamp: string): string {
   return `Built ${formatter.format(diffDays, "day")}`;
 }
 
-function renderHighlightFragment(fragment: HighlightFragment): string {
-  return fragment.parts
-    .map((part) => part.highlighted ? `<mark class="search-highlight">${escapeHtml(part.text)}</mark>` : escapeHtml(part.text))
-    .join("");
-}
-
 function renderLiteralHighlight(text: string, query: string): string {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -505,18 +521,18 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function fieldHighlight(highlight: HighlightResult | undefined, field: string): HighlightFragment | null {
-  return highlight?.fields.find((result) => result.field === field)?.fragments[0] ?? null;
+function fieldHighlight(highlight: Record<string, string[]> | undefined, field: string): string | null {
+  return highlight?.[field]?.[0] ?? null;
 }
 
-function bestExplanation(highlight: HighlightResult | undefined): { label: string; html: string } | null {
+function bestExplanation(highlight: Record<string, string[]> | undefined, rawQuery: string): { label: string; html: string } | null {
   const tagline = fieldHighlight(highlight, "tagline");
   if (tagline) {
-    return { label: "Summary", html: renderHighlightFragment(tagline) };
+    return { label: "Summary", html: renderLiteralHighlight(tagline, rawQuery) };
   }
   const body = fieldHighlight(highlight, "body");
   if (body) {
-    return { label: "Excerpt", html: renderHighlightFragment(body) };
+    return { label: "Excerpt", html: renderLiteralHighlight(body, rawQuery) };
   }
   return null;
 }
@@ -534,22 +550,23 @@ function createDocIndex(ranking: RankingAlgorithm): DocumentIndex {
     wordCount: new NumericFieldIndex(),
     combined: new TextFieldIndex(undefined, undefined, ranking),
     suggest: new TextFieldIndex(edgeAnalyzer, edgeAnalyzer, ranking),
-    order: new TextFieldIndex(tagAnalyzer, tagAnalyzer)
+    order: new TextFieldIndex(tagAnalyzer, tagAnalyzer),
+    _source: new StoredSourceIndex()
   });
 }
 
 function loadSerializedIndexes(
   ranking: RankingAlgorithm,
   serializedIndexes: {
-    hydrated: DocumentIndexState;
-    fuzzy: DocumentIndexState;
+    hydrated: number[];
+    fuzzy: number[];
   }
 ): RuntimeIndexes {
   return {
-    hydrated: createDocIndex(ranking).loadState(serializedIndexes.hydrated),
-    fuzzy: new DocumentIndex({
+    hydrated: deserializeDocumentIndex({ index: createDocIndex(ranking), compressed: serializedIndexes.hydrated }),
+    fuzzy: deserializeDocumentIndex({ index: new DocumentIndex({
       combined: new TextFieldIndex(fuzzyAnalyzer, fuzzyAnalyzer, ranking)
-    }).loadState(serializedIndexes.fuzzy)
+    }), compressed: serializedIndexes.fuzzy })
   };
 }
 
@@ -614,6 +631,18 @@ async function createRuntimeContext(demoData: DemoDataPayload): Promise<RuntimeC
     [...sectionSet].filter((section) => !DOC_SECTION_ORDER.includes(section))
   );
 
+  const semantic = await createSemanticRuntime(demoData.semantic);
+  const sparse = createSparseRuntime(demoData.sparse, demoData.sparseQuery);
+  const indexes = {
+    [RankingAlgorithm.BM25]: loadSerializedIndexes(RankingAlgorithm.BM25, demoData.indexes[RankingAlgorithm.BM25]),
+    [RankingAlgorithm.TFIDF]: loadSerializedIndexes(RankingAlgorithm.TFIDF, demoData.indexes[RankingAlgorithm.TFIDF])
+  };
+  for (const runtime of Object.values(indexes)) {
+    runtime.hydrated.mapping.fuzzyCombined = runtime.fuzzy.getFieldIndex("combined") as TextFieldIndex;
+    runtime.hydrated.mapping.semanticEmbedding = semantic.articleIndex;
+    runtime.hydrated.mapping.sparseEmbedding = sparse.index;
+  }
+
   return {
     docs,
     byId: new Map(docs.map((doc) => [doc.id, doc])),
@@ -621,12 +650,9 @@ async function createRuntimeContext(demoData: DemoDataPayload): Promise<RuntimeC
     sections,
     allTags: [...new Set(docs.flatMap((doc) => doc.tags))].sort(),
     renderedMarkdown: new Map(),
-    indexes: {
-      [RankingAlgorithm.BM25]: loadSerializedIndexes(RankingAlgorithm.BM25, demoData.indexes[RankingAlgorithm.BM25]),
-      [RankingAlgorithm.TFIDF]: loadSerializedIndexes(RankingAlgorithm.TFIDF, demoData.indexes[RankingAlgorithm.TFIDF])
-    },
-    semantic: await createSemanticRuntime(demoData.semantic),
-    sparse: createSparseRuntime(demoData.sparse, demoData.sparseQuery)
+    indexes,
+    semantic,
+    sparse
   };
 }
 
@@ -696,39 +722,6 @@ async function getSemanticQuestionResults(context: RuntimeContext, queryVector: 
   return [...byDocId.values()].slice(0, limit);
 }
 
-function rerankWithTitleBoost(context: RuntimeContext, rawQuery: string, hits: Hits): Hits {
-  const normalizedQuery = rawQuery.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return hits;
-  }
-
-  const queryTerms = normalizedQuery.split(/\s+/).filter(Boolean);
-  return hits
-    .map(([id, score]) => {
-      const title = context.byId.get(id)?.title.toLowerCase() ?? "";
-      let boost = 0;
-
-      if (title === normalizedQuery) {
-        boost += 12;
-      }
-      if (title.startsWith(normalizedQuery)) {
-        boost += 8;
-      }
-      if (title.includes(normalizedQuery)) {
-        boost += 6;
-      }
-      if (queryTerms.every((term) => title.includes(term))) {
-        boost += 4;
-      }
-      if (queryTerms.some((term) => title.startsWith(term))) {
-        boost += 2;
-      }
-
-      return [id, score + boost] as const;
-    })
-    .sort((a, b) => b[1] - a[1]);
-}
-
 function parseQueryInput(rawQuery: string): { queryText: string; quotedPhrase: string | null } {
   const quotedPhrase = rawQuery.match(/"([^"]+)"/)?.[1] ?? null;
   return {
@@ -738,306 +731,357 @@ function parseQueryInput(rawQuery: string): { queryText: string; quotedPhrase: s
 }
 
 function buildFacetFilterQueries(current: SearchState): QueryFilters {
-  const filters: Query[] = [];
-  const mustNot: TermQuery[] = [];
+  const filters: JsonDslQueryClause[] = [];
+  const mustNot: JsonDslQueryClause[] = [];
   if (current.section) {
-    filters.push(new TermQuery({ field: "section", text: current.section }));
+    filters.push({ term: { section: current.section } });
   }
   if (current.api) {
-    filters.push(new TermQuery({ field: "api", text: current.api }));
+    filters.push({ term: { api: current.api } });
   }
   if (current.tag) {
-    filters.push(new TermQuery({ field: "tags", text: current.tag }));
+    filters.push({ term: { tags: current.tag } });
   }
   if (current.significantTerm) {
-    filters.push(new TermQuery({ field: "body", text: current.significantTerm }));
+    filters.push({ term: { body: current.significantTerm } });
   }
   const wordCountFacet = wordCountFacetByKey(current.wordCountFacet);
   if (wordCountFacet) {
-    filters.push(new RangeQuery({
-      field: "wordCount",
+    filters.push({
       range: {
+        wordCount: {
         ...(wordCountFacet.from == null ? {} : { gte: String(wordCountFacet.from) }),
         ...(wordCountFacet.to == null ? {} : { lt: String(wordCountFacet.to) })
+        }
       }
-    }));
+    });
   }
   if (current.excludeAdvanced) {
-    mustNot.push(new TermQuery({ field: "level", text: "advanced" }));
+    mustNot.push({ term: { level: "advanced" } });
   }
   return { filters, mustNot };
 }
 
 type QueryFilters = {
-  filters: Query[];
-  mustNot: TermQuery[];
+  filters: JsonDslQueryClause[];
+  mustNot: JsonDslQueryClause[];
 };
 
 function wordCountFacetByKey(key: string | null): WordCountFacet | null {
   return WORD_COUNT_FACETS.find((facet) => facet.key === key) ?? null;
 }
 
-async function searchForState(context: RuntimeContext, current: SearchState): Promise<SearchResult> {
-  const startedAt = performance.now();
-  // One search pass produces both the visible result list and the derived facet
-  // data so the sidebar always reflects the currently selected result set.
+function hitsFromResponse(hits: JsonDslSearchHit[]): Hits {
+  return hits.map((hit) => [hit._id, hit._score] as const);
+}
+
+function highlightsFromResponse(hits: JsonDslSearchHit[]): Map<string, Record<string, string[]>> {
+  return new Map(
+    hits
+      .filter((hit) => hit.highlight && Object.keys(hit.highlight).length > 0)
+      .map((hit) => [hit._id, hit.highlight!] as const)
+  );
+}
+
+let dslLogSequence = 0;
+
+function formatDslLogJson(value: unknown): string {
+  const formatted = JSON.stringify(value, null, 2);
+  return formatted ?? "null";
+}
+
+function logDslExchange(label: string, request: Record<string, unknown>, response: unknown): void {
+  dslLogSequence += 1;
+  const prefix = `[Querylight DSL ${dslLogSequence}] ${label}`;
+  console.groupCollapsed(prefix);
+  console.log("request\n%s", formatDslLogJson(request));
+  console.log("response\n%s", formatDslLogJson(response));
+  console.groupEnd();
+}
+
+async function executeDslSearch(index: DocumentIndex, request: Record<string, unknown>, label = "search") {
+  const fullRequest = { ...request };
+  const response = await searchJsonDsl({
+    index,
+    request: fullRequest
+  });
+  logDslExchange(label, fullRequest, response);
+  return response;
+}
+
+function boolQuery(params: {
+  must?: JsonDslQueryClause[];
+  should?: JsonDslQueryClause[];
+  filter?: JsonDslQueryClause[];
+  must_not?: JsonDslQueryClause[];
+  minimum_should_match?: number;
+}): JsonDslQueryClause {
+  return {
+    bool: Object.fromEntries(
+      Object.entries(params).filter(([, value]) =>
+        value != null && (!Array.isArray(value) || value.length > 0)
+      )
+    )
+  };
+}
+
+async function buildSearchExecutionPlan(context: RuntimeContext, current: SearchState): Promise<SearchExecutionPlan> {
   const active = context.indexes[current.ranking];
-  const index = active.hydrated;
-  const bodyIndex = index.getFieldIndex("body") as TextFieldIndex;
-  const tagIndex = index.getFieldIndex("tags") as TextFieldIndex;
-  const sectionIndex = index.getFieldIndex("section") as TextFieldIndex;
-  const apiIndex = index.getFieldIndex("api") as TextFieldIndex;
-  const wordCountIndex = index.getFieldIndex("wordCount") as NumericFieldIndex;
+  const bm25Index = context.indexes[RankingAlgorithm.BM25].hydrated;
+  let index = active.hydrated;
+  let resultLabel = "lexical-hybrid-results";
   const { queryText, quotedPhrase } = parseQueryInput(current.query);
   const trimmed = queryText.trim();
   const allowPrefixSuggestions = trimmed.length >= 2;
   const { filters, mustNot } = buildFacetFilterQueries(current);
-  const filterOnlyQuery = filters.length > 0 || mustNot.length > 0 ? new BoolQuery({ filter: filters, mustNot }) : new MatchAll();
+  const filterOnlyQuery = filters.length > 0 || mustNot.length > 0
+    ? boolQuery({ filter: filters, must_not: mustNot })
+    : { match_all: {} };
   const requiredTextQuery =
     trimmed.length === 0 || current.operation !== OP.AND
       ? null
-      : new MultiMatchQuery({
-          fields: [...SEARCHABLE_TEXT_FIELDS],
-          text: trimmed,
-          operation: OP.AND,
-          prefixMatch: current.prefix
-        });
+      : {
+          multi_match: {
+            fields: [...SEARCHABLE_TEXT_FIELDS],
+            query: trimmed,
+            operator: "and",
+            prefix_match: current.prefix
+          }
+        } satisfies JsonDslQueryClause;
 
   const baseTextQuery =
     trimmed.length === 0
-      ? new MatchAll()
-      : new BoolQuery({
+      ? ({ match_all: {} } satisfies JsonDslQueryClause)
+      : boolQuery({
           must: requiredTextQuery ? [requiredTextQuery] : [],
           should: [
-            new MatchQuery({ field: "title", text: trimmed, operation: current.operation, prefixMatch: current.prefix, boost: 7 }),
-            new MatchQuery({ field: "tagline", text: trimmed, operation: current.operation, prefixMatch: current.prefix, boost: 2.5 }),
-            new MatchQuery({ field: "body", text: trimmed, operation: current.operation, prefixMatch: current.prefix, boost: 2 }),
-            new MatchQuery({ field: "api", text: trimmed, operation: OP.OR, prefixMatch: current.prefix, boost: 2.75 }),
-            new MatchQuery({ field: "tags", text: trimmed, operation: OP.OR, prefixMatch: current.prefix, boost: 2.25 })
+            { match: { title: { query: trimmed, operator: current.operation.toLowerCase(), prefix_match: current.prefix, boost: 7 } } },
+            { match: { tagline: { query: trimmed, operator: current.operation.toLowerCase(), prefix_match: current.prefix, boost: 2.5 } } },
+            { match: { body: { query: trimmed, operator: current.operation.toLowerCase(), prefix_match: current.prefix, boost: 2 } } },
+            { match: { api: { query: trimmed, operator: "or", prefix_match: current.prefix, boost: 2.75 } } },
+            { match: { tags: { query: trimmed, operator: "or", prefix_match: current.prefix, boost: 2.25 } } }
           ],
           filter: filters,
-          mustNot
+          must_not: mustNot
         });
 
   const phraseQuery =
     trimmed.length === 0
       ? filterOnlyQuery
-      : new BoolQuery({
+      : boolQuery({
           should: [
-            new MatchPhrase({ field: "title", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 0 : 1, boost: 8 }),
-            new MatchPhrase({ field: "body", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 1 : 2, boost: 3 })
+            { match_phrase: { title: { query: quotedPhrase ?? trimmed, slop: quotedPhrase ? 0 : 1, boost: 8 } } },
+            { match_phrase: { body: { query: quotedPhrase ?? trimmed, slop: quotedPhrase ? 1 : 2, boost: 3 } } }
           ],
           filter: filters,
-          mustNot
+          must_not: mustNot
         });
 
   const hybridLexicalQuery =
     trimmed.length === 0
       ? filterOnlyQuery
-      : new BoolQuery({
+      : boolQuery({
           must: requiredTextQuery ? [requiredTextQuery] : [],
           should: [
-            new MatchPhrase({ field: "title", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 0 : 1, boost: 8 }),
-            new MatchPhrase({ field: "body", text: quotedPhrase ?? trimmed, slop: quotedPhrase ? 1 : 2, boost: 3 }),
+            { match_phrase: { title: { query: quotedPhrase ?? trimmed, slop: quotedPhrase ? 0 : 1, boost: 8 } } },
+            { match_phrase: { body: { query: quotedPhrase ?? trimmed, slop: quotedPhrase ? 1 : 2, boost: 3 } } },
             ...(quotedPhrase
               ? []
               : [
-                  new MatchQuery({ field: "title", text: trimmed, operation: current.operation, boost: 6 }),
-                  new MatchQuery({ field: "tagline", text: trimmed, operation: current.operation, boost: 2.5 }),
-                  new MatchQuery({ field: "body", text: trimmed, operation: current.operation, boost: 2 }),
-                  new MatchQuery({ field: "api", text: trimmed, operation: OP.OR, boost: 2.75 }),
-                  new MatchQuery({ field: "tags", text: trimmed, operation: OP.OR, boost: 2.25 }),
+                  { match: { title: { query: trimmed, operator: current.operation.toLowerCase(), boost: 6 } } },
+                  { match: { tagline: { query: trimmed, operator: current.operation.toLowerCase(), boost: 2.5 } } },
+                  { match: { body: { query: trimmed, operator: current.operation.toLowerCase(), boost: 2 } } },
+                  { match: { api: { query: trimmed, operator: "or", boost: 2.75 } } },
+                  { match: { tags: { query: trimmed, operator: "or", boost: 2.25 } } },
                   ...(allowPrefixSuggestions
                     ? [
-                        new MatchQuery({ field: "title", text: trimmed, operation: OP.OR, prefixMatch: true, boost: 4 }),
-                        new MatchQuery({ field: "suggest", text: trimmed, operation: OP.OR, prefixMatch: true, boost: 3 })
+                        { match: { title: { query: trimmed, operator: "or", prefix_match: true, boost: 4 } } },
+                        { match: { suggest: { query: trimmed, operator: "or", prefix_match: true, boost: 3 } } }
                       ]
                     : [])
                 ])
           ],
           filter: filters,
-          mustNot
+          must_not: mustNot
         });
 
-  const requiredIds =
-    requiredTextQuery == null
-      ? undefined
-      : new Set((await index.searchRequest({
-          query: new BoolQuery({
-            must: [requiredTextQuery],
-            filter: filters,
-            mustNot
-          }),
-          limit: Number.MAX_SAFE_INTEGER
-        })).map(([id]) => id));
+  const fuzzyQuery =
+    trimmed.length === 0
+      ? filterOnlyQuery
+      : boolQuery({
+          must: requiredTextQuery ? [requiredTextQuery] : [],
+          should: [
+            { match: { fuzzyCombined: { query: trimmed, operator: "or", boost: 1.5 } } }
+          ],
+          filter: filters,
+          must_not: mustNot
+        });
 
-  const fuzzyHits =
-    trimmed.length === 0
-      ? []
-      : (await active.fuzzy.searchRequest({
-          query: new MatchQuery({ field: "combined", text: trimmed, operation: OP.OR, boost: 1.5 }),
-          limit: Number.MAX_SAFE_INTEGER
-        })).filter(([id]) => requiredIds == null || requiredIds.has(id));
+  const sparseVector = trimmed.length === 0
+    ? null
+    : await encodeSparseQuery(trimmed, context.sparse.model.modelId, context.sparse.query.tokenWeights);
+  const semanticVector = trimmed.length === 0
+    ? null
+    : await embedSemanticQuery(trimmed, context.semantic.model.modelId);
 
-  const allowedIds =
-    filters.length > 0 || mustNot.length > 0
-      ? (await index.searchRequest({ query: filterOnlyQuery })).map(([id]) => id)
-      : undefined;
-  const filterOnlySet = new Set(allowedIds ?? context.docs.map((doc) => doc.id));
-  const filterOnlyHits: Hits = context.docs
-    .filter((doc) => filterOnlySet.has(doc.id))
-    .map((doc) => [doc.id, 1] as const);
-
-  const phraseHits =
-    trimmed.length === 0
-      ? filterOnlyHits
-      : await index.searchRequest({ query: phraseQuery, limit: Number.MAX_SAFE_INTEGER });
-  const hybridLexicalHits =
-    trimmed.length === 0
-      ? filterOnlyHits
-      : await index.searchRequest({ query: hybridLexicalQuery, limit: Number.MAX_SAFE_INTEGER });
-  const bm25HybridLexicalHits =
-    trimmed.length === 0
-      ? filterOnlyHits
-      : await context.indexes[RankingAlgorithm.BM25].hydrated.searchRequest({ query: hybridLexicalQuery, limit: Number.MAX_SAFE_INTEGER });
-  const sparseHits =
-    trimmed.length === 0
-      ? filterOnlyHits
-      : context.sparse.index.query(
-          await encodeSparseQuery(trimmed, context.sparse.model.modelId, context.sparse.query.tokenWeights),
-          Number.MAX_SAFE_INTEGER,
-          allowedIds
-        );
-  const annHits =
-    trimmed.length === 0
-      ? filterOnlyHits
-      : await context.semantic.articleIndex.rerankAsync(
-          await embedSemanticQuery(trimmed, context.semantic.model.modelId),
-          allowedIds ?? context.semantic.articleIds,
-          Number.MAX_SAFE_INTEGER
-        );
-
-  let fullFinalHits: Hits;
-  let lexicalHits: Hits;
-  let highlightQuery: BoolQuery | MatchAll | null = null;
+  const corpusSize = index.ids().size;
+  const exactDenseVectorQuery = semanticVector == null
+    ? filterOnlyQuery
+    : {
+        vector_rescore: {
+          field: "semanticEmbedding",
+          vector: semanticVector,
+          query: filterOnlyQuery,
+          window_size: corpusSize,
+          query_weight: 0,
+          rescore_query_weight: 1
+        }
+      } satisfies JsonDslQueryClause;
+  let resultQuery: JsonDslQueryClause = trimmed.length === 0 ? filterOnlyQuery : hybridLexicalQuery;
 
   switch (current.variant) {
     case "vector-hybrid":
-      lexicalHits = bm25HybridLexicalHits;
-      fullFinalHits =
-        trimmed.length === 0
-          ? filterOnlyHits
-          : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([bm25HybridLexicalHits, annHits], { rankConstant: 20 }));
-      highlightQuery = hybridLexicalQuery;
+      index = bm25Index;
+      resultLabel = "vector-hybrid-results";
+      resultQuery = trimmed.length === 0 ? filterOnlyQuery : {
+        rrf: {
+          rank_constant: 20,
+          queries: [
+            hybridLexicalQuery,
+            exactDenseVectorQuery
+          ]
+        }
+      };
       break;
     case "vector":
-      lexicalHits = [];
-      fullFinalHits = annHits;
-      highlightQuery = null;
+      resultLabel = "vector-results";
+      resultQuery = exactDenseVectorQuery;
       break;
     case "sparse-hybrid":
-      lexicalHits = bm25HybridLexicalHits;
-      fullFinalHits =
-        trimmed.length === 0
-          ? filterOnlyHits
-          : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([bm25HybridLexicalHits, sparseHits], { rankConstant: 20 }));
-      highlightQuery = hybridLexicalQuery;
+      index = bm25Index;
+      resultLabel = "sparse-hybrid-results";
+      resultQuery = {
+        rrf: {
+          rank_constant: 20,
+          queries: [
+            hybridLexicalQuery,
+            boolQuery({
+              must: [{ sparse_vector: { sparseEmbedding: { vector: sparseVector!, k: corpusSize } } }],
+              filter: filters,
+              must_not: mustNot
+            })
+          ]
+        }
+      };
       break;
     case "sparse":
-      lexicalHits = [];
-      fullFinalHits = sparseHits;
-      highlightQuery = null;
+      resultLabel = "sparse-results";
+      resultQuery = boolQuery({
+        must: [{ sparse_vector: { sparseEmbedding: { vector: sparseVector!, k: corpusSize } } }],
+        filter: filters,
+        must_not: mustNot
+      });
       break;
     case "lexical":
-    default:
+    default: {
       switch (current.mode) {
         case "phrase":
-          lexicalHits = phraseHits;
-          fullFinalHits = lexicalHits;
-          highlightQuery = phraseQuery;
+          resultLabel = "phrase-results";
+          resultQuery = phraseQuery;
           break;
         case "fuzzy":
-          lexicalHits = trimmed.length === 0 ? filterOnlyHits : [];
-          fullFinalHits = trimmed.length === 0 ? lexicalHits : fuzzyHits;
-          highlightQuery = null;
+          resultLabel = "fuzzy-results";
+          resultQuery = trimmed.length === 0 ? filterOnlyQuery : fuzzyQuery;
           break;
         case "match":
-          lexicalHits = await index.searchRequest({ query: baseTextQuery, limit: Number.MAX_SAFE_INTEGER });
-          fullFinalHits = rerankWithTitleBoost(context, trimmed, lexicalHits);
-          highlightQuery = baseTextQuery;
+          resultLabel = "match-results";
+          resultQuery = baseTextQuery;
           break;
         case "hybrid":
         default:
-          lexicalHits = hybridLexicalHits;
-          fullFinalHits =
-            trimmed.length === 0
-              ? lexicalHits
-              : rerankWithTitleBoost(context, trimmed, reciprocalRankFusion([hybridLexicalHits, fuzzyHits], { rankConstant: 20, weights: [3, 1] }));
-          highlightQuery = hybridLexicalQuery;
+          resultLabel = "lexical-hybrid-results";
+          resultQuery = trimmed.length === 0 ? filterOnlyQuery : {
+            rrf: {
+              rank_constant: 20,
+              weights: [3, 1],
+              queries: [hybridLexicalQuery, fuzzyQuery]
+            }
+          };
           break;
-      }
+        }
       break;
+    }
   }
-  const normalizedOffset = Math.max(0, Math.min(current.offset, Math.max(fullFinalHits.length - 1, 0)));
-  const visibleHits = fullFinalHits.slice(normalizedOffset, normalizedOffset + SEARCH_RESULTS_PAGE_SIZE);
 
+  return {
+    index,
+    label: resultLabel,
+    request: {
+    from: current.offset,
+    size: SEARCH_RESULTS_PAGE_SIZE,
+    query: resultQuery,
+    highlight: { fields: { title: {}, tagline: {}, body: {} } },
+    aggs: {
+      tags: { terms: { field: "tags", size: 12 } },
+      sections: { terms: { field: "section", size: 8 } },
+      apis: { terms: { field: "api", size: 10 } },
+      wordCountStats: { stats: { field: "wordCount" } },
+      wordCountFacets: { range: { field: "wordCount", ranges: WORD_COUNT_FACETS } },
+      wordCountHistogram: { histogram: { field: "wordCount", interval: WORD_COUNT_HISTOGRAM_INTERVAL } },
+      significantTerms: { significant_terms: { field: "body", size: 20 } }
+    }
+    }
+  };
+}
+
+function searchResultFromDslResponse(
+  current: SearchState,
+  request: Record<string, unknown>,
+  resultResponse: SearchDslResponse,
+  startedAt: number
+): SearchResult {
+  const requestOffset = typeof request.from === "number" ? request.from : current.offset;
+  const requestPageSize = typeof request.size === "number" ? request.size : SEARCH_RESULTS_PAGE_SIZE;
+  const normalizedOffset = Math.max(0, Math.min(requestOffset, Math.max(resultResponse.hits.total.value - 1, 0)));
+  const visibleHits = hitsFromResponse(resultResponse.hits.hits);
+  const visibleIds = new Set(visibleHits.map(([id]) => id));
   const highlightsById = new Map(
-    (highlightQuery && trimmed.length > 0 ? visibleHits : [])
-      .map(([id]) => [
-        id,
-        index.highlight(id, highlightQuery!, {
-          fields: ["title", "tagline", "body"],
-          fragmentSize: 140,
-          numberOfFragments: 1,
-          requireFieldMatch: true
-        })
-      ] as const)
+    [...highlightsFromResponse(resultResponse.hits.hits).entries()]
+      .filter(([id]) => visibleIds.has(id))
   );
-
-  const selectedIds = new Set(fullFinalHits.map(([id]) => id));
-  const tagFacets = tagIndex.termsAggregation(12, selectedIds.size > 0 ? selectedIds : undefined);
-  const sectionFacets = sectionIndex.termsAggregation(8, selectedIds.size > 0 ? selectedIds : undefined);
-  const apiFacets = apiIndex.termsAggregation(10, selectedIds.size > 0 ? selectedIds : undefined);
-  const wordCountStats = wordCountIndex.stats(selectedIds.size > 0 ? selectedIds : undefined);
-  const wordCountFacets = wordCountIndex
-    .rangeAggregation(WORD_COUNT_FACETS, selectedIds.size > 0 ? selectedIds : undefined)
+  const tagFacets = Object.fromEntries(((resultResponse.aggregations?.tags?.buckets as Array<{ key: string; doc_count: number }> | undefined) ?? []).map((bucket) => [bucket.key, bucket.doc_count]));
+  const sectionFacets = Object.fromEntries(((resultResponse.aggregations?.sections?.buckets as Array<{ key: string; doc_count: number }> | undefined) ?? []).map((bucket) => [bucket.key, bucket.doc_count]));
+  const apiFacets = Object.fromEntries(((resultResponse.aggregations?.apis?.buckets as Array<{ key: string; doc_count: number }> | undefined) ?? []).map((bucket) => [bucket.key, bucket.doc_count]));
+  const wordCountStats = (resultResponse.aggregations?.wordCountStats as SearchResult["wordCountStats"] | undefined) ?? { count: 0, min: null, max: null, sum: 0, avg: null };
+  const wordCountFacets = (((resultResponse.aggregations?.wordCountFacets?.buckets as Array<{ key: string; doc_count: number }> | undefined) ?? []).map((bucket) => ({
+    key: bucket.key,
+    label: WORD_COUNT_FACETS.find((facet) => facet.key === bucket.key)?.label ?? bucket.key,
+    docCount: bucket.doc_count
+  })));
+  const wordCountHistogram = (((resultResponse.aggregations?.wordCountHistogram?.buckets as Array<{ key: number; doc_count: number }> | undefined) ?? []).map((bucket) => ({
+    key: bucket.key,
+    docCount: bucket.doc_count
+  })));
+  const significantTerms = (((resultResponse.aggregations?.significantTerms?.buckets as Array<{ key: string; score: number; doc_count: number; bg_count: number }> | undefined) ?? [])
     .map((bucket) => ({
       key: bucket.key,
-      label: WORD_COUNT_FACETS.find((facet) => facet.key === bucket.key)?.label ?? bucket.key,
-      docCount: bucket.docCount
-    }));
-  const wordCountHistogram = wordCountIndex.histogram(
-    WORD_COUNT_HISTOGRAM_INTERVAL,
-    selectedIds.size > 0 ? selectedIds : undefined
-  );
-  const hasScopedSearch = trimmed.length > 0 || filters.length > 0 || mustNot.length > 0;
-  const significantTermsSubset =
-    !hasScopedSearch
-      ? null
-      : selectedIds.size > 0 && selectedIds.size <= Math.floor(context.docs.length * 0.9)
-        ? selectedIds
-        : new Set(visibleHits.map(([id]) => id));
-  const significantTerms =
-    significantTermsSubset && significantTermsSubset.size > 0
-      ? bodyIndex
-          .significantTermsAggregation(20, significantTermsSubset)
-          .filter((bucket) => !/^\d+$/.test(bucket.key) && bucket.score > 1.05 && bucket.subsetDocCount > 1)
-          .slice(0, 10)
-      : [];
+      score: bucket.score,
+      subsetDocCount: bucket.doc_count,
+      backgroundDocCount: bucket.bg_count
+    }))
+    .filter((bucket) => !/^\d+$/.test(bucket.key) && bucket.score > 1.05 && bucket.subsetDocCount > 1)
+    .slice(0, 10));
   const responseTimeMs = Math.max(1, Math.round(performance.now() - startedAt));
 
   return {
-    lexicalHits,
-    fuzzyHits,
-    sparseHits,
-    finalHits: fullFinalHits,
     visibleHits,
-    totalHits: fullFinalHits.length,
+    totalHits: resultResponse.hits.total.value,
     offset: normalizedOffset,
-    pageSize: SEARCH_RESULTS_PAGE_SIZE,
+    pageSize: requestPageSize,
     responseTimeMs,
+    dslRequest: request,
+    dslResponse: resultResponse,
     highlightsById,
-    selectedIds,
     tagFacets,
     sectionFacets,
     apiFacets,
@@ -1048,12 +1092,20 @@ async function searchForState(context: RuntimeContext, current: SearchState): Pr
   };
 }
 
+async function searchForState(context: RuntimeContext, current: SearchState): Promise<SearchResult> {
+  const startedAt = performance.now();
+  const plan = await buildSearchExecutionPlan(context, current);
+  const resultResponse = await executeDslSearch(plan.index, plan.request, plan.label);
+  return searchResultFromDslResponse(current, plan.request, resultResponse, startedAt);
+}
+
 function createShell(context: RuntimeContext): void {
   const navSections = createNavSections(context);
   const buildTimeLabel = formatRelativeBuildTime(BUILD_TIMESTAMP);
   const currentPath = window.location.pathname;
-  const docsSearchClass = currentPath === "/" ? " nav-result-active" : "";
+  const docsSearchClass = isSearchRoute(currentPath) && currentView !== "console" ? " nav-result-active" : "";
   const apiReferenceClass = currentPath.startsWith("/docs/api/") ? " nav-result-active" : "";
+  const consoleClass = currentView === "console" ? " nav-result-active" : "";
 
   requireApp().innerHTML = `
     <main id="demo-shell" class="demo-shell mx-auto w-[min(1560px,calc(100vw-24px))] py-6 lg:py-8" data-busy="false">
@@ -1062,9 +1114,10 @@ function createShell(context: RuntimeContext): void {
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <h1 class="font-serif text-2xl leading-tight text-stone-950 sm:text-3xl">Querylight Documentation &amp; Demo</h1>
           <div class="flex flex-wrap gap-2 lg:justify-end">
-            <a href="/" class="chip-button${docsSearchClass}">Docs Search</a>
-            <a href="/docs/api/" class="chip-button${apiReferenceClass}">API Reference</a>
-            <a href="/dashboard/" class="chip-button">Dashboard</a>
+            <a id="nav-docs-search" href="/" class="chip-button${docsSearchClass}">Docs Search</a>
+            <a id="nav-api-reference" href="/docs/api/" class="chip-button${apiReferenceClass}">API Reference</a>
+            <a id="nav-dashboard" href="/dashboard/" class="chip-button">Dashboard</a>
+            <button id="open-dsl-console" type="button" class="chip-button${consoleClass}">Console</button>
           </div>
         </div>
         <div class="mt-5 inline-flex flex-wrap rounded-[1.75rem] border border-stone-900/10 bg-white/75 p-1">
@@ -1083,6 +1136,46 @@ function createShell(context: RuntimeContext): void {
           </div>
         </form>
         <div id="active-filters-inline" class="mt-4 flex flex-wrap gap-2"></div>
+      </section>
+
+      <section id="dsl-console-screen" class="mt-5 hidden">
+        <section id="dsl-console" class="dsl-console">
+          <div class="dsl-console-header">
+            <div>
+              <p class="dsl-console-kicker">Dev Console</p>
+              <h2 class="dsl-console-title">Current Query and Response</h2>
+            </div>
+            <div class="flex items-center gap-3">
+              <button id="close-dsl-console" type="button" class="chip-button">Back</button>
+              <button id="dsl-run-query" type="button" class="control-button">Run</button>
+              <button id="dsl-reset-query" type="button" class="chip-button" disabled>Reset Query</button>
+              <p id="dsl-console-status" class="dsl-console-status">Query synced from the search controls.</p>
+            </div>
+          </div>
+          <div class="dsl-console-grid">
+            <label class="dsl-console-pane">
+              <span class="dsl-console-pane-label">Request</span>
+              <textarea
+                id="dsl-query-editor"
+                class="dsl-console-editor"
+                spellcheck="false"
+                aria-label="JSON DSL request editor"
+              ></textarea>
+            </label>
+            <label class="dsl-console-pane">
+              <span class="dsl-console-pane-label">Response</span>
+              <textarea
+                id="dsl-response-viewer"
+                class="dsl-console-editor dsl-console-editor-readonly"
+                spellcheck="false"
+                readonly
+                aria-label="JSON DSL response viewer"
+                placeholder="Run a search to inspect the JSON response."
+              ></textarea>
+            </label>
+          </div>
+          <p class="dsl-console-hint">Press Cmd+Enter or Ctrl+Enter to execute the current request against the selected search variant.</p>
+        </section>
       </section>
 
       <section id="reader-layout" class="reader-layout reader-layout-below mt-5" data-mobile-panel="none">
@@ -1270,15 +1363,6 @@ function syncSemanticBusyOverlay(): void {
 }
 
 function updateSummary(context: RuntimeContext, summaryNode: HTMLParagraphElement, current: SearchResult | null): void {
-  if (state.variant === "vector") {
-    summaryNode.textContent =
-      semanticQuestionState.status === "ready"
-        ? `${semanticQuestionState.results.length} dense matches · semantic chunks · ${context.semantic.backend === "webgpu" ? "WebGPU" : "CPU fallback"}`
-        : semanticQuestionState.status === "error"
-          ? "Vector search unavailable"
-          : "Vector search";
-    return;
-  }
   if (!current) {
     summaryNode.textContent = "No active search";
     return;
@@ -1295,12 +1379,7 @@ function updateSummary(context: RuntimeContext, summaryNode: HTMLParagraphElemen
 }
 
 function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNode: HTMLParagraphElement, current: SearchResult | null): void {
-  const hasMatches = Boolean(current?.finalHits.length);
-  const enabledIds = current?.finalHits.length ? current.selectedIds : new Set(context.docs.map((doc) => doc.id));
-
-  tocStatusNode.textContent = hasMatches
-    ? `${enabledIds.size} of ${context.docs.length} pages active`
-    : `${context.docs.length} pages available`;
+  tocStatusNode.textContent = `${context.docs.length} pages available`;
 
   createNavSections(context).forEach((section) => {
     const sectionShell = tocNode.querySelector<HTMLElement>(`[data-section-shell="${CSS.escape(section.name)}"]`);
@@ -1309,20 +1388,18 @@ function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNo
     if (!sectionShell || !sectionNode || !countNode) {
       return;
     }
-    const activeCount = section.docs.filter((doc) => enabledIds.has(doc.id)).length;
-    sectionShell.dataset.hasActive = activeCount > 0 ? "true" : "false";
+    const activeCount = section.docs.length;
+    sectionShell.dataset.hasActive = "true";
     countNode.textContent = `${activeCount}/${section.docs.length}`;
 
     sectionNode.innerHTML = section.docs
       .map((doc) => {
         const isActive = doc.id === activeDocId;
-        const isEnabled = enabledIds.has(doc.id) || isActive;
         const meta = [doc.level, ...doc.tags.slice(0, 2)].join(" · ");
         return `
           <button
-            class="toc-link ${isActive ? "toc-link-active" : ""} ${!isEnabled ? "toc-link-disabled" : ""}"
+            class="toc-link ${isActive ? "toc-link-active" : ""}"
             data-doc="${escapeHtml(doc.id)}"
-            ${isEnabled ? "" : "disabled"}
           >
             <span class="min-w-0 toc-link-body">
               <span class="toc-link-title">${escapeHtml(doc.title)}</span>
@@ -1336,14 +1413,14 @@ function renderToc(context: RuntimeContext, tocNode: HTMLDivElement, tocStatusNo
 }
 
 function renderSuggestions(context: RuntimeContext, suggestionsNode: HTMLDivElement, current: SearchResult | null): void {
-  if (currentView !== "home" || state.variant === "vector" || !state.query.trim() || !current || current.finalHits.length === 0) {
+  if (currentView !== "home" || state.variant === "vector" || !state.query.trim() || !current || current.visibleHits.length === 0) {
     suggestionsNode.classList.add("hidden");
     suggestionsNode.innerHTML = "";
     return;
   }
 
   suggestionsNode.classList.remove("hidden");
-  suggestionsNode.innerHTML = current.finalHits
+  suggestionsNode.innerHTML = current.visibleHits
     .slice(0, 5)
     .map(([id, score], index) => {
       const doc = context.byId.get(id);
@@ -1352,11 +1429,11 @@ function renderSuggestions(context: RuntimeContext, suggestionsNode: HTMLDivElem
       }
       const highlight = current.highlightsById.get(id);
       const title = fieldHighlight(highlight, "title");
-      const explanation = bestExplanation(highlight);
+      const explanation = bestExplanation(highlight, state.query);
       return `
         <button type="button" class="suggestion-item" data-doc="${escapeHtml(id)}" data-suggestion="true">
           <span class="text-xs uppercase tracking-[0.12em] text-stone-500">${index + 1}. ${escapeHtml(doc.section)} · ${score.toFixed(2)}</span>
-          <span class="suggestion-title">${title ? renderHighlightFragment(title) : renderLiteralHighlight(doc.title, state.query)}</span>
+          <span class="suggestion-title">${title ? renderLiteralHighlight(title, state.query) : renderLiteralHighlight(doc.title, state.query)}</span>
           <span class="suggestion-summary">${explanation?.html ?? escapeHtml(doc.summary)}</span>
         </button>
       `;
@@ -1650,14 +1727,14 @@ function renderResultsPage(context: RuntimeContext, centerNode: HTMLDivElement, 
                   }
                   const highlight = current.highlightsById.get(id);
                   const title = fieldHighlight(highlight, "title");
-                  const explanation = bestExplanation(highlight);
+                  const explanation = bestExplanation(highlight, state.query);
                   return `
                     <button class="nav-result" data-doc="${escapeHtml(id)}" data-open-doc="true">
                       <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
                         <span>${current.offset + index + 1}. ${escapeHtml(doc.section)}</span>
                         <span>${score.toFixed(2)}</span>
                       </div>
-                      <h2 class="result-title">${title ? renderHighlightFragment(title) : renderLiteralHighlight(doc.title, state.query)}</h2>
+                      <h2 class="result-title">${title ? renderLiteralHighlight(title, state.query) : renderLiteralHighlight(doc.title, state.query)}</h2>
                       <p class="result-summary">${escapeHtml(doc.summary)}</p>
                       ${explanation ? `<p class="result-explanation"><span class="result-explanation-label">${escapeHtml(explanation.label)}</span>${explanation.html}</p>` : ""}
                     </button>
@@ -1710,7 +1787,7 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
                           <span>${index + 1}. ${escapeHtml(resultDoc.section)}</span>
                           <span>${score.toFixed(2)}</span>
                         </div>
-                        <h3 class="result-title result-title-sm">${title ? renderHighlightFragment(title) : renderLiteralHighlight(resultDoc.title, state.query)}</h3>
+                        <h3 class="result-title result-title-sm">${title ? renderLiteralHighlight(title, state.query) : renderLiteralHighlight(resultDoc.title, state.query)}</h3>
                         <p class="result-summary result-summary-sm">${escapeHtml(resultDoc.summary)}</p>
                       </button>
                     `;
@@ -1784,52 +1861,7 @@ function renderDetailPage(context: RuntimeContext, centerNode: HTMLDivElement, d
   }
 }
 
-function renderVectorResultsPage(context: RuntimeContext, centerNode: HTMLDivElement): void {
-  const statusMessage =
-    semanticQuestionState.status === "loading-model"
-      ? "Loading the embedding model for the first semantic query."
-      : semanticQuestionState.status === "searching"
-        ? "Matching your question against semantic chunks."
-        : semanticQuestionState.status === "error"
-          ? semanticQuestionState.error ?? "Semantic search failed."
-        : semanticQuestionState.status === "ready"
-            ? `${semanticQuestionState.results.length} semantic matches · ${context.semantic.backend === "webgpu" ? "WebGPU" : "CPU fallback"}`
-            : `Search with dense vectors against documentation chunks. ${context.semantic.backend === "webgpu" ? "WebGPU acceleration is active." : "Using CPU fallback."}`;
-
-  centerNode.innerHTML = `
-    <article class="surface reader-page px-6 py-8 sm:px-8 sm:py-10">
-      <header>
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Vector Search</p>
-        <h1 class="mt-2 font-serif text-[clamp(2.4rem,5vw,4rem)] leading-none text-stone-950">${escapeHtml(semanticQuestionState.query || "Dense semantic results")}</h1>
-        <p class="mt-3 text-sm text-stone-600">${escapeHtml(statusMessage)}</p>
-      </header>
-      <div class="mt-8 grid gap-3">
-        ${
-          semanticQuestionState.results.length === 0
-            ? `<div class="rounded-3xl border border-dashed border-stone-900/10 bg-stone-50/80 px-5 py-4 text-sm text-stone-600">No semantic matches found. Try a broader question.</div>`
-            : semanticQuestionState.results
-                .map(({ chunk, doc, score }, index) => `
-                  <button class="nav-result" data-doc="${escapeHtml(doc.id)}" data-chunk-id="${escapeHtml(chunk.chunkId)}" data-open-doc="true">
-                    <div class="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.12em] text-stone-500">
-                      <span>${index + 1}. ${escapeHtml(doc.section)} · ${escapeHtml(formatHeadingPath(chunk.headingPath))}</span>
-                      <span>${score.toFixed(2)}</span>
-                    </div>
-                    <h2 class="result-title">${escapeHtml(doc.title)}</h2>
-                    <p class="result-summary">${escapeHtml(chunk.text)}</p>
-                  </button>
-                `)
-                .join("")
-        }
-      </div>
-    </article>
-  `;
-}
-
 function renderCenter(context: RuntimeContext, centerNode: HTMLDivElement, current: SearchResult | null): void {
-  if (currentView === "vector") {
-    renderVectorResultsPage(context, centerNode);
-    return;
-  }
   if (currentView === "results" && current) {
     renderResultsPage(context, centerNode, current);
     return;
@@ -1863,9 +1895,18 @@ function normalizeResultOffset(result: SearchResult): number {
 
 async function wireApp(context: RuntimeContext): Promise<() => void> {
   const searchContext = new SearchContextController(context, initialState);
-  await searchContext.resultFor({ ...initialState });
   const queryForm = document.querySelector<HTMLFormElement>("#query-form");
   const queryInput = document.querySelector<HTMLInputElement>("#query");
+  const dslQueryEditor = document.querySelector<HTMLTextAreaElement>("#dsl-query-editor");
+  const dslResponseViewer = document.querySelector<HTMLTextAreaElement>("#dsl-response-viewer");
+  const dslRunQueryButton = document.querySelector<HTMLButtonElement>("#dsl-run-query");
+  const dslResetQueryButton = document.querySelector<HTMLButtonElement>("#dsl-reset-query");
+  const dslConsoleStatus = document.querySelector<HTMLParagraphElement>("#dsl-console-status");
+  const dslConsoleScreen = document.querySelector<HTMLElement>("#dsl-console-screen");
+  const closeDslConsoleButton = document.querySelector<HTMLButtonElement>("#close-dsl-console");
+  const openDslConsoleButton = document.querySelector<HTMLButtonElement>("#open-dsl-console");
+  const docsSearchLink = document.querySelector<HTMLAnchorElement>("#nav-docs-search");
+  const apiReferenceLink = document.querySelector<HTMLAnchorElement>("#nav-api-reference");
   const homeButton = document.querySelector<HTMLButtonElement>("#go-home");
   const clearQueryButton = document.querySelector<HTMLButtonElement>("#clear-query");
   const lexicalVariantButton = document.querySelector<HTMLButtonElement>("#variant-lexical");
@@ -1896,6 +1937,16 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   if (
     !queryForm ||
     !queryInput ||
+    !dslQueryEditor ||
+    !dslResponseViewer ||
+    !dslRunQueryButton ||
+    !dslResetQueryButton ||
+    !dslConsoleStatus ||
+    !dslConsoleScreen ||
+    !closeDslConsoleButton ||
+    !openDslConsoleButton ||
+    !docsSearchLink ||
+    !apiReferenceLink ||
     !homeButton ||
     !clearQueryButton ||
     !lexicalVariantButton ||
@@ -1928,6 +1979,53 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   const eventController = new AbortController();
   const { signal } = eventController;
+  let pendingDslSync: ReturnType<typeof window.setTimeout> | null = null;
+  let dslSyncSequence = 0;
+  let latestGeneratedDslRequestText = "";
+  let customDslRequestText: string | null = null;
+
+  const setDslConsoleStatus = (message: string, tone: "muted" | "success" | "error" = "muted") => {
+    dslConsoleStatus.textContent = message;
+    dslConsoleStatus.dataset.tone = tone;
+  };
+
+  const syncDslConsoleResponse = () => {
+    dslResponseViewer.value = submittedResult ? formatDslLogJson(submittedResult.dslResponse) : "";
+  };
+
+  const scheduleDslConsoleSync = () => {
+    if (pendingDslSync !== null) {
+      window.clearTimeout(pendingDslSync);
+    }
+    if (customDslRequestText !== null) {
+      dslResetQueryButton.disabled = false;
+      setDslConsoleStatus("Edited request preserved. Reset Query to resync.");
+      return;
+    }
+    const syncToken = ++dslSyncSequence;
+    const snapshot = { ...state };
+    pendingDslSync = window.setTimeout(() => {
+      pendingDslSync = null;
+      void (async () => {
+        try {
+          const plan = await buildSearchExecutionPlan(context, snapshot);
+          if (syncToken !== dslSyncSequence) {
+            return;
+          }
+          latestGeneratedDslRequestText = formatDslLogJson(plan.request);
+          dslQueryEditor.value = latestGeneratedDslRequestText;
+          dslResetQueryButton.disabled = true;
+          setDslConsoleStatus("Query synced from the search controls.");
+        } catch (error) {
+          if (syncToken !== dslSyncSequence) {
+            return;
+          }
+          const message = error instanceof Error ? error.message : "Failed to build JSON DSL request.";
+          setDslConsoleStatus(message, "error");
+        }
+      })();
+    }, 90);
+  };
 
   const setSectionCollapsed = (sectionName: string, collapsed: boolean) => {
     const sectionNode = tocNode.querySelector<HTMLDetailsElement>(`[data-section-shell="${CSS.escape(sectionName)}"]`);
@@ -1960,13 +2058,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   const syncSharedQuery = (query: string): void => {
     state = searchContext.patch({ query, offset: 0 });
-    semanticQuestionState = {
-      ...semanticQuestionState,
-      query,
-      status: query.trim() ? semanticQuestionState.status : "idle",
-      error: null,
-      ...(query.trim() ? {} : { results: [] })
-    };
   };
 
   const goHome = () => {
@@ -2008,11 +2099,14 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     prefixInput.checked = state.prefix;
     excludeAdvancedInput.checked = state.excludeAdvanced;
     clearQueryButton.disabled = sharedQuery.length === 0;
+    docsSearchLink.classList.toggle("nav-result-active", isSearchRoute(window.location.pathname) && currentView !== "console" && !window.location.pathname.startsWith("/docs/api/"));
+    apiReferenceLink.classList.toggle("nav-result-active", window.location.pathname.startsWith("/docs/api/"));
     lexicalVariantButton.classList.toggle("nav-result-active", state.variant === "lexical");
     sparseVariantButton.classList.toggle("nav-result-active", state.variant === "sparse");
     sparseHybridVariantButton.classList.toggle("nav-result-active", state.variant === "sparse-hybrid");
     vectorVariantButton.classList.toggle("nav-result-active", state.variant === "vector");
     vectorHybridVariantButton.classList.toggle("nav-result-active", state.variant === "vector-hybrid");
+    openDslConsoleButton.classList.toggle("nav-result-active", currentView === "console");
     lexicalControls.classList.toggle("hidden", !showsLexicalControls);
     variantCardLabel.textContent = searchVariantLabel(state.variant);
     variantCardTitle.textContent = variantInfo.title;
@@ -2031,6 +2125,10 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
   const renderShell = () => {
     syncControls();
+    scheduleDslConsoleSync();
+    syncDslConsoleResponse();
+    dslConsoleScreen.classList.toggle("hidden", currentView !== "console");
+    readerLayout.classList.toggle("hidden", currentView === "console");
     syncSemanticBusyOverlay();
     updateSummary(context, summaryNode, submittedResult);
     renderToc(context, tocNode, tocStatusNode, submittedResult);
@@ -2046,6 +2144,28 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   const hideSuggestions = () => {
     suggestionResult = null;
     renderSuggestions(context, suggestionsNode, suggestionResult);
+  };
+
+  const runDslConsoleQuery = async () => {
+    try {
+      setDslConsoleStatus("Executing request...", "muted");
+      const parsedRequest = JSON.parse(dslQueryEditor.value) as Record<string, unknown>;
+      const plan = await buildSearchExecutionPlan(context, state);
+      const startedAt = performance.now();
+      const response = await executeDslSearch(plan.index, parsedRequest, "dev-console");
+      customDslRequestText = dslQueryEditor.value;
+      dslResetQueryButton.disabled = false;
+      submittedResult = searchResultFromDslResponse(state, parsedRequest, response, startedAt);
+      activeChunkId = null;
+      suggestionResult = null;
+      syncDslConsoleResponse();
+      renderApp();
+      setDslConsoleStatus("Request executed. Reset Query to resync.", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to execute JSON DSL request.";
+      dslResponseViewer.value = formatDslLogJson({ error: message });
+      setDslConsoleStatus(message, "error");
+    }
   };
 
   const renderApp = () => {
@@ -2072,59 +2192,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     currentView = "detail";
   };
 
-  const runSemanticSearch = async () => {
-    const trimmed = semanticQuestionState.query.trim();
-    if (!trimmed) {
-      semanticQuestionState = {
-        query: "",
-        status: "idle",
-        results: [],
-        error: null
-      };
-      currentView = "home";
-      renderApp();
-      return;
-    }
-
-    const firstLoad = browserEmbeddingExtractorPromise === null;
-    semanticQuestionState = {
-      ...semanticQuestionState,
-      status: firstLoad ? "loading-model" : "searching",
-      results: [],
-      error: null
-    };
-    renderApp();
-
-    try {
-      const embedding = await embedSemanticQuery(trimmed, context.semantic.model.modelId);
-      semanticQuestionState = {
-        ...semanticQuestionState,
-        status: "searching"
-      };
-      renderApp();
-
-      const results = await getSemanticQuestionResults(context, embedding);
-      semanticQuestionState = {
-        ...semanticQuestionState,
-        status: "ready",
-        results,
-        error: null
-      };
-      currentView = "vector";
-    } catch (error: unknown) {
-      semanticQuestionState = {
-        ...semanticQuestionState,
-        status: "error",
-        results: [],
-        error: error instanceof Error ? error.message : String(error)
-      };
-      currentView = "vector";
-    }
-
-    clearDetailHash();
-    renderApp();
-  };
-
   const runSubmittedSearch = async (nextView: "results" | "detail" = "results") => {
     suggestionResult = null;
     submittedResult = await searchContext.resultFor(state);
@@ -2133,8 +2200,8 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       state = searchContext.patch({ offset: normalizedOffset });
       submittedResult = await searchContext.resultFor(state);
     }
-    if (submittedResult.finalHits.length > 0 && !submittedResult.selectedIds.has(activeDocId)) {
-      activeDocId = submittedResult.finalHits[0]?.[0] ?? "";
+    if (submittedResult.visibleHits.length > 0 && !submittedResult.visibleHits.some(([id]) => id === activeDocId)) {
+      activeDocId = submittedResult.visibleHits[0]?.[0] ?? "";
     }
     currentView = nextView;
     if (nextView !== "detail") {
@@ -2156,6 +2223,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     const nextApi = params.get("api");
     const nextTag = params.get("tag");
     const nextVariant = params.get("variant");
+    const nextView = params.get("view");
 
     state = searchContext.replace({ ...initialState });
     submittedResult = null;
@@ -2177,23 +2245,20 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
     });
     syncSharedQuery(nextQuery);
 
-    if (state.query.trim() && state.variant === "vector") {
-      await runSemanticSearch();
-      return;
-    }
     if (state.query.trim()) {
       setSearchModeFromQuery(state.query);
       submittedResult = await searchContext.resultFor(state);
-      currentView = "results";
+      currentView = nextView === "console" ? "console" : "results";
     } else if (state.tag || state.api || state.section || state.significantTerm || state.wordCountFacet || state.excludeAdvanced) {
       submittedResult = await searchContext.resultFor(state);
-      currentView = "results";
+      currentView = nextView === "console" ? "console" : "results";
     } else {
+      await searchContext.resultFor(state);
       submittedResult = null;
       suggestionResult = null;
       activeDocId = "";
       activeChunkId = null;
-      currentView = "home";
+      currentView = nextView === "console" ? "console" : "home";
     }
     renderApp();
   };
@@ -2224,14 +2289,12 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       activeChunkId = null;
       clearDetailHash();
     }
-    if (!semanticQuestionState.query.trim()) {
-      semanticQuestionState = { query: "", status: "idle", results: [], error: null };
-    }
   };
 
   queryInput.addEventListener("input", () => {
     syncSharedQuery(queryInput.value);
     syncControls();
+    scheduleDslConsoleSync();
     scheduleSuggestions();
   }, { signal });
 
@@ -2242,21 +2305,54 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   queryInput.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       hideSuggestions();
+    }
+  }, { signal });
+
+  dslQueryEditor.addEventListener("keydown", (event) => {
+    const submitsConsoleQuery = event.key === "Enter" && (event.metaKey || event.ctrlKey);
+    if (!submitsConsoleQuery) {
       return;
     }
-    if (event.key === "Enter" && state.variant === "vector") {
-      event.preventDefault();
-      void runSemanticSearch();
-    }
+    event.preventDefault();
+    void runDslConsoleQuery();
+  }, { signal });
+
+  dslRunQueryButton.addEventListener("click", () => {
+    void runDslConsoleQuery();
+  }, { signal });
+
+  dslQueryEditor.addEventListener("input", () => {
+    customDslRequestText = dslQueryEditor.value;
+    dslResetQueryButton.disabled = false;
+    setDslConsoleStatus("Edited request preserved. Reset Query to resync.");
+  }, { signal });
+
+  openDslConsoleButton.addEventListener("click", () => {
+    currentView = "console";
+    window.history.pushState({ view: "console" }, "", buildSearchRouteHref("console"));
+    renderApp();
+    window.setTimeout(() => {
+      dslQueryEditor.focus();
+    }, 0);
+  }, { signal });
+
+  closeDslConsoleButton.addEventListener("click", () => {
+    currentView = submittedResult ? "results" : "home";
+    window.history.pushState({ view: currentView }, "", buildSearchRouteHref("search"));
+    renderApp();
+  }, { signal });
+
+  dslResetQueryButton.addEventListener("click", () => {
+    customDslRequestText = null;
+    dslQueryEditor.value = latestGeneratedDslRequestText;
+    dslResetQueryButton.disabled = true;
+    setDslConsoleStatus("Query synced from the search controls.");
+    scheduleDslConsoleSync();
   }, { signal });
 
   queryForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (state.variant === "vector") {
-      void runSemanticSearch();
-    } else {
-      void runSubmittedSearch("results");
-    }
+    void runSubmittedSearch("results");
   }, { signal });
 
   clearQueryButton.addEventListener("click", () => {
@@ -2303,10 +2399,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       renderApp();
       return;
     }
-    if (state.variant === "vector") {
-      await runSemanticSearch();
-      return;
-    }
     await runSubmittedSearch("results");
   };
 
@@ -2323,7 +2415,6 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
       return;
     }
     state = searchContext.patch({ variant, offset: 0 });
-    submittedResult = variant === "vector" ? null : submittedResult;
     suggestionResult = null;
     activeChunkId = null;
     if (!state.query.trim()) {
@@ -2392,9 +2483,7 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
 
     const backToResults = target.closest<HTMLElement>("[data-action='back-to-results']");
     if (backToResults) {
-      if (state.variant === "vector" && semanticQuestionState.results.length > 0) {
-        currentView = "vector";
-      } else if (submittedResult) {
+      if (submittedResult) {
         currentView = "results";
       }
       activeChunkId = null;
@@ -2487,6 +2576,9 @@ async function wireApp(context: RuntimeContext): Promise<() => void> {
   syncViewportState();
 
   return () => {
+    if (pendingDslSync !== null) {
+      window.clearTimeout(pendingDslSync);
+    }
     if (pendingSuggestions !== null) {
       window.clearTimeout(pendingSuggestions);
     }

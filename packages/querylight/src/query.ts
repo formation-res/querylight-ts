@@ -1,8 +1,9 @@
 import { type PolygonCoordinates } from "./geo";
 import { DateFieldIndex, DocumentIndex, GeoFieldIndex, NumericFieldIndex, TextFieldIndex } from "./document-index";
 import { type Hit, type Hits, QueryContext, andHits, applyBoost, geoFieldHits, ids, normalizedBoost, orHits, textFieldHits } from "./query-support";
-import { type Document, type Query } from "./shared";
+import { reciprocalRankFusion, type Document, type Query, type ReciprocalRankFusionOptions } from "./shared";
 import { type Vector, VectorFieldIndex } from "./vector";
+import { SparseVectorFieldIndex, type SparseVector } from "./sparse-vector";
 
 /** Boolean operator used by text queries that combine multiple analyzed terms. */
 export enum OP {
@@ -227,6 +228,38 @@ export interface VectorRescoreQueryParams {
   boost?: number;
 }
 
+/** Parameters for constructing a {@link KnnQuery}. */
+export interface KnnQueryParams {
+  field: string;
+  vector: Vector;
+  k: number;
+  boost?: number;
+}
+
+/** Parameters for constructing a {@link SparseVectorQuery}. */
+export interface SparseVectorQueryParams {
+  field: string;
+  vector: SparseVector;
+  k: number;
+  boost?: number;
+}
+
+/** Parameters for constructing a {@link ReciprocalRankFusionQuery}. */
+export interface ReciprocalRankFusionQueryParams {
+  queries: Query[];
+  options?: ReciprocalRankFusionOptions;
+  boost?: number;
+}
+
+/** Parameters for constructing a {@link SparseVectorRescoreQuery}. */
+export interface SparseVectorRescoreQueryParams {
+  field: string;
+  vector: SparseVector;
+  query: Query;
+  options?: VectorRescoreOptions;
+  boost?: number;
+}
+
 function parseNumericValue(value: string | number | Date): number | undefined {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : undefined;
@@ -299,6 +332,13 @@ function assertRequiredQuery(value: Query | undefined, name: string): Query {
 function assertRequiredQueries(value: Query[] | undefined, name: string): Query[] {
   if (!Array.isArray(value)) {
     throw new Error(`${name} should be an array`);
+  }
+  return value;
+}
+
+function assertPositiveInteger(value: number, name: string): number {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} should be a positive integer`);
   }
   return value;
 }
@@ -1153,6 +1193,166 @@ export class VectorRescoreQuery implements Query {
 
     const windowHits = baseHits.slice(0, this.windowSize);
     const rescoredHits = await vectorIndex.rerankAsync(this.vector, ids(windowHits));
+    const rescoredMap = new Map(rescoredHits);
+
+    const rescoredWindow = windowHits
+      .map(([id, score], rank) => ({
+        id,
+        score: score * this.queryWeight + (rescoredMap.get(id) ?? 0) * this.rescoreQueryWeight,
+        rank
+      }))
+      .sort((a, b) => {
+        const scoreDelta = b.score - a.score;
+        return scoreDelta !== 0 ? scoreDelta : a.rank - b.rank;
+      })
+      .map(({ id, score }): Hit => [id, score]);
+
+    const tailHits = baseHits
+      .slice(this.windowSize)
+      .map(([id, score]): Hit => [id, score * this.queryWeight]);
+
+    return applyBoost([...rescoredWindow, ...tailHits], normalizedBoost(this));
+  }
+
+  highlightClauses(documentIndex: DocumentIndex) {
+    return this.query.highlightClauses?.(documentIndex) ?? [];
+  }
+}
+
+/** Direct dense-vector nearest-neighbor retrieval over a {@link VectorFieldIndex}. */
+export class KnnQuery implements Query {
+  private readonly field: string;
+  private readonly vector: Vector;
+  private readonly k: number;
+  public readonly boost: number | undefined;
+
+  constructor({ field, vector, k, boost }: KnnQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.vector = vector;
+    this.k = assertPositiveInteger(k, "k");
+    this.boost = boost;
+  }
+
+  async hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Promise<Hits> {
+    const vectorIndex = documentIndex.getFieldIndex(this.field);
+    if (!(vectorIndex instanceof VectorFieldIndex)) {
+      return [];
+    }
+
+    const filterIds = context.filteredIds(documentIndex.ids());
+    const hits = await vectorIndex.queryAsync(this.vector, this.k, filterIds);
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
+  }
+}
+
+/** Direct sparse-vector nearest-neighbor retrieval over a {@link SparseVectorFieldIndex}. */
+export class SparseVectorQuery implements Query {
+  private readonly field: string;
+  private readonly vector: SparseVector;
+  private readonly k: number;
+  public readonly boost: number | undefined;
+
+  constructor({ field, vector, k, boost }: SparseVectorQueryParams) {
+    this.field = assertRequiredString(field, "field");
+    this.vector = vector;
+    this.k = assertPositiveInteger(k, "k");
+    this.boost = boost;
+  }
+
+  async hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Promise<Hits> {
+    const vectorIndex = documentIndex.getFieldIndex(this.field);
+    if (!(vectorIndex instanceof SparseVectorFieldIndex)) {
+      return [];
+    }
+
+    const filterIds = context.filteredIds(documentIndex.ids());
+    const hits = vectorIndex.query(this.vector, this.k, filterIds);
+    return applyBoost(hits, normalizedBoost(this));
+  }
+
+  highlightClauses(): [] {
+    return [];
+  }
+}
+
+/** Fusion query that combines multiple ranked subqueries with reciprocal rank fusion. */
+export class ReciprocalRankFusionQuery implements Query {
+  private readonly queries: Query[];
+  private readonly options: ReciprocalRankFusionOptions;
+  public readonly boost: number | undefined;
+
+  constructor({ queries, options = {}, boost }: ReciprocalRankFusionQueryParams) {
+    this.queries = assertRequiredQueries(queries, "queries");
+    this.options = options;
+    this.boost = boost;
+  }
+
+  async hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Promise<Hits> {
+    const rankings = await Promise.all(this.queries.map((query) => query.hits(documentIndex, context)));
+    return applyBoost(reciprocalRankFusion(rankings, this.options), normalizedBoost(this));
+  }
+
+  highlightClauses(documentIndex: DocumentIndex) {
+    return this.queries.flatMap((query) => query.highlightClauses?.(documentIndex) ?? []);
+  }
+}
+
+/** Hybrid query that reranks the top lexical window with sparse-vector similarity. */
+export class SparseVectorRescoreQuery implements Query {
+  private readonly windowSize: number;
+  private readonly queryWeight: number;
+  private readonly rescoreQueryWeight: number;
+  private readonly field: string;
+  private readonly vector: SparseVector;
+  private readonly query: Query;
+  public readonly boost: number | undefined;
+
+  constructor(
+    {
+      field,
+      vector,
+      query,
+      options: {
+        windowSize = 50,
+        queryWeight = 1.0,
+        rescoreQueryWeight = 1.0
+      } = {},
+      boost
+    }: SparseVectorRescoreQueryParams
+  ) {
+    this.field = assertRequiredString(field, "field");
+    this.vector = vector;
+    this.query = assertRequiredQuery(query, "query");
+    this.boost = boost;
+    if (!Number.isInteger(windowSize) || windowSize < 0) {
+      throw new Error("windowSize should be an integer >= 0");
+    }
+    if (!Number.isFinite(queryWeight) || queryWeight < 0) {
+      throw new Error("queryWeight should be a finite number >= 0");
+    }
+    if (!Number.isFinite(rescoreQueryWeight) || rescoreQueryWeight < 0) {
+      throw new Error("rescoreQueryWeight should be a finite number >= 0");
+    }
+
+    this.windowSize = windowSize;
+    this.queryWeight = queryWeight;
+    this.rescoreQueryWeight = rescoreQueryWeight;
+  }
+
+  async hits(documentIndex: DocumentIndex, context: QueryContext = new QueryContext()): Promise<Hits> {
+    const baseHits = await this.query.hits(documentIndex, context);
+    const vectorIndex = documentIndex.getFieldIndex(this.field);
+
+    if (!(vectorIndex instanceof SparseVectorFieldIndex) || this.windowSize === 0 || baseHits.length === 0) {
+      return applyBoost(baseHits.map(([id, score]): Hit => [id, score * this.queryWeight]), normalizedBoost(this));
+    }
+
+    const windowHits = baseHits.slice(0, this.windowSize);
+    const rescoredHits = vectorIndex.rerank(this.vector, ids(windowHits));
     const rescoredMap = new Map(rescoredHits);
 
     const rescoredWindow = windowHits

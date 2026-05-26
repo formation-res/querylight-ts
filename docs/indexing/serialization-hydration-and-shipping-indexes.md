@@ -2,7 +2,7 @@
 id: shipping-indexes
 section: Indexing
 title: Serialization, Hydration, and Shipping Indexes
-summary: Prebuild index state, ship JSON to the client, and rehydrate fast without reindexing in the browser.
+summary: Prebuild index state, ship gzipped payloads to the client, and rehydrate fast without reindexing in the browser.
 tags: [serialization, hydration, browser, build-time, deployment]
 apis: [indexState, loadState, DocumentIndexState, DocumentIndex]
 level: indexing
@@ -11,7 +11,7 @@ order: 30
 
 # Serialization, Hydration, and Shipping Indexes
 
-Build indexes ahead of time and ship their serialized state to the browser when you want local search without client-side reindexing.
+Build indexes ahead of time and ship their gzipped serialized state to the browser when you want local search without client-side reindexing.
 
 That avoids reindexing large corpora on every page load.
 
@@ -21,11 +21,11 @@ At build time:
 
 1. create your `DocumentIndex`
 2. index your documents once
-3. serialize `indexState` to JSON
+3. serialize `indexState` to gzipped bytes
 
 At runtime:
 
-1. fetch or import the JSON
+1. fetch or import the compressed payload
 2. create an empty index with the same field layout
 3. call `loadState(...)`
 
@@ -67,7 +67,7 @@ If you change the schema, rebuild and reship the state.
 ## A common architecture
 
 - build docs or records in CI
-- emit JSON assets during the site build
+- emit compressed index assets during the site build
 - load the serialized state in the browser
 - run queries locally with no backend dependency
 

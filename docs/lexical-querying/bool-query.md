@@ -2,16 +2,16 @@
 id: bool-logic
 section: Lexical Querying
 title: BoolQuery for Must, Should, Filter, MustNot, and MinimumShouldMatch
-summary: Blend ranking clauses with strict filters, exclusions, and optional should-logic in one request.
+summary: Blend ranking clauses with strict filters, exclusions, and optional should-logic in one JSON DSL request.
 tags: [query, bool, filtering, must, must-not]
-apis: [BoolQuery, MatchQuery, TermQuery, QueryContext]
+apis: [searchJsonDsl, parseJsonDslQuery, BoolQuery, MatchQuery, TermQuery, QueryContext]
 level: querying
 order: 20
 ---
 
 # BoolQuery for Must, Should, Filter, MustNot, and MinimumShouldMatch
 
-`BoolQuery` is the main way to combine ranking clauses with hard constraints.
+`bool` is the main way to combine ranking clauses with hard constraints. The JSON DSL form is the primary one. The class API below is the equivalent internal TypeScript layer.
 
 ## Structure
 
@@ -21,6 +21,27 @@ order: 20
 - `mustNot`: excluded documents
 
 By default, `should` clauses are optional whenever `must` or `filter` is present. If a bool query contains only `should` clauses, at least one should clause must match.
+
+```json
+{
+  "query": {
+    "bool": {
+      "should": [
+        { "match": { "title": { "query": "phrase search", "operator": "and", "boost": 3 } } },
+        { "match": { "body": { "query": "phrase search", "operator": "and", "boost": 1.5 } } }
+      ],
+      "filter": [
+        { "term": { "section": "Queries" } }
+      ],
+      "must_not": [
+        { "term": { "level": "advanced" } }
+      ]
+    }
+  }
+}
+```
+
+Equivalent internal TypeScript API:
 
 ```ts
 import { BoolQuery, MatchQuery, OP, TermQuery } from "@tryformation/querylight-ts";
@@ -39,15 +60,19 @@ const query = new BoolQuery({
 
 Use `minimumShouldMatch` when you want a specific number of `should` clauses to become mandatory.
 
-```ts
-const query = new BoolQuery({
-  should: [
-    new MatchQuery({ field: "title", text: "vector" }),
-    new MatchQuery({ field: "body", text: "search" }),
-    new MatchQuery({ field: "tags", text: "ranking" })
-  ],
-  minimumShouldMatch: 2
-});
+```json
+{
+  "query": {
+    "bool": {
+      "should": [
+        { "match": { "title": { "query": "vector" } } },
+        { "match": { "body": { "query": "search" } } },
+        { "match": { "tags": { "query": "ranking" } } }
+      ],
+      "minimum_should_match": 2
+    }
+  }
+}
 ```
 
 ## Good use cases

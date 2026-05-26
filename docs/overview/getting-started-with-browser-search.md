@@ -2,9 +2,9 @@
 id: getting-started
 section: Overview
 title: Getting Started with Browser Search
-summary: Build a practical search box quickly with either the beginner helper or the equivalent manual setup.
+summary: Build a practical search box quickly with the JSON DSL first, then drop to the lower-level TypeScript API only when you need it.
 tags: [getting-started, browser, simple, search, serialization]
-apis: [createSimpleTextSearchIndex, simpleTextSearch, DocumentIndex, TextFieldIndex, MatchPhrase, MatchQuery, reciprocalRankFusion]
+apis: [searchJsonDsl, createSimpleTextSearchIndex, simpleTextSearch, serializeSimpleTextSearchIndex, deserializeSimpleTextSearchIndex, DocumentIndex, TextFieldIndex]
 level: foundation
 order: 30
 ---
@@ -22,7 +22,7 @@ It is also the quickest way to understand what Querylight TS is good at in pract
 - faceted or filtered discovery
 - geo-aware search
 
-That matters because beginner-friendly search tooling often becomes a dead end as soon as your requirements grow. In Querylight TS, you can keep the same documents, build-time JSON payload, and browser hydration flow when you later switch to manual queries and additional field types.
+That matters because beginner-friendly search tooling often becomes a dead end as soon as your requirements grow. In Querylight TS, you can keep the same documents, build-time JSON payload, and browser hydration flow when you later switch to JSON DSL requests and additional field types.
 
 There are two paths:
 
@@ -42,8 +42,8 @@ That avoids indexing work in the browser and gives you a fast startup path.
 ## Pick the path that matches your use case
 
 - If you want a practical docs or content search box fast, start with `createSimpleTextSearchIndex`.
-- If you know you need filters, facets, dense retrieval, sparse retrieval, or custom ranking, use the lower-level query API directly.
-- If you are unsure, start simple. You can keep the same document model and move to manual queries later.
+- If you know you need filters, facets, dense retrieval, sparse retrieval, or custom ranking, use the JSON DSL directly.
+- If you are unsure, start simple. You can keep the same document model and move to DSL requests later.
 
 ## Fastest path: beginner helper
 
@@ -95,25 +95,62 @@ This beginner path is a strong fit for:
 - product help centers
 - static app content bundled with a browser build
 
-## Equivalent manual setup
+## Equivalent manual setup with the JSON DSL
 
 The beginner helper is just a convenience layer around the lower-level primitives.
 
 This is the same idea done manually:
 
+Raw request JSON:
+
+```json
+{
+  "query": {
+    "rrf": {
+      "rank_constant": 20,
+      "weights": [3, 1],
+      "queries": [
+        {
+          "bool": {
+            "should": [
+              { "match_phrase": { "title": { "query": "range filters", "slop": 1, "boost": 8 } } },
+              { "match_phrase": { "description": { "query": "range filters", "slop": 2, "boost": 3 } } },
+              { "match_phrase": { "body": { "query": "range filters", "slop": 2, "boost": 3 } } },
+              { "match": { "title": { "query": "range filters", "operator": "and", "boost": 6 } } },
+              { "match": { "description": { "query": "range filters", "operator": "and", "boost": 2.5 } } },
+              { "match": { "body": { "query": "range filters", "operator": "and", "boost": 2 } } },
+              { "match": { "primarySuggest": { "query": "range filters", "operator": "or", "prefix_match": true, "boost": 4 } } },
+              { "match": { "secondarySuggest": { "query": "range filters", "operator": "or", "prefix_match": true, "boost": 2 } } }
+            ]
+          }
+        },
+        {
+          "match": {
+            "combined": {
+              "query": "range filters",
+              "operator": "or",
+              "boost": 1.5
+            }
+          }
+        }
+      ]
+    }
+  },
+  "size": 20
+}
+```
+
+Send the same shape from TypeScript like this:
+
 ```ts
 import {
   Analyzer,
-  BoolQuery,
   DocumentIndex,
   EdgeNgramsTokenFilter,
-  MatchPhrase,
-  MatchQuery,
   NgramTokenFilter,
-  OP,
   RankingAlgorithm,
+  searchJsonDsl,
   TextFieldIndex,
-  reciprocalRankFusion
 } from "@tryformation/querylight-ts";
 
 const suggestAnalyzer = new Analyzer(undefined, undefined, [new EdgeNgramsTokenFilter(2, 10)]);
@@ -151,32 +188,48 @@ for (const doc of documents) {
   });
 }
 
-function search(query: string) {
-  const lexicalHits = index.searchRequest({
-    query: new BoolQuery({
-      should: [
-        new MatchPhrase({ field: "title", text: query, slop: 1, boost: 8 }),
-        new MatchPhrase({ field: "description", text: query, slop: 2, boost: 3 }),
-        new MatchPhrase({ field: "body", text: query, slop: 2, boost: 3 }),
-        new MatchQuery({ field: "title", text: query, operation: OP.AND, boost: 6 }),
-        new MatchQuery({ field: "description", text: query, operation: OP.AND, boost: 2.5 }),
-        new MatchQuery({ field: "body", text: query, operation: OP.AND, boost: 2.0 }),
-        new MatchQuery({ field: "primarySuggest", text: query, operation: OP.OR, prefixMatch: true, boost: 4 }),
-        new MatchQuery({ field: "secondarySuggest", text: query, operation: OP.OR, prefixMatch: true, boost: 2 })
-      ]
-    }),
-    limit: 20
+async function search(query: string) {
+  const request = {
+    query: {
+      rrf: {
+        rank_constant: 20,
+        weights: [3, 1],
+        queries: [
+          {
+            bool: {
+              should: [
+                { match_phrase: { title: { query, slop: 1, boost: 8 } } },
+                { match_phrase: { description: { query, slop: 2, boost: 3 } } },
+                { match_phrase: { body: { query, slop: 2, boost: 3 } } },
+                { match: { title: { query, operator: "and", boost: 6 } } },
+                { match: { description: { query, operator: "and", boost: 2.5 } } },
+                { match: { body: { query, operator: "and", boost: 2 } } },
+                { match: { primarySuggest: { query, operator: "or", prefix_match: true, boost: 4 } } },
+                { match: { secondarySuggest: { query, operator: "or", prefix_match: true, boost: 2 } } }
+              ]
+            }
+          },
+          {
+            match: {
+              combined: {
+                query,
+                operator: "or",
+                boost: 1.5
+              }
+            }
+          }
+        ]
+      }
+    },
+    size: 20
+  };
+
+  const response = await searchJsonDsl({
+    index,
+    request
   });
 
-  const fuzzyHits = fuzzyIndex.searchRequest({
-    query: new MatchQuery({ field: "combined", text: query, operation: OP.OR, boost: 1.5 }),
-    limit: 20
-  });
-
-  return reciprocalRankFusion([lexicalHits, fuzzyHits], {
-    rankConstant: 20,
-    weights: [3, 1]
-  });
+  return response.hits.hits;
 }
 ```
 
@@ -196,6 +249,8 @@ It is also the path to take when your product requirements sound more like:
 - "limit results to the visible map area"
 - "support strict metadata filters"
 
+If you prefer the lower-level internal API, the same request can still be expressed with query classes. The rest of the docs keep that layer documented, but the primary examples now use the JSON DSL.
+
 ## Recommended browser architecture
 
 For a production static site or browser app, do the indexing at build time.
@@ -206,7 +261,7 @@ In a Node.js build script:
 
 ```ts
 import fs from "node:fs/promises";
-import { createSimpleTextSearchIndex } from "@tryformation/querylight-ts";
+import { createSimpleTextSearchIndex, serializeSimpleTextSearchIndex } from "@tryformation/querylight-ts";
 
 const documents = await loadYourDocsSomehow();
 const search = createSimpleTextSearchIndex({
@@ -215,19 +270,9 @@ const search = createSimpleTextSearchIndex({
   secondaryFields: ["description", "body"]
 });
 
-const payload = {
-  search: {
-    idField: search.idField,
-    primaryFields: search.primaryFields,
-    secondaryFields: search.secondaryFields,
-    ranking: search.ranking,
-    documentIndexState: JSON.parse(JSON.stringify(search.documentIndex.indexState)),
-    fuzzyIndexState: JSON.parse(JSON.stringify(search.fuzzyIndex.indexState))
-  },
-  documents
-};
+const compressed = serializeSimpleTextSearchIndex({ index: search });
 
-await fs.writeFile("dist/search-index.json", JSON.stringify(payload));
+await fs.writeFile("dist/search-index.json.gz", compressed);
 ```
 
 ### Browser step
@@ -235,30 +280,12 @@ await fs.writeFile("dist/search-index.json", JSON.stringify(payload));
 In the browser:
 
 ```ts
-import { createSimpleTextSearchIndex, DocumentIndex, RankingAlgorithm, TextFieldIndex, simpleTextSearch } from "@tryformation/querylight-ts";
+import { deserializeSimpleTextSearchIndex, simpleTextSearch } from "@tryformation/querylight-ts";
 
-const payload = await fetch("/search-index.json").then((response) => response.json());
-
-const search = createSimpleTextSearchIndex({
-  documents: payload.documents,
-  primaryFields: payload.search.primaryFields,
-  secondaryFields: payload.search.secondaryFields,
-  idField: payload.search.idField,
-  ranking: payload.search.ranking as RankingAlgorithm
-});
-
-const hydratedSearch = {
-  ...search,
-  documentIndex: search.documentIndex.loadState(payload.search.documentIndexState),
-  fuzzyIndex: search.fuzzyIndex.loadState(payload.search.fuzzyIndexState)
-};
+const compressed = new Uint8Array(await fetch("/search-index.json.gz").then((response) => response.arrayBuffer()));
+const hydratedSearch = deserializeSimpleTextSearchIndex({ compressed });
 
 const hits = simpleTextSearch(hydratedSearch, { query: "range fi", limit: 5 });
-
-const query = new MatchQuery({ field: "title", text: "range filters" });
-const highlighted = hydratedSearch.documentIndex.highlight(hits[0]![0], query, {
-  fields: ["title", "body"]
-});
 ```
 
 This pattern keeps the browser simple:
@@ -272,7 +299,7 @@ This pattern keeps the browser simple:
 
 Stay with `simpleTextSearch` if you need a fast, practical default.
 
-Move to manual queries when you need:
+Move to JSON DSL requests when you need:
 
 - filters or facets
 - field-specific boosts tuned to your content

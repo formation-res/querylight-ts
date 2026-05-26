@@ -2,9 +2,9 @@
 id: how-to-build-faceted-navigation
 section: Guides
 title: How To Build Faceted Navigation
-summary: Use text, numeric, and date aggregations over the current hit set to drive filters, counts, and exploratory navigation.
+summary: Use text, numeric, and date aggregations over the current hit set to drive filters, counts, and exploratory navigation through the JSON DSL.
 tags: [facets, aggregations, filters, navigation, significant-terms, histogram]
-apis: [termsAggregation, significantTermsAggregation, rangeAggregation, histogram, dateHistogram, BoolQuery, TermQuery, RangeQuery, DocumentIndex]
+apis: [searchJsonDsl, DocumentIndex]
 level: querying
 order: 20
 ---
@@ -17,8 +17,8 @@ Querylight TS already has the core ingredients:
 
 - a main query
 - metadata fields such as `tags` or `section`
-- aggregation helpers on field indexes
-- filter queries such as `TermQuery` and `RangeQuery`
+- top-level `aggs`
+- filter clauses such as `term` and `range`
 
 ## Index filterable metadata separately
 
@@ -41,8 +41,8 @@ Facet fields should be explicit. Do not expect to build stable facet counts from
 The usual flow is:
 
 1. run a search query
-2. collect the matching document ids
-3. aggregate over a metadata field for those ids
+2. attach the aggregations you want at the top level
+3. render counts and buckets from the response
 
 That makes facet counts contextual instead of global.
 
@@ -74,19 +74,26 @@ That is useful when your users think in ranges instead of labels.
 ## Example pattern
 
 ```ts
-const hits = index.searchRequest({ query });
-const subsetIds = new Set(hits.map(([id]) => id));
-
-const tagsIndex = index.getFieldIndex("tags") as TextFieldIndex;
-const wordCountIndex = index.getFieldIndex("wordCount") as NumericFieldIndex;
-
-const tagFacets = tagsIndex.termsAggregation(12, subsetIds);
-const lengthBuckets = wordCountIndex.rangeAggregation([
-  { key: "short", to: 400 },
-  { key: "medium", from: 400, to: 800 },
-  { key: "long", from: 800 }
-], subsetIds);
-const lengthStats = wordCountIndex.stats(subsetIds);
+const response = await searchJsonDsl({
+  index,
+  request: {
+    query,
+    aggs: {
+      tags: { terms: { field: "tags", size: 12 } },
+      lengths: {
+        range: {
+          field: "wordCount",
+          ranges: [
+            { key: "short", to: 400 },
+            { key: "medium", from: 400, to: 800 },
+            { key: "long", from: 800 }
+          ]
+        }
+      },
+      lengthStats: { stats: { field: "wordCount" } }
+    }
+  }
+});
 ```
 
 That gives you:
@@ -104,9 +111,9 @@ That keeps the search logic clear:
 - free-text clauses decide relevance
 - filter clauses decide eligibility
 
-For text facets, that usually means `TermQuery`.
+For text facets, that usually means `term`.
 
-For numeric or date ranges, use `RangeQuery`.
+For numeric or date ranges, use `range`.
 
 ## Significant terms are useful for discovery
 

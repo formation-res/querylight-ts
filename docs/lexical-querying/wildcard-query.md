@@ -2,7 +2,7 @@
 id: wildcard-query
 section: Lexical Querying
 title: WildcardQuery for Term-Level Pattern Matching
-summary: Match indexed terms with `*` and `?` patterns without switching to full-text analysis.
+summary: Match indexed terms with `*` and `?` patterns without switching to full-text analysis, using the JSON DSL first.
 tags: [query, wildcard, term-level, pattern-matching]
 apis: [WildcardQuery, TermQuery, PrefixQuery]
 level: advanced
@@ -11,7 +11,7 @@ order: 70
 
 # WildcardQuery for Term-Level Pattern Matching
 
-`WildcardQuery` matches indexed terms using simple wildcard syntax:
+`wildcard` matches indexed terms using simple wildcard syntax:
 
 - `*` matches zero or more characters
 - `?` matches exactly one character
@@ -20,20 +20,14 @@ This is a term-level query. It works against analyzed terms that already exist i
 
 ## Basic example
 
-```ts
-import { DocumentIndex, TextFieldIndex, WildcardQuery } from "@tryformation/querylight-ts";
-
-const index = new DocumentIndex({
-  title: new TextFieldIndex()
-});
-
-index.index({ id: "1", fields: { title: ["querylight"] } });
-index.index({ id: "2", fields: { title: ["query planner"] } });
-index.index({ id: "3", fields: { title: ["vector search"] } });
-
-const hits = index.searchRequest({
-  query: new WildcardQuery({ field: "title", pattern: "que*" })
-});
+```json
+{
+  "query": {
+    "wildcard": {
+      "title": "que*"
+    }
+  }
+}
 ```
 
 ## When to use it
@@ -44,11 +38,11 @@ const hits = index.searchRequest({
 
 ## Wildcard vs MatchQuery
 
-- `MatchQuery` analyzes the input text and uses lexical ranking.
-- `WildcardQuery` checks indexed terms directly.
+- `match` analyzes the input text and uses lexical ranking.
+- `wildcard` checks indexed terms directly.
 
-If you want normal search-box behavior, use `MatchQuery`.
-If you want pattern matching over already-indexed terms, use `WildcardQuery`.
+If you want normal search-box behavior, use `match`.
+If you want pattern matching over already-indexed terms, use `wildcard`.
 
 ## Notes
 

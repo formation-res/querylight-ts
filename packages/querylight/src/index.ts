@@ -31,6 +31,9 @@ export type { RandomSource } from "./random";
 export { SimpleStringTrie, TrieNode } from "./trie";
 export type { TrieNodeState } from "./trie";
 
+export { deserializeCompressedJson, serializeCompressedJson } from "./compressed-json";
+export type { DeserializeCompressedJsonParams, SerializeCompressedJsonParams } from "./compressed-json";
+
 export {
   type Bm25Config,
   type DateFieldIndexState,
@@ -60,6 +63,7 @@ export {
   type ReciprocalRankFusionOptions,
   type SearchRequest,
   type SignificantTermsBucket,
+  type StoredSourceIndexState,
   type TermPos,
   type TextFieldIndexState,
   andHits,
@@ -71,7 +75,17 @@ export {
   reciprocalRankFusion
 } from "./shared";
 
-export { DateFieldIndex, DocumentIndex, GeoFieldIndex, NumericFieldIndex, TextFieldIndex } from "./document-index";
+export {
+  DateFieldIndex,
+  deserializeDocumentIndex,
+  DocumentIndex,
+  GeoFieldIndex,
+  NumericFieldIndex,
+  serializeDocumentIndex,
+  StoredSourceIndex,
+  TextFieldIndex
+} from "./document-index";
+export type { DeserializeDocumentIndexParams, SerializeDocumentIndexParams } from "./document-index";
 
 export {
   BoolQuery,
@@ -81,17 +95,21 @@ export {
   ExistsQuery,
   GeoPointQuery,
   GeoPolygonQuery,
+  KnnQuery,
   MatchAll,
   MultiMatchQuery,
   MatchPhrase,
   MatchQuery,
   OP,
   PrefixQuery,
+  ReciprocalRankFusionQuery,
   RankFeatureQuery,
   RangeQuery,
   RegexpQuery,
   ScriptQuery,
   ScriptScoreQuery,
+  SparseVectorQuery,
+  SparseVectorRescoreQuery,
   TermQuery,
   TermsQuery,
   WildcardQuery,
@@ -105,11 +123,13 @@ export type {
   ExistsQueryParams,
   GeoPointQueryParams,
   GeoPolygonQueryParams,
+  KnnQueryParams,
   MatchAllParams,
   MatchPhraseParams,
   MatchQueryParams,
   MultiMatchQueryParams,
   PrefixQueryParams,
+  ReciprocalRankFusionQueryParams,
   RankFeatureLinearOptions,
   RankFeatureLogOptions,
   RankFeatureQueryParams,
@@ -123,6 +143,8 @@ export type {
   ScriptQueryParams,
   ScriptScore,
   ScriptScoreQueryParams,
+  SparseVectorQueryParams,
+  SparseVectorRescoreQueryParams,
   TermQueryParams,
   TermsQueryParams,
   VectorRescoreQueryParams,
@@ -130,6 +152,23 @@ export type {
   WildcardQueryParams
 } from "./query";
 export type { Query } from "./shared";
+
+export { parseJsonDslQuery, searchJsonDsl } from "./dsl";
+export type {
+  JsonDslAggregationClause,
+  JsonDslAggregationResult,
+  JsonDslHighlight,
+  JsonDslHighlightField,
+  JsonDslHits,
+  JsonDslQueryClause,
+  JsonDslRequest,
+  JsonDslResponse,
+  JsonDslSimpleTextSearchRequest,
+  JsonDslScript,
+  JsonDslSearchHit,
+  ParseJsonDslQueryParams,
+  SearchJsonDslParams
+} from "./dsl";
 
 export {
   CpuVectorScorer,
@@ -163,10 +202,15 @@ export type {
 
 export {
   createSimpleTextSearchIndex,
+  deserializeSimpleTextSearchIndex,
+  serializeSimpleTextSearchIndex,
   simpleTextSearch
 } from "./simple-text-search";
 export type {
   CreateSimpleTextSearchIndexOptions,
+  DeserializeSimpleTextSearchIndexParams,
+  SerializeSimpleTextSearchIndexParams,
   SimpleTextSearchIndex,
+  SimpleTextSearchIndexState,
   SimpleTextSearchRequest
 } from "./simple-text-search";

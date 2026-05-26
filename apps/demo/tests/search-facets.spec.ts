@@ -42,6 +42,14 @@ test("docs search boots from the gzipped demo payload", async ({ page }) => {
   await expect(page.locator("#query")).toBeVisible();
 });
 
+test("home route eventually replaces the facet loading placeholder", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.locator("#facet-sections")).not.toContainText("Loading facets…");
+  await expect(page.locator("#facet-sections")).toContainText("Sections");
+  await expect(page.locator("#summary")).toHaveText("No active search");
+});
+
 test("home view defaults to ask mode with a shared query input", async ({ page }) => {
   await page.goto("/");
 
@@ -67,6 +75,83 @@ test("home view defaults to ask mode with a shared query input", async ({ page }
 
   await page.locator("#clear-query").click();
   await expect(queryInput).toHaveValue("");
+});
+
+test("dev console button opens the console and regular search controls sync the generated request", async ({ page }) => {
+  await page.goto("/");
+
+  await page.locator("#query").fill("terms");
+  await page.locator("#operation").selectOption("AND");
+  await expect(page.locator("#dsl-console-screen")).toBeHidden();
+  await page.locator("#open-dsl-console").click();
+  await expect(page.locator("#dsl-console-screen")).toBeVisible();
+  await expect(page.locator("#reader-layout")).toBeHidden();
+  await expect(page.locator("#dsl-query-editor")).toBeFocused();
+  await expect(page.locator("#open-dsl-console")).toHaveClass(/nav-result-active/);
+  await expect(page.locator('a[href="/"]').first()).not.toHaveClass(/nav-result-active/);
+
+  await expect.poll(async () => await page.locator("#dsl-query-editor").inputValue()).toContain("\"query\": \"terms\"");
+  await expect.poll(async () => await page.locator("#dsl-query-editor").inputValue()).toContain("\"operator\": \"and\"");
+});
+
+test("dashboard header links to the console screen", async ({ page }) => {
+  await page.goto("/dashboard/");
+
+  await page.getByRole("link", { name: "Console" }).click();
+
+  await expect(page).toHaveURL(/\/\?view=console$/);
+  await expect(page.locator("#dsl-console-screen")).toBeVisible();
+  await expect(page.locator("#open-dsl-console")).toHaveClass(/nav-result-active/);
+});
+
+test("dashboard lazy sections build after scrolling into view", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => {
+    pageErrors.push(error.message);
+  });
+
+  await page.goto("/dashboard/");
+  await page.locator("#earthquake-section").scrollIntoViewIfNeeded();
+
+  await expect(page.locator("#earthquake-section [data-lazy-status]")).toContainText("Index built lazily", { timeout: 10_000 });
+  await expect(page.locator("#weather-section [data-lazy-status]")).toHaveText("Index not built yet. Scroll-triggered lazy init pending.");
+
+  await page.locator("#weather-section").scrollIntoViewIfNeeded();
+  await expect(page.locator("#weather-section [data-lazy-status]")).toContainText("Index built lazily", { timeout: 10_000 });
+
+  expect(pageErrors).toEqual([]);
+});
+
+test("dev console preserves manual edits, resets to generated query, and runs requests", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#open-dsl-console").click();
+
+  const editor = page.locator("#dsl-query-editor");
+  const response = page.locator("#dsl-response-viewer");
+  const reset = page.locator("#dsl-reset-query");
+  const run = page.locator("#dsl-run-query");
+
+  await expect.poll(async () => await editor.inputValue()).toContain("\"match_all\"");
+
+  await editor.fill("{\n  \"size\": 1,\n  \"query\": {\n    \"match\": {\n      \"title\": {\n        \"query\": \"terms\",\n        \"operator\": \"or\",\n        \"boost\": 1\n      }\n    }\n  }\n}");
+  await page.locator("#query").fill("vector");
+  await expect(editor).toHaveValue(/"query": "terms"/);
+
+  await reset.click();
+  await expect.poll(async () => await editor.inputValue()).toContain("\"query\": \"vector\"");
+
+  await editor.fill("{\n  \"size\": 1,\n  \"query\": {\n    \"match\": {\n      \"title\": {\n        \"query\": \"terms\",\n        \"operator\": \"or\",\n        \"boost\": 1\n      }\n    }\n  }\n}");
+  await run.click();
+
+  await expect(page.locator("#dsl-console-status")).toHaveText("Request executed. Reset Query to resync.");
+  await expect(response).toHaveValue(/"hits"/);
+  await expect(page.locator("#dsl-console-screen")).toBeVisible();
+  await expect(response).toHaveValue(/"Terms Aggregation"/);
+
+  await editor.fill("{\n  \"size\": 1,\n  \"query\": {\n    \"match\": {\n      \"title\": {\n        \"query\": \"vector\",\n        \"operator\": \"or\",\n        \"boost\": 1\n      }\n    }\n  }\n}");
+  await editor.press(process.platform === "darwin" ? "Meta+Enter" : "Control+Enter");
+  await expect(page.locator("#dsl-console-status")).toHaveText("Request executed. Reset Query to resync.");
+  await expect(response).toHaveValue(/"hits"/);
 });
 
 test("query-param boot keeps lexical search active", async ({ page }) => {

@@ -2,9 +2,9 @@
 id: highlighting
 section: Other Features
 title: Highlighting with Querylight TS
-summary: Generate exact, phrase, prefix, and fuzzy highlight fragments after retrieval using stored source offsets.
+summary: Generate exact, phrase, prefix, and fuzzy highlight fragments after retrieval using stored source offsets and JSON DSL requests.
 tags: [highlighting, offsets, snippets, search]
-apis: [DocumentIndex, MatchQuery, MatchPhrase, PrefixQuery]
+apis: [searchJsonDsl, DocumentIndex, MatchQuery, MatchPhrase, PrefixQuery]
 level: foundation
 order: 20
 ---
@@ -24,7 +24,7 @@ This keeps ranking and highlighting separate, similar to how Elasticsearch/OpenS
 ## Basic usage
 
 ```ts
-import { DocumentIndex, MatchQuery, RankingAlgorithm, TextFieldIndex } from "@tryformation/querylight-ts";
+import { DocumentIndex, searchJsonDsl, RankingAlgorithm, TextFieldIndex } from "@tryformation/querylight-ts";
 
 const index = new DocumentIndex({
   title: new TextFieldIndex(undefined, undefined, RankingAlgorithm.BM25),
@@ -39,14 +39,23 @@ index.index({
   }
 });
 
-const query = new MatchQuery({ field: "body", text: "range filters" });
-const hits = index.searchRequest({ query, limit: 5 });
-
-const highlight = index.highlight(hits[0]![0], query, {
-  fields: ["title", "body"],
-  fragmentSize: 140,
-  numberOfFragments: 1
+const response = await searchJsonDsl({
+  index,
+  request: {
+    query: { match: { body: { query: "range filters" } } },
+    size: 5,
+    highlight: {
+      fields: {
+        title: {},
+        body: {}
+      },
+      fragment_size: 140,
+      number_of_fragments: 1
+    }
+  }
 });
+
+const highlight = response.hits.hits[0]?.highlight;
 ```
 
 ## What the highlighter returns

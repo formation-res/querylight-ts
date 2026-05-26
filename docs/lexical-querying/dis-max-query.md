@@ -2,7 +2,7 @@
 id: dis-max
 section: Lexical Querying
 title: DisMaxQuery for Best-Field Matching with Tie Breakers
-summary: Prefer the strongest matching clause while still giving partial credit to secondary matches.
+summary: Prefer the strongest matching clause while still giving partial credit to secondary matches with a JSON DSL request.
 tags: [query, ranking, dis-max, relevance, multi-field]
 apis: [DisMaxQuery, MatchQuery, MultiMatchQuery, TermQuery]
 level: advanced
@@ -11,7 +11,7 @@ order: 50
 
 # DisMaxQuery for Best-Field Matching with Tie Breakers
 
-`DisMaxQuery` is useful when several clauses describe alternative ways a document might be relevant, but you want the best one to dominate the score.
+`dis_max` is useful when several clauses describe alternative ways a document might be relevant, but you want the best one to dominate the score.
 
 This is especially common for "best field" search:
 
@@ -22,6 +22,22 @@ This is especially common for "best field" search:
 Instead of summing every clause like a bool `should`, `DisMaxQuery` keeps the highest clause score and optionally blends in some of the others with a `tieBreaker`.
 
 ## Basic shape
+
+```json
+{
+  "query": {
+    "dis_max": {
+      "queries": [
+        { "match": { "title": { "query": "portable browser search", "operator": "and", "boost": 3 } } },
+        { "match": { "tagline": { "query": "portable browser search", "operator": "and", "boost": 2 } } },
+        { "match": { "body": { "query": "portable browser search", "operator": "and", "boost": 1 } } }
+      ]
+    }
+  }
+}
+```
+
+Equivalent internal TypeScript API:
 
 ```ts
 import { DisMaxQuery, MatchQuery, OP } from "@tryformation/querylight-ts";
@@ -43,14 +59,18 @@ const query = new DisMaxQuery({
 - `0.2`: the best clause counts fully, weaker matching clauses add a small bonus
 - `1`: behaves more like summing all matching clauses
 
-```ts
-const query = new DisMaxQuery({
-  queries: [
-    new MatchQuery({ field: "title", text: "vector search", operation: OP.AND, boost: 3.0 }),
-    new MatchQuery({ field: "body", text: "vector search", operation: OP.AND, boost: 1.0 })
-  ],
-  tieBreaker: 0.2
-});
+```json
+{
+  "query": {
+    "dis_max": {
+      "queries": [
+        { "match": { "title": { "query": "vector search", "operator": "and", "boost": 3 } } },
+        { "match": { "body": { "query": "vector search", "operator": "and", "boost": 1 } } }
+      ],
+      "tie_breaker": 0.2
+    }
+  }
+}
 ```
 
 That means a document with a strong title hit still wins, but a document that also matches in the body gets a small extra push.

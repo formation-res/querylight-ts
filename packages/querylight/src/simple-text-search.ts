@@ -1,6 +1,8 @@
 import { Analyzer, EdgeNgramsTokenFilter, NgramTokenFilter } from "./analysis";
+import { deserializeCompressedJson, serializeCompressedJson } from "./compressed-json";
 import { DocumentIndex, TextFieldIndex } from "./document-index";
 import { BoolQuery, MatchPhrase, MatchQuery, OP } from "./query";
+import { type DocumentIndexState } from "./shared";
 import { type Hits, RankingAlgorithm, reciprocalRankFusion } from "./shared";
 
 /** Request object for {@link simpleTextSearch}. */
@@ -32,6 +34,27 @@ export interface SimpleTextSearchIndex<T extends Record<string, unknown> = Recor
   primarySuggestField: string;
   secondarySuggestField: string;
   fuzzyField: string;
+}
+
+/** Gzipped, portable state payload for a {@link SimpleTextSearchIndex}. */
+export interface SimpleTextSearchIndexState<T extends Record<string, unknown> = Record<string, unknown>> {
+  documents: T[];
+  idField: string;
+  primaryFields: string[];
+  secondaryFields: string[];
+  ranking: RankingAlgorithm;
+  documentIndexState: DocumentIndexState;
+  fuzzyIndexState: DocumentIndexState;
+}
+
+/** Params for {@link serializeSimpleTextSearchIndex}. */
+export interface SerializeSimpleTextSearchIndexParams<T extends Record<string, unknown>> {
+  index: SimpleTextSearchIndex<T>;
+}
+
+/** Params for {@link deserializeSimpleTextSearchIndex}. */
+export interface DeserializeSimpleTextSearchIndexParams {
+  compressed: Uint8Array | ArrayBuffer | ArrayLike<number>;
 }
 
 const SIMPLE_TEXT_SEARCH_PRIMARY_SUGGEST_FIELD = "__simpleTextSearchPrimarySuggest";
@@ -172,4 +195,41 @@ export async function simpleTextSearch<T extends Record<string, unknown>>(
   });
   const fusedHits = reciprocalRankFusion([lexicalHits, fuzzyHits], { rankConstant: 20, weights: [3, 1] });
   return fusedHits.slice(from, Math.min(from + limit, fusedHits.length));
+}
+
+/** Serializes a simple-text-search bundle to gzipped bytes for shipping or storage. */
+export function serializeSimpleTextSearchIndex<T extends Record<string, unknown>>(
+  { index }: SerializeSimpleTextSearchIndexParams<T>
+): Uint8Array {
+  return serializeCompressedJson({
+    value: {
+      documents: index.documents,
+      idField: index.idField,
+      primaryFields: index.primaryFields,
+      secondaryFields: index.secondaryFields,
+      ranking: index.ranking,
+      documentIndexState: index.documentIndex.indexState,
+      fuzzyIndexState: index.fuzzyIndex.indexState
+    } satisfies SimpleTextSearchIndexState<T>
+  });
+}
+
+/** Hydrates a simple-text-search bundle from gzipped serialized bytes. */
+export function deserializeSimpleTextSearchIndex<T extends Record<string, unknown>>(
+  { compressed }: DeserializeSimpleTextSearchIndexParams
+): SimpleTextSearchIndex<T> {
+  const state = deserializeCompressedJson<SimpleTextSearchIndexState<T>>({ compressed });
+  const search = createSimpleTextSearchIndex({
+    documents: state.documents,
+    primaryFields: state.primaryFields as Array<Extract<keyof T, string>>,
+    secondaryFields: state.secondaryFields as Array<Extract<keyof T, string>>,
+    idField: state.idField as Extract<keyof T, string>,
+    ranking: state.ranking
+  });
+
+  return {
+    ...search,
+    documentIndex: search.documentIndex.loadState(state.documentIndexState),
+    fuzzyIndex: search.fuzzyIndex.loadState(state.fuzzyIndexState)
+  };
 }

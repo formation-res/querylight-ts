@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   Analyzer,
+  createSimpleTextSearchIndex,
   DateFieldIndex,
+  deserializeDocumentIndex,
+  deserializeSimpleTextSearchIndex,
   DistanceFeatureQuery,
   DocumentIndex,
   MatchQuery,
@@ -11,6 +14,9 @@ import {
   RankFeatureQuery,
   RankingAlgorithm,
   RangeQuery,
+  serializeDocumentIndex,
+  serializeSimpleTextSearchIndex,
+  StoredSourceIndex,
   TextFieldIndex,
   type TextFieldIndexState
 } from "../src/index";
@@ -113,5 +119,62 @@ describe("index state serialization", () => {
         docCount: 1
       }
     ]);
+  });
+
+  it("should preserve stored source payloads after loading state", () => {
+    const index = new DocumentIndex({
+      title: new TextFieldIndex(),
+      _source: new StoredSourceIndex()
+    });
+
+    index.index({
+      id: "1",
+      fields: {
+        title: ["querylight"]
+      },
+      source: {
+        id: "1",
+        title: "querylight",
+        tags: ["search", "typescript"]
+      }
+    });
+
+    const loaded = index.loadState(index.indexState);
+
+    expect(loaded.getSource("1")).toEqual({
+      id: "1",
+      title: "querylight",
+      tags: ["search", "typescript"]
+    });
+  });
+
+  it("should round-trip a document index through gzipped serialization", async () => {
+    const index = quotesIndex();
+    const compressed = serializeDocumentIndex({ index });
+    const hydrated = deserializeDocumentIndex({ index, compressed });
+
+    expect(await hydrated.count()).toBe(await index.count());
+    expect((await hydrated.searchRequest({ query: new MatchQuery({ field: "description", text: "to be", operation: OP.OR }) })).length).toBeGreaterThan(0);
+  });
+
+  it("should round-trip a simple text search bundle through gzipped serialization", async () => {
+    const search = createSimpleTextSearchIndex({
+      documents: [
+        {
+          id: "range-filters",
+          title: "RangeQuery Over Lexical Fields",
+          description: "Use lexical ranges over sortable string values.",
+          body: "RangeQuery compares lexical terms."
+        }
+      ],
+      primaryFields: ["title"],
+      secondaryFields: ["description", "body"]
+    });
+
+    const compressed = serializeSimpleTextSearchIndex({ index: search });
+    const hydrated = deserializeSimpleTextSearchIndex<{ id: string; title: string; description: string; body: string }>({ compressed });
+
+    expect((await hydrated.documentIndex.searchRequest({ query: new MatchQuery({ field: "title", text: "rangequery", operation: OP.OR }) })).length).toBeGreaterThan(0);
+    expect(hydrated.documentsById.get("range-filters")?.title).toBe("RangeQuery Over Lexical Fields");
   });
 });

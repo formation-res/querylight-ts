@@ -150,6 +150,63 @@
     @apply relative z-40;
   }
 
+  .dsl-console {
+    @apply rounded-[28px] border border-stone-950/70 bg-[#161412] px-4 py-4 text-stone-100 shadow-[0_24px_70px_rgba(15,12,10,0.35)] sm:px-5 sm:py-5;
+  }
+
+  .dsl-console-header {
+    @apply flex flex-col gap-3 border-b border-white/10 pb-4 lg:flex-row lg:items-start lg:justify-between;
+  }
+
+  .dsl-console-kicker {
+    @apply text-[11px] font-semibold uppercase tracking-[0.22em] text-orange-300;
+  }
+
+  .dsl-console-title {
+    @apply mt-2 font-serif text-2xl text-stone-50;
+  }
+
+  .dsl-console-status {
+    @apply text-right text-xs text-stone-400;
+  }
+
+  .dsl-console-status[data-tone="success"] {
+    @apply text-emerald-300;
+  }
+
+  .dsl-console-status[data-tone="error"] {
+    @apply text-rose-300;
+  }
+
+  .dsl-console-grid {
+    @apply mt-4 grid gap-4 xl:grid-cols-2;
+  }
+
+  .dsl-console-pane {
+    @apply grid gap-2;
+  }
+
+  .dsl-console-pane-label {
+    @apply text-xs font-semibold uppercase tracking-[0.18em] text-stone-400;
+  }
+
+  .dsl-console-editor {
+    @apply min-h-[320px] w-full rounded-[22px] border border-white/10 bg-[#0d0c0b] px-4 py-4 font-mono text-[13px] leading-6 text-stone-100 outline-none transition focus:border-orange-500/70 focus:ring-2 focus:ring-orange-500/20;
+    resize: vertical;
+  }
+
+  .dsl-console-editor::placeholder {
+    @apply text-stone-500;
+  }
+
+  .dsl-console-editor-readonly {
+    @apply bg-[#11100f] text-stone-300;
+  }
+
+  .dsl-console-hint {
+    @apply mt-3 text-xs text-stone-400;
+  }
+
   .search-input-wrap {
     @apply relative z-30 flex flex-col gap-3 md:flex-row md:items-center;
   }

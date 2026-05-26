@@ -131,7 +131,9 @@ function writeDemoPayload(payload: DemoDataPayload): void {
 
 function writeDashboardPayload(payload: DashboardDataPayload): void {
   fs.mkdirSync(staticDataDir, { recursive: true });
-  fs.writeFileSync(path.resolve(staticDataDir, "dashboard-data.json"), JSON.stringify(payload), "utf8");
+  fs.rmSync(path.resolve(staticDataDir, "dashboard-data.json"), { force: true });
+  fs.rmSync(path.resolve(publicDataDir, "dashboard-data.json"), { force: true });
+  fs.writeFileSync(path.resolve(staticDataDir, "dashboard-data.json.gz"), gzipSync(JSON.stringify(payload)));
 }
 
 function loadDashboardPayloadSnapshot(): DashboardDataPayload {

@@ -2,18 +2,32 @@
 id: term-and-match
 section: Lexical Querying
 title: Term, Terms, Prefix, Exists, and Match Queries
-summary: Use exact term lookups, field existence checks, prefix lookup, or analyzed text matching.
+summary: Use exact term lookups, field existence checks, prefix lookup, or analyzed text matching through the JSON DSL.
 tags: [query, term, match, prefix, trie]
-apis: [TermQuery, TermsQuery, PrefixQuery, ExistsQuery, MatchQuery, MultiMatchQuery, OP, SimpleStringTrie]
+apis: [searchJsonDsl, parseJsonDslQuery, TermQuery, TermsQuery, PrefixQuery, ExistsQuery, MatchQuery, MultiMatchQuery, OP, SimpleStringTrie]
 level: querying
 order: 10
 ---
 
 # Term, Terms, Prefix, Exists, and Match Queries
 
-## TermQuery
+The JSON DSL is the primary query format in these docs. Each section also shows the equivalent lower-level TypeScript query class.
 
-`TermQuery` looks for an exact term in an indexed field. It does not analyze the input for you.
+## Term Query
+
+Exact `term` lookup does not analyze the input for you.
+
+```json
+{
+  "query": {
+    "term": {
+      "tags": "aggregation"
+    }
+  }
+}
+```
+
+Equivalent internal TypeScript API:
 
 ```ts
 import { TermQuery } from "@tryformation/querylight-ts";
@@ -21,9 +35,21 @@ import { TermQuery } from "@tryformation/querylight-ts";
 const query = new TermQuery({ field: "tags", text: "aggregation" });
 ```
 
-## TermsQuery
+## Terms Query
 
-`TermsQuery` is the exact-match any-of variant for faceting and filters.
+Exact `terms` lookup is the any-of variant for faceting and filters.
+
+```json
+{
+  "query": {
+    "terms": {
+      "tags": ["aggregation", "highlighting"]
+    }
+  }
+}
+```
+
+Equivalent internal TypeScript API:
 
 ```ts
 import { TermsQuery } from "@tryformation/querylight-ts";
@@ -31,11 +57,23 @@ import { TermsQuery } from "@tryformation/querylight-ts";
 const query = new TermsQuery({ field: "tags", terms: ["aggregation", "highlighting"] });
 ```
 
-## PrefixQuery
+## Prefix Query
 
-`PrefixQuery` looks for analyzed field terms through the field's trie. It expands the prefix against real indexed vocabulary and then returns documents containing those matching terms.
+`prefix` lookup expands against the field trie and returns documents containing the matching indexed terms.
 
 It is useful for autocomplete-style retrieval when you want prefix lookup to be explicit instead of toggling `prefixMatch` on `MatchQuery`.
+
+```json
+{
+  "query": {
+    "prefix": {
+      "title": "agg"
+    }
+  }
+}
+```
+
+Equivalent internal TypeScript API:
 
 ```ts
 import { PrefixQuery } from "@tryformation/querylight-ts";
@@ -43,9 +81,21 @@ import { PrefixQuery } from "@tryformation/querylight-ts";
 const query = new PrefixQuery({ field: "title", prefix: "agg" });
 ```
 
-## ExistsQuery
+## Exists Query
 
-`ExistsQuery` filters documents that have at least one stored value for a field.
+`exists` filters documents that have at least one stored value for a field.
+
+```json
+{
+  "query": {
+    "exists": {
+      "field": "location"
+    }
+  }
+}
+```
+
+Equivalent internal TypeScript API:
 
 ```ts
 import { ExistsQuery } from "@tryformation/querylight-ts";
@@ -53,9 +103,39 @@ import { ExistsQuery } from "@tryformation/querylight-ts";
 const query = new ExistsQuery({ field: "location" });
 ```
 
-## MatchQuery
+## Match Query
 
-`MatchQuery` analyzes the input text and supports both `AND` and `OR` logic. When `prefixMatch` is `true`, each analyzed query term can expand through the field trie before document scoring.
+`match` analyzes the input text and supports both `and` and `or` logic. When `prefix_match` is `true`, each analyzed query term can expand through the field trie before document scoring.
+
+```json
+{
+  "query": {
+    "match": {
+      "body": {
+        "query": "vector search",
+        "operator": "and",
+        "boost": 2
+      }
+    }
+  }
+}
+```
+
+```json
+{
+  "query": {
+    "match": {
+      "title": {
+        "query": "agg",
+        "operator": "or",
+        "prefix_match": true
+      }
+    }
+  }
+}
+```
+
+Equivalent internal TypeScript API:
 
 ```ts
 import { MatchQuery, OP } from "@tryformation/querylight-ts";
@@ -64,9 +144,22 @@ const bodyQuery = new MatchQuery({ field: "body", text: "vector search", operati
 const prefixQuery = new MatchQuery({ field: "title", text: "agg", operation: OP.OR, prefixMatch: true });
 ```
 
-## MultiMatchQuery
+## Multi Match Query
 
-`MultiMatchQuery` lets terms match across several fields instead of forcing one field to satisfy the whole query.
+`multi_match` lets terms match across several fields instead of forcing one field to satisfy the whole query.
+
+```json
+{
+  "query": {
+    "multi_match": {
+      "fields": ["title", "body"],
+      "query": "vector search"
+    }
+  }
+}
+```
+
+Equivalent internal TypeScript API:
 
 ```ts
 import { MultiMatchQuery } from "@tryformation/querylight-ts";
