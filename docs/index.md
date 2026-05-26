@@ -85,6 +85,7 @@ If you are here for vector search, start with these four pages:
 ## Other Features
 
 - [SimpleTextSearch for Plain JSON Documents](./features/simple-text-search-for-plain-json-documents.md)
+- [OpenSearch-Style JSON DSL Search](./features/json-dsl-search.md)
 - [Highlighting with Querylight TS](./features/highlighting-with-querylight-ts.md)
 - [Approximate Nearest Neighbor Vector Search](./features/approximate-nearest-neighbor-vector-search.md)
 - [Sparse Vector Search](./features/sparse-vector-search.md)

@@ -226,6 +226,16 @@ export class QueryContext {
     return block(this);
   }
 
+  /** Returns the current candidate ids after include/exclude filtering, or `undefined` when unrestricted. */
+  filteredIds(allIds: Iterable<string>): string[] | undefined {
+    if (!this.includeIds && !this.excludeIds) {
+      return undefined;
+    }
+
+    const source = this.includeIds ? [...this.includeIds] : [...allIds];
+    return source.filter((id) => !this.excludeIds?.has(id));
+  }
+
   hits(): Hits {
     if (!this.includeIds) {
       throw new Error("cannot get hits from uninitialized context");

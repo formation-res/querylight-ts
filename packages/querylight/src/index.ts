@@ -81,17 +81,21 @@ export {
   ExistsQuery,
   GeoPointQuery,
   GeoPolygonQuery,
+  KnnQuery,
   MatchAll,
   MultiMatchQuery,
   MatchPhrase,
   MatchQuery,
   OP,
   PrefixQuery,
+  ReciprocalRankFusionQuery,
   RankFeatureQuery,
   RangeQuery,
   RegexpQuery,
   ScriptQuery,
   ScriptScoreQuery,
+  SparseVectorQuery,
+  SparseVectorRescoreQuery,
   TermQuery,
   TermsQuery,
   WildcardQuery,
@@ -105,11 +109,13 @@ export type {
   ExistsQueryParams,
   GeoPointQueryParams,
   GeoPolygonQueryParams,
+  KnnQueryParams,
   MatchAllParams,
   MatchPhraseParams,
   MatchQueryParams,
   MultiMatchQueryParams,
   PrefixQueryParams,
+  ReciprocalRankFusionQueryParams,
   RankFeatureLinearOptions,
   RankFeatureLogOptions,
   RankFeatureQueryParams,
@@ -123,6 +129,8 @@ export type {
   ScriptQueryParams,
   ScriptScore,
   ScriptScoreQueryParams,
+  SparseVectorQueryParams,
+  SparseVectorRescoreQueryParams,
   TermQueryParams,
   TermsQueryParams,
   VectorRescoreQueryParams,
@@ -130,6 +138,23 @@ export type {
   WildcardQueryParams
 } from "./query";
 export type { Query } from "./shared";
+
+export { parseJsonDslQuery, searchJsonDsl } from "./dsl";
+export type {
+  JsonDslAggregationClause,
+  JsonDslAggregationResult,
+  JsonDslHighlight,
+  JsonDslHighlightField,
+  JsonDslHits,
+  JsonDslQueryClause,
+  JsonDslRequest,
+  JsonDslResponse,
+  JsonDslSimpleTextSearchRequest,
+  JsonDslScript,
+  JsonDslSearchHit,
+  ParseJsonDslQueryParams,
+  SearchJsonDslParams
+} from "./dsl";
 
 export {
   CpuVectorScorer,
